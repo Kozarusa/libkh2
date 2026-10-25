@@ -12,6 +12,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../unity/Kh2.cs" Link="Kh2.cs" />
-    <None Include="../../target/release/kh2.dll" Link="kh2.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../../target/release/kh2.dll')" />
+    <!-- The package's bin/ first (dist/libkh2), else the repository's release build. -->
+    <None Include="../../bin/kh2.dll" Link="kh2.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../../bin/kh2.dll')" />
+    <None Include="../../target/release/kh2.dll" Link="kh2.dll" CopyToOutputDirectory="PreserveNewest" Condition="!Exists('../../bin/kh2.dll') And Exists('../../target/release/kh2.dll')" />
   </ItemGroup>
 </Project>

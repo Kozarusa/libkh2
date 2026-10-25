@@ -12,12 +12,19 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
+    # The DLL must not carry this machine's paths (panic locations, debug info): a separate build
+    # with the source and home folders remapped, in a target folder removed afterwards.
+    $parent = Split-Path -Parent $root
+    $env:RUSTFLAGS = "--remap-path-prefix=$($env:USERPROFILE)=~ --remap-path-prefix=$parent=src"
+    $env:CARGO_TARGET_DIR = Join-Path $root "target\package"
     cargo build --release -p libkh2
-    if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+    $code = $LASTEXITCODE
+    Remove-Item Env:RUSTFLAGS, Env:CARGO_TARGET_DIR
+    if ($code -ne 0) { throw "cargo build failed" }
     $dist = Join-Path $root "dist\libkh2"
     if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
     foreach ($d in "bin", "include", "docs", "unity", "examples") { New-Item -ItemType Directory -Force (Join-Path $dist $d) | Out-Null }
-    $rel = Join-Path $root "target\release"
+    $rel = Join-Path $root "target\package\release"
     foreach ($f in "kh2.dll", "kh2.dll.lib", "libkh2.so", "libkh2.dylib") {
         $p = Join-Path $rel $f
         if (Test-Path $p) { Copy-Item $p (Join-Path $dist "bin") }
@@ -43,6 +50,7 @@ Copy-Item examples\csharp\Program.cs, examples\csharp\Kh2Console.csproj, example
         Compress-Archive -Path $dist -DestinationPath $z
         "wrote $z"
     }
+    Remove-Item -Recurse -Force (Join-Path $root "target\package")
 } finally {
     Pop-Location
 }

@@ -17,7 +17,8 @@ def find_lib(arg):
     if arg:
         return arg
     names = ["kh2.dll", "libkh2.so", "libkh2.dylib"]
-    for d in [ROOT / "dist" / "libkh2" / "bin", ROOT / "target" / "release"]:
+    # In the package (dist/libkh2) ROOT is the package itself: bin/ beside examples/.
+    for d in [ROOT / "bin", ROOT / "dist" / "libkh2" / "bin", ROOT / "target" / "release"]:
         for n in names:
             if (d / n).exists():
                 return str(d / n)
