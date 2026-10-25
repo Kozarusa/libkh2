@@ -179,6 +179,11 @@ every flag clear, a counting `AiTrace`). The Bevy systems around them (`ai_attac
 area spawn groups, camera visibility (every enemy is on screen) or prize objects; the enemy's hit
 on Sora goes through `Sora::hit` with the game's damage formula; a defeat pays EXP at once.
 
+Round 4 step 2: `spell.rs` transcribes `magic.rs`'s spell objects (Fire, Blizzard, Thunder) and
+its hit loop; `HitMemory`, `variant`, `attack_row`, `magi_row`, `cast_turn` are kh2-rs's pure
+rules. decided: the effect elements' own positions are not loaded (no effect files), so the
+attacks start at Sora's chest; Final's scatter keeps the place; Reflect and Magnet not simulated.
+
 ## 4b. Regression and drift (step 7)
 
 Drift has two sources: (1) the files compiled in place change (caught by the build and the

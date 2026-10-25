@@ -1,7 +1,7 @@
 # TODO (round 4)
 
 1. [x] Enemies under their BDX scripts.
-2. [ ] Spell flight.
+2. [x] Spell flight.
 3. [ ] Party attacks and AI.
 4. [ ] Limits / reaction command offers.
 5. [ ] Level-up rewards, state save/load, replay with enemies.

@@ -719,3 +719,47 @@ fn twilight_town_enemies_run_their_scripts_fight_and_die() {
         assert!(defeated.is_some(), "{kind} is defeated");
     }
 }
+
+#[test]
+fn spells_fly_and_hit_enemies() {
+    use kh2::enemy::{EnemyEvent, Enemies};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let w = floor();
+    // (slot, enemy places): Fire around Sora, Blizzard at one far off to the side (homing), Thunder on a target.
+    for (slot, places) in [(0u8, vec![Vec3::new(0.0, 0.0, 120.0)]), (1, vec![Vec3::new(300.0, 0.0, 700.0)]), (2, vec![Vec3::new(0.0, 0.0, 600.0)])] {
+        let mut s = standing(&game, &w);
+        s.max_hp = 999;
+        s.hp = 999;
+        let mut en = Enemies::new(data.clone());
+        for p in &places {
+            en.spawn("M_EX990", *p, std::f32::consts::PI, &w);
+        }
+        // Freeze the Dusks' scripts so they stay where they are put.
+        for e in en.list.iter_mut() {
+            e.rt = None;
+        }
+        let first_hp = en.list[0].hp;
+        s.target = Some(kh2::sora::Target { pos: places[0] + Vec3::Y * 80.0, radius: 40.0, half_height: 80.0 });
+        s.tick(&w, &Input::default());
+        s.cast_request = Some((slot, 30));
+        let mut hits = Vec::new();
+        for _ in 0..240 {
+            s.tick(&w, &Input::default());
+            en.tick(&mut s, &w, game.params.sstm.fall_max);
+            for ev in en.events.drain(..) {
+                if let EnemyEvent::Hit { atkp, damage, .. } = ev {
+                    hits.push((atkp, damage));
+                }
+            }
+        }
+        eprintln!("slot {slot}: hits {hits:?}, first enemy HP {first_hp} -> {:?}", en.list.first().map(|e| e.hp));
+        let want = match slot {
+            0 => 502,
+            1 => 248,
+            _ => 250,
+        };
+        assert!(hits.iter().any(|h| h.0 == want), "slot {slot}: atkp {want} hits");
+    }
+}

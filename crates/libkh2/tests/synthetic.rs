@@ -337,3 +337,12 @@ fn synthetic_golden_scenarios() {
     assert!(e.contains("tick 77"), "{e}");
     let _ = std::fs::remove_file(&tmp);
 }
+
+/// kh2-rs `magic::turn_toward`: at most `rate` radians toward the target, unit length.
+#[test]
+fn a_homing_shot_turns_by_its_rate() {
+    let d = kh2::spell::turn_toward(Vec3::Z, Vec3::X, 0.1);
+    assert!((d.length() - 1.0).abs() < 1e-5);
+    assert!((d.angle_between(Vec3::Z) - 0.1).abs() < 1e-4);
+    assert!(kh2::spell::turn_toward(Vec3::Z, Vec3::X, 4.0).abs_diff_eq(Vec3::X, 1e-5));
+}

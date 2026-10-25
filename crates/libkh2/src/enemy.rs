@@ -286,11 +286,13 @@ pub struct Enemies {
     /// Sora's hits already landed: (enemy id, Sora's motion slot, trigger start).
     pub sora_landed: HashSet<(u32, Option<usize>, i16)>,
     pub world_level: i32,
+    /// Sora's spells in flight (`spell.rs`).
+    pub spells: crate::spell::Spells,
 }
 
 impl Enemies {
     pub fn new(data: Arc<EnemyData>) -> Enemies {
-        Enemies { data, list: Vec::new(), serial: 0, next_id: 1, trace: AiTrace::default(), mail: Vec::new(), seed: 1, events: Vec::new(), sora_landed: HashSet::new(), world_level: 1 }
+        Enemies { data, list: Vec::new(), serial: 0, next_id: 1, trace: AiTrace::default(), mail: Vec::new(), seed: 1, events: Vec::new(), sora_landed: HashSet::new(), world_level: 1, spells: Default::default() }
     }
 
     /// kh2-rs `enemy::spawn_enemy` + `enemy_ai::ai_attach`: the kind by its name (`M_EX020` Shadow,
@@ -353,6 +355,7 @@ impl Enemies {
     pub fn tick(&mut self, sora: &mut Sora, world: &World, fall_max: f32) {
         self.trace.tick += 1;
         self.combat(sora);
+        self.spells_tick(sora, world);
         // Last tick's messages go to every scripted object, each with its own delay (FUN_00187250).
         let mut mail: HashMap<u32, Vec<(u32, String, f32)>> = HashMap::new();
         for (sender, name, delay) in std::mem::take(&mut self.mail) {
@@ -718,6 +721,54 @@ impl Enemies {
         let _ = PLAYER;
     }
 
+    /// Sora's spells after their trigger (`spell.rs`) against the enemies: damage with his magic and
+    /// the hit's row variant, the victim reaction, defeats.
+    fn spells_tick(&mut self, sora: &mut Sora, world: &World) {
+        let params = sora.game.params.clone();
+        for (slot, kind) in std::mem::take(&mut sora.fired) {
+            let magi = rules_magi(&params, kind);
+            self.spells.fire(slot, kind, magi);
+        }
+        if !self.spells.active() {
+            return;
+        }
+        let victims: Vec<(u32, Vec<Volume>, Vec3, Vec3)> = self
+            .list
+            .iter()
+            .filter(|e| e.alive() && !e.removed && e.data.kind.status)
+            .map(|e| {
+                let hurt = hurt_volumes(&e.data.rig, &e.anim.pose, e.matrix());
+                let target = hurt.first().map_or(e.pos() + Vec3::Y * 80.0, |v| v.a);
+                (e.id, hurt, target, e.pos())
+            })
+            .collect();
+        let target = sora.target.map(|t| t.pos).or_else(|| victims.iter().min_by(|a, b| a.3.distance(sora.motor.pos).total_cmp(&b.3.distance(sora.motor.pos))).map(|v| v.2));
+        let caster = crate::spell::Caster { pos: sora.motor.pos, facing: sora.motor.forward(), target, grounded: sora.motor.grounded };
+        let (hits, push) = self.spells.tick(&caster, &params.atkp, world, &victims);
+        if let (Some((dir, power)), Some(r)) = (push, params.reaction.as_ref()) {
+            sora.push = Push::new(dir, power, 0.0, &r.consts);
+        }
+        let Some(reaction) = params.reaction.clone() else { return };
+        let from = Stats { level: sora.level, max_hp: sora.max_hp, strength: sora.strength, magic: sora.magic, defense: sora.defense, max_taken: i32::MAX, min_taken: 1, max_dealt: i32::MAX, min_dealt: 0, weakness: [100; 7], ..Default::default() };
+        for h in hits {
+            let id = victims[h.victim].0;
+            let Some(e) = self.list.iter_mut().find(|e| e.id == id) else { continue };
+            let atk = params.atkp[h.row].clone();
+            let mut dmg = damage(&atk, &from, &e.stats);
+            if let Some(l) = &sora.loadout {
+                dmg = kh2_game_core::abilities::attacker_bonuses(l.block(), sora.hits, &atk, dmg);
+            }
+            Self::receive(e, &atk, dmg, h.dir, &reaction);
+            self.events.push(EnemyEvent::Hit { id, atkp: atk.id as i16, damage: dmg, hp: e.hp });
+            if e.hp <= 0 && !e.defeated {
+                e.defeated = true;
+                let (table, row) = self.data.experience(e.enmp, self.world_level);
+                let paid = sora.report_defeat(table, row);
+                self.events.push(EnemyEvent::Defeated { id, enmp: e.enmp, lvpm_experience: table, enmp_experience: row, paid });
+            }
+        }
+    }
+
     /// The enemy nearest to `p` and alive (for lock-on and the host).
     pub fn nearest(&self, p: Vec3) -> Option<&Enemy> {
         self.list.iter().filter(|e| e.alive()).min_by(|a, b| a.pos().distance(p).total_cmp(&b.pos().distance(p)))
@@ -755,4 +806,9 @@ fn trigger_bits(anim: &Anim) -> [u8; 2] {
         }
     }
     bits
+}
+
+/// The `magi` row of a cast kind (kh2-rs `magic_rules::magi_row`).
+fn rules_magi(p: &crate::data::Params, kind: u32) -> kh2_game_core::magic_rules::MagiRow {
+    kh2_game_core::magic_rules::magi_row(&p.magi, kind).cloned().unwrap_or_default()
 }

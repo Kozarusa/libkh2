@@ -179,7 +179,12 @@ place; their motions, attack and hurt volumes, the damage formula both ways, hit
 with EXP paid to Sora (disc test `twilight_town_enemies_run_their_scripts_fight_and_die`: Shadow,
 Soldier and Dusk each attack and are defeated).
 
-Not in v1: the spells' flight paths, summons, sounds and effects, moving platforms. See `DESIGN.md`.
+Spell flight (with enemies): Fire's attack around Sora, Blizzard's shots (homing where the `magi`
+turn rate is set, straight at level 1), Thunder's strikes on the target with the ground snap and
+the column, the victims' hit memory and row variants, damage with Sora's magic; the cast turns
+Sora toward the target (triggers 22/28) (disc test `spells_fly_and_hit_enemies`).
+
+Not in v1: summons, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits
 

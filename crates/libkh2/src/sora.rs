@@ -307,6 +307,8 @@ pub struct Sora {
     pub cast_request: Option<(u8, u8)>,
     pub cast: Option<Cast>,
     pub events: Vec<Event>,
+    /// Spells whose trigger fired this tick (slot, kind), for the spell simulation (`spell.rs`).
+    pub fired: Vec<(u8, u32)>,
     pub target: Option<Target>,
     pub body: Anim,
     pub weapon: Option<Anim>,
@@ -389,6 +391,7 @@ impl Sora {
             cast_request: None,
             cast: None,
             events: Vec::new(),
+            fired: Vec::new(),
             target: None,
             moves,
             leaps,
@@ -801,6 +804,16 @@ impl Sora {
                 }
             }
             State::Magic => {
+                // The cast motion's turn triggers 22 / 28 (kh2-rs `magic.rs`, FUN_00186018 ->
+                // `magic_rules::cast_turn`): toward the target, by the trigger's degrees per frame; Cure
+                // (slot 3) is cast on Sora himself and does not turn.
+                if let (Some(cast), Some(t)) = (self.cast, self.target) {
+                    let g = self.body.gframe();
+                    let turns: Vec<f32> = self.body.triggers().map(|tr| tr.active(g).filter(|r| matches!(r.id, 22 | 28)).map(|r| r.params.first().copied().unwrap_or(0) as u16 as f32).collect()).unwrap_or_default();
+                    for deg in turns {
+                        self.motor.yaw = kh2_game_core::magic_rules::cast_turn(self.motor.yaw, self.motor.pos, t.pos, cast.slot == 3, deg);
+                    }
+                }
                 // kh2-rs `sora::tick` State::Magic: gravity unless the motion suspends it; control
                 // comes back when it ends or its blend-to-idle range opens with a press or a direction.
                 let hover = self.body.trigger(range::NO_GRAVITY) || self.body.trigger(range::NO_GRAVITY_KEEP_KINETICS);
@@ -1057,6 +1070,7 @@ impl Sora {
         self.cast = Some(cast);
         self.events.push(Event::SpellFired { slot: cast.slot, kind: cast.kind, charge });
         self.spell_stages(&cast);
+        self.fired.push((cast.slot, cast.kind));
     }
 
     /// The drive request (kh2-rs `drive_tick`, `DriveRequest::Enter`): the entry checks, the Anti /
