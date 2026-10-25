@@ -20,7 +20,7 @@
 
 /* The version this header describes; kh2_version() returns the library's (same packing). */
 #define KH2_VERSION_MAJOR 0
-#define KH2_VERSION_MINOR 3
+#define KH2_VERSION_MINOR 4
 #define KH2_VERSION_PATCH 0
 #define KH2_VERSION ((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)
 
@@ -273,6 +273,39 @@ KH2_API int32_t kh2_party_add(int32_t handle, int32_t member);
 KH2_API int32_t kh2_party_tick(int32_t handle);
 KH2_API int32_t kh2_party_state(int32_t handle, int32_t slot, kh2_member_state *out);
 KH2_API int32_t kh2_party_bones(int32_t handle, int32_t slot, int32_t space, float *out, uint32_t max_bones);
+
+/* ---- Enemies (their own BDX scripts through kh2-rs's interpreter and script host) ---- */
+/* Spawns an enemy by model ("M_EX020" Shadow, "M_EX010" Soldier, "M_EX990" Dusk, ...) fighting
+ * Sora `handle`; returns its id (> 0) or -1. */
+KH2_API int32_t kh2_enemy_spawn(int32_t handle, const char *kind, float x, float y, float z, float yaw);
+/* One tick of the enemies (after kh2_tick): scripts, movement, reactions, hits both ways. */
+KH2_API int32_t kh2_enemies_tick(int32_t handle);
+KH2_API int32_t kh2_enemy_count(int32_t handle);
+typedef struct kh2_enemy_state {
+    int32_t id;
+    float pos[3];
+    float yaw;
+    int32_t hp, max_hp;
+    int32_t state;        /* 0 idle (script), 1 hurt, 2 blown */
+    int32_t motion_slot;
+    float frame;
+    int32_t grounded;
+    float alpha;          /* the script's fade */
+    int32_t enmp;
+} kh2_enemy_state;
+KH2_API int32_t kh2_enemy_state(int32_t handle, int32_t index, kh2_enemy_state *out);
+KH2_API int32_t kh2_enemy_bones(int32_t handle, int32_t index, int32_t space, float *out, uint32_t max_bones);
+#define KH2_EN_HIT 1        /* Sora hit it: atkp, damage, value = HP left */
+#define KH2_EN_HIT_SORA 2   /* it hit Sora: atkp, damage, value = kh2_hit_taken result */
+#define KH2_EN_DEFEATED 3   /* enmp, lvpm/enmp experience, value = EXP paid to Sora */
+#define KH2_EN_EFFECT 4     /* value = element of its effect file */
+#define KH2_EN_DROP 5       /* value = przt row, prizes per kind */
+#define KH2_EN_REMOVED 6
+typedef struct kh2_enemy_event {
+    int32_t kind, id, atkp, damage, value, enmp, lvpm_experience, enmp_experience;
+    uint32_t prizes[9];
+} kh2_enemy_event;
+KH2_API int32_t kh2_poll_enemy_event(int32_t handle, kh2_enemy_event *out);
 
 /* ---- Field camera helper (kh2-rs camera_rules, oracle-tested there) ---- */
 #define KH2_CAM_RESET 1u   /* R3: behind Sora */

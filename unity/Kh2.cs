@@ -134,6 +134,22 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_party_tick(int handle);
     [DllImport(Lib)] public static extern int kh2_party_state(int handle, int slot, out MemberState state);
     [DllImport(Lib)] public static extern int kh2_party_bones(int handle, int slot, int space, [Out] float[] outMatrices, uint maxBones);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct EnemyState { public int id; public float posX, posY, posZ, yaw; public int hp, maxHp, state, motionSlot; public float frame; public int grounded; public float alpha; public int enmp; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct EnemyEvent
+    {
+        public int kind, id, atkp, damage, value, enmp, lvpmExperience, enmpExperience;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 9)] public uint[] prizes;
+    }
+
+    [DllImport(Lib)] public static extern int kh2_enemy_spawn(int handle, string kind, float x, float y, float z, float yaw);
+    [DllImport(Lib)] public static extern int kh2_enemies_tick(int handle);
+    [DllImport(Lib)] public static extern int kh2_enemy_count(int handle);
+    [DllImport(Lib)] public static extern int kh2_enemy_state(int handle, int index, out EnemyState state);
+    [DllImport(Lib)] public static extern int kh2_enemy_bones(int handle, int index, int space, [Out] float[] outMatrices, uint maxBones);
+    [DllImport(Lib)] public static extern int kh2_poll_enemy_event(int handle, out EnemyEvent ev);
     [DllImport(Lib)] public static extern int kh2_motion_tag(int handle, byte[] buf, uint len);
 
     public static string LastError()

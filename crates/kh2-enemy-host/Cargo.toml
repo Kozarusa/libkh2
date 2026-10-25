@@ -1,0 +1,20 @@
+[package]
+name = "libkh2-enemy-host"
+description = "kh2-rs's enemy script host (enemy_host.rs, the shared enemy object and the enemy kinds) compiled in place without Bevy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "kh2_enemy_host"
+# The included files carry kh2-rs's own unit tests, which need the rest of kh2-rs; they run there.
+test = false
+doctest = false
+
+[dependencies]
+bevy = { package = "libkh2-bevy-shim", path = "../bevy-shim" }
+kh2_game_core = { package = "libkh2-pure", path = "../kh2-pure" }
+kh2-bdx = { path = "../../../kh2-rs/crates/kh2-bdx" }
+kh2-anim = { path = "../../../kh2-rs/crates/kh2-anim" }
+kh2-model = { path = "../../../kh2-rs/crates/kh2-model" }
+kh2-tables = { path = "../../../kh2-rs/crates/kh2-tables" }

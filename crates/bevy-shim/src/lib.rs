@@ -12,7 +12,26 @@ pub mod math {
 
 pub mod prelude {
     pub use glam::*;
-    pub use libkh2_bevy_shim_derive::Resource;
+    pub use libkh2_bevy_shim_derive::{Component, Message, Resource};
+
+    /// An entity id (the enemy modules carry one in a few records; no ECS behind it).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+    pub struct Entity(pub u64);
+
+    impl Entity {
+        pub const PLACEHOLDER: Entity = Entity(u64::MAX);
+    }
+
+    /// Stand-ins for render types named in a field of `shared::enemy::AiBrain` (never used here).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct AssetId<T>(std::marker::PhantomData<T>);
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct StandardMaterial;
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub enum AlphaMode {
+        Opaque,
+        Blend,
+    }
 
     /// `bevy::prelude::default`.
     pub fn default<T: Default>() -> T {

@@ -8,3 +8,15 @@ use proc_macro::TokenStream;
 pub fn derive_resource(_input: TokenStream) -> TokenStream {
     TokenStream::new()
 }
+
+/// `#[derive(Component)]`: nothing (plain structs outside an ECS).
+#[proc_macro_derive(Component)]
+pub fn derive_component(_input: TokenStream) -> TokenStream {
+    TokenStream::new()
+}
+
+/// `#[derive(Message)]`: nothing.
+#[proc_macro_derive(Message)]
+pub fn derive_message(_input: TokenStream) -> TokenStream {
+    TokenStream::new()
+}

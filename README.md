@@ -173,7 +173,13 @@ Party members (`kh2_party_add`, `kh2_party_tick`): Donald and Goofy follow Sora 
 kh2-rs's `party_rules` (follow points, follow step with the AI class's thresholds, steer), their
 own `prty` speeds and idle/walk/run motions; no battle AI or attacks (disc test `donald_and_goofy_follow_sora`).
 
-Not in v1: enemies, the spells' flight paths, summons, sounds and effects, moving platforms. See `DESIGN.md`.
+Enemies (`kh2_enemy_spawn`, `kh2_enemies_tick`): any kind of kh2-rs's list (Shadow, Soldier, Dusk and
+50 more) under its own BDX script through kh2-rs's interpreter and its script host compiled in
+place; their motions, attack and hurt volumes, the damage formula both ways, hit reactions, defeat
+with EXP paid to Sora (disc test `twilight_town_enemies_run_their_scripts_fight_and_die`: Shadow,
+Soldier and Dusk each attack and are defeated).
+
+Not in v1: the spells' flight paths, summons, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits
 

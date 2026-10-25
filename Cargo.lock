@@ -269,6 +269,10 @@ name = "kh2-bar"
 version = "0.1.0"
 
 [[package]]
+name = "kh2-bdx"
+version = "0.1.0"
+
+[[package]]
 name = "kh2-iso"
 version = "0.1.0"
 
@@ -323,21 +327,23 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "libkh2"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "glam",
  "kh2-anim",
  "kh2-archive",
  "kh2-bar",
+ "kh2-bdx",
  "kh2-map",
  "kh2-model",
  "kh2-tables",
+ "libkh2-enemy-host",
  "libkh2-pure",
 ]
 
 [[package]]
 name = "libkh2-bevy-shim"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "glam",
  "libkh2-bevy-shim-derive",
@@ -345,11 +351,23 @@ dependencies = [
 
 [[package]]
 name = "libkh2-bevy-shim-derive"
-version = "0.3.0"
+version = "0.4.0"
+
+[[package]]
+name = "libkh2-enemy-host"
+version = "0.4.0"
+dependencies = [
+ "kh2-anim",
+ "kh2-bdx",
+ "kh2-model",
+ "kh2-tables",
+ "libkh2-bevy-shim",
+ "libkh2-pure",
+]
 
 [[package]]
 name = "libkh2-pure"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "kh2-archive",
  "kh2-ard",
@@ -361,7 +379,7 @@ dependencies = [
 
 [[package]]
 name = "libkh2-viewer"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "glam",
  "libkh2",

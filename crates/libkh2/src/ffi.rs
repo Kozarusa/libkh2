@@ -86,6 +86,8 @@ struct Lib {
     cameras: Vec<Option<crate::camera::Camera>>,
     party: Option<Arc<crate::party::PartyData>>,
     followers: std::collections::HashMap<i32, Vec<crate::party::Follower>>,
+    enemy_data: Option<Arc<crate::enemy::EnemyData>>,
+    enemies: std::collections::HashMap<i32, crate::enemy::Enemies>,
 }
 
 static LIB: Mutex<Option<Lib>> = Mutex::new(None);
@@ -169,7 +171,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), enemy_data: None, enemies: Default::default() });
     0
 }
 
@@ -1151,5 +1153,173 @@ pub unsafe extern "C" fn kh2_party_bones(handle: i32, slot: i32, space: i32, out
         let Some(f) = l.followers.get(&handle).and_then(|v| v.get(usize::try_from(slot).ok()?)) else { return -1 };
         let root = if space == 1 { Mat4::from_rotation_translation(glam::Quat::from_rotation_y(f.motor.yaw), f.motor.pos) } else { Mat4::IDENTITY };
         unsafe { write_mats(f.body.pose.iter().map(|m| root * *m), out, max) }
+    })
+}
+
+/// Spawns an enemy of kind `kind` (its model name, e.g. "M_EX020" Shadow, "M_EX010" Soldier,
+/// "M_EX990" Dusk, or kh2-rs's kind name) at (x, y, z) facing `yaw`, fighting Sora `handle`.
+/// It runs under its own BDX script. Returns the enemy id (> 0), or -1. The first call loads the
+/// enemy data from the disc.
+///
+/// # Safety
+/// `kind` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_enemy_spawn(handle: i32, kind: *const c_char, x: f32, y: f32, z: f32, yaw: f32) -> i32 {
+    if kind.is_null() {
+        return set_error("no enemy kind");
+    }
+    let Ok(kind) = unsafe { CStr::from_ptr(kind) }.to_str().map(str::to_string) else { return set_error("kind is not UTF-8") };
+    with(-1, |l| {
+        if l.enemy_data.is_none() {
+            match l.disc.enemies() {
+                Ok(d) => l.enemy_data = Some(Arc::new(d)),
+                Err(e) => return set_error(e),
+            }
+        }
+        let Some(data) = l.enemy_data.clone() else { return -1 };
+        if usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref).is_none() {
+            return set_error(format!("no Sora with handle {handle}"));
+        }
+        let en = l.enemies.entry(handle).or_insert_with(|| crate::enemy::Enemies::new(data));
+        match en.spawn(&kind, Vec3::new(x, y, z), yaw, &l.world) {
+            Some(id) => id as i32,
+            None => set_error(format!("no enemy kind {kind:?}")),
+        }
+    })
+}
+
+/// One tick of Sora `handle`'s enemies (call after `kh2_tick`): their scripts, movement, hit
+/// reactions, and the hit tests both ways (Sora's swings hurt them, theirs reach `kh2_hit_taken`'s
+/// path), defeats paying EXP to Sora.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_enemies_tick(handle: i32) -> i32 {
+    with(-1, |l| {
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return -1 };
+        let fall = s.game.params.sstm.fall_max;
+        if let Some(en) = l.enemies.get_mut(&handle) {
+            en.tick(s, &l.world, fall);
+            en.list.len() as i32
+        } else {
+            0
+        }
+    })
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2EnemyState {
+    pub id: i32,
+    pub pos: [f32; 3],
+    pub yaw: f32,
+    pub hp: i32,
+    pub max_hp: i32,
+    /// 0 idle (the script runs it), 1 hurt, 2 blown.
+    pub state: i32,
+    pub motion_slot: i32,
+    pub frame: f32,
+    pub grounded: i32,
+    /// The draw alpha the script asks for (fades), 0..1.
+    pub alpha: f32,
+    pub enmp: i32,
+}
+
+/// The number of enemies of Sora `handle`.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_enemy_count(handle: i32) -> i32 {
+    with(-1, |l| l.enemies.get(&handle).map_or(0, |e| e.list.len() as i32))
+}
+
+/// The state of the `index`-th enemy (0 .. kh2_enemy_count).
+///
+/// # Safety
+/// `out` points to a writable `kh2_enemy_state`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_enemy_state(handle: i32, index: i32, out: *mut Kh2EnemyState) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let Some(e) = l.enemies.get(&handle).and_then(|en| en.list.get(usize::try_from(index).ok()?)) else { return -1 };
+        let state = match e.state {
+            kh2_enemy_host::shared::enemy::EState::Idle => 0,
+            kh2_enemy_host::shared::enemy::EState::Hurt => 1,
+            kh2_enemy_host::shared::enemy::EState::Blown => 2,
+        };
+        unsafe {
+            *out = Kh2EnemyState {
+                id: e.id as i32,
+                pos: e.pos().to_array(),
+                yaw: e.obj.motor.yaw,
+                hp: e.hp,
+                max_hp: e.stats.max_hp,
+                state,
+                motion_slot: e.anim.slot.map_or(-1, |x| x as i32),
+                frame: e.anim.frame,
+                grounded: e.obj.motor.grounded as i32,
+                alpha: e.obj.shown_alpha(),
+                enmp: i32::from(e.enmp),
+            }
+        };
+        0
+    })
+}
+
+/// The drawn pose of the `index`-th enemy (space 0 model, 1 world), 16 floats per bone.
+///
+/// # Safety
+/// `out` points to `16 * max` floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_enemy_bones(handle: i32, index: i32, space: i32, out: *mut f32, max: u32) -> i32 {
+    with(-1, |l| {
+        let Some(e) = l.enemies.get(&handle).and_then(|en| en.list.get(usize::try_from(index).ok()?)) else { return -1 };
+        let root = if space == 1 { e.matrix() } else { Mat4::IDENTITY };
+        unsafe { write_mats(e.anim.pose.iter().map(|m| root * *m), out, max) }
+    })
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2EnemyEvent {
+    /// 1 Sora hit an enemy, 2 an enemy hit Sora, 3 defeated, 4 effect, 5 prize drop, 6 removed.
+    pub kind: i32,
+    pub id: i32,
+    pub atkp: i32,
+    pub damage: i32,
+    /// Hit: HP left; hit Sora: `kh2_hit_taken`'s result code; defeated: EXP paid; effect: element.
+    pub value: i32,
+    pub enmp: i32,
+    pub lvpm_experience: i32,
+    pub enmp_experience: i32,
+    /// Drop: the prize counts per kind (HP, MP, munny, drive, ...).
+    pub prizes: [u32; 9],
+}
+
+/// Takes the oldest enemy event: 1 written, 0 none left.
+///
+/// # Safety
+/// `out` points to a writable `kh2_enemy_event`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_poll_enemy_event(handle: i32, out: *mut Kh2EnemyEvent) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let Some(en) = l.enemies.get_mut(&handle) else { return 0 };
+        if en.events.is_empty() {
+            return 0;
+        }
+        use crate::enemy::EnemyEvent as E;
+        let v = match en.events.remove(0) {
+            E::Hit { id, atkp, damage, hp } => Kh2EnemyEvent { kind: 1, id: id as i32, atkp: atkp.into(), damage, value: hp, ..Default::default() },
+            E::HitSora { id, atkp, damage, result } => Kh2EnemyEvent { kind: 2, id: id as i32, atkp: atkp.into(), damage, value: result, ..Default::default() },
+            E::Defeated { id, enmp, lvpm_experience, enmp_experience, paid } => {
+                Kh2EnemyEvent { kind: 3, id: id as i32, enmp: enmp.into(), lvpm_experience: lvpm_experience.into(), enmp_experience: enmp_experience.into(), value: paid, ..Default::default() }
+            }
+            E::Effect { id, effect } => Kh2EnemyEvent { kind: 4, id: id as i32, value: effect.into(), ..Default::default() },
+            E::Drop { id, row, prizes, .. } => Kh2EnemyEvent { kind: 5, id: id as i32, value: row.into(), prizes, ..Default::default() },
+            E::Removed { id } => Kh2EnemyEvent { kind: 6, id: id as i32, ..Default::default() },
+        };
+        unsafe { *out = v };
+        1
     })
 }

@@ -662,3 +662,60 @@ fn donald_and_goofy_follow_sora() {
         assert!(x.body.pose.len() > 1);
     }
 }
+
+#[test]
+fn twilight_town_enemies_run_their_scripts_fight_and_die() {
+    use kh2::enemy::{EnemyEvent, Enemies};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    eprintln!("{} enemy kinds loaded", data.kinds.len());
+    let w = floor();
+    for kind in ["M_EX020", "M_EX010", "M_EX990"] {
+        let k = data.kinds.get(kind).expect(kind);
+        let mut s = standing(&game, &w);
+        s.max_hp = 999;
+        s.hp = 999;
+        let mut en = Enemies::new(data.clone());
+        let id = en.spawn(kind, Vec3::new(0.0, 0.0, 400.0), std::f32::consts::PI, &w).unwrap();
+        let start = en.list[0].pos();
+        let mut hit_sora = 0;
+        for _ in 0..900 {
+            s.tick(&w, &Input::default());
+            en.tick(&mut s, &w, game.params.sstm.fall_max);
+            for e in en.events.drain(..) {
+                if matches!(e, EnemyEvent::HitSora { .. }) {
+                    hit_sora += 1;
+                }
+            }
+        }
+        let moved = en.list.first().map_or(0.0, |e| e.pos().distance(start));
+        eprintln!("{kind} ({}, enmp {}, hp {}): script {}, moved {moved:.0}, hit Sora {hit_sora} times, Sora HP {}, unserved host calls {:?}", k.kind.name, k.kind.enmp, en.list[0].stats.max_hp, k.prog.is_some(), s.hp, en.unserved_calls());
+        assert!(k.prog.is_some());
+        assert!(moved > 10.0 || hit_sora > 0, "{kind} acts");
+        // Sora fights back: face it and attack until it falls.
+        let mut defeated = None;
+        let mut hits = 0;
+        for t in 0..3000 {
+            let Some(e) = en.list.iter().find(|e| e.id == id) else { break };
+            let to = e.pos() - s.motor.pos;
+            s.target = Some(kh2::sora::Target { pos: e.pos() + Vec3::Y * 80.0, radius: 40.0, half_height: 80.0 });
+            let stick = if to.length() > 150.0 { [to.x / to.length(), to.z / to.length()] } else { [0.0, 0.0] };
+            s.tick(&w, &Input { stick: [stick[0], stick[1]], cam_look: [0.0, 1.0], attack: t % 4 == 0, ..Default::default() });
+            en.tick(&mut s, &w, game.params.sstm.fall_max);
+            for ev in en.events.drain(..) {
+                match ev {
+                    EnemyEvent::Hit { .. } => hits += 1,
+                    EnemyEvent::Defeated { paid, .. } => defeated = Some((t, paid)),
+                    _ => {}
+                }
+            }
+            if defeated.is_some() {
+                break;
+            }
+        }
+        eprintln!("{kind}: Sora landed {hits} hits, defeated {defeated:?}, Sora EXP {}", s.exp);
+        assert!(hits > 0, "{kind}: Sora's attacks reach it");
+        assert!(defeated.is_some(), "{kind} is defeated");
+    }
+}

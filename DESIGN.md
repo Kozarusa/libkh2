@@ -169,6 +169,16 @@ model name (kh2-rs takes them from the world's memt slots). Plan for attacks: po
 `party_battle.rs`'s approach step and its attack table choice (the same moveset selection as
 Sora's), about two days.
 
+Round 4 step 1: the enemy script host is kh2-rs's `enemy_host.rs` itself, compiled in place in
+`crates/kh2-enemy-host` together with `shared/enemy.rs`, `shared/enemy_obj.rs`,
+`shared/reaction.rs` and the enemy kind files (a build script lists them as kh2-enemy's does). The
+crate paths they name are provided by the shim (`Stats`, `Rig`, the voice queue, a story with
+every flag clear, a counting `AiTrace`). The Bevy systems around them (`ai_attach`, `ai_update`,
+`think`, `receive_hits`, the combat tests, `enemy_stats`, `damage`) are transcribed in
+`crates/libkh2/src/enemy.rs`. decided: no paired motions on Sora, clashes, reaction commands,
+area spawn groups, camera visibility (every enemy is on screen) or prize objects; the enemy's hit
+on Sora goes through `Sora::hit` with the game's damage formula; a defeat pays EXP at once.
+
 ## 4b. Regression and drift (step 7)
 
 Drift has two sources: (1) the files compiled in place change (caught by the build and the

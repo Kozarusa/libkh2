@@ -10,17 +10,14 @@
 use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
-use kh2_anim::{Mset, Triggers};
-use kh2_model::Model;
+use kh2_anim::Triggers;
 
 /// Ticks per second of the game's logic (kh2-rs `data::LOGIC_HZ`).
 pub const LOGIC_HZ: f32 = 60.0;
 
-/// A skeleton and its motion set (kh2-rs `skel::Rig` without the effect file name).
-pub struct Rig {
-    pub model: Model,
-    pub mset: Mset,
-}
+/// A skeleton and its motion set (kh2-rs `skel::Rig` without the effect file name; the type the
+/// enemy script host reads, `kh2_enemy_host::skel::Rig`).
+pub use kh2_enemy_host::skel::Rig;
 
 /// One playing motion (kh2-rs `skel::Animator`).
 pub struct Anim {
