@@ -17,6 +17,7 @@ pub mod friend;
 pub mod limit;
 pub mod save;
 pub mod sora;
+pub mod summon;
 pub mod spell;
 
 /// kh2-rs `kh2-player/src/controller_rules.rs` (stick through the camera view, walk/run split,

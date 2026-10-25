@@ -82,7 +82,7 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
     let max = |r: &mut Rng, cap: usize| if r.chance(3) { cap as u32 } else { r.below(cap as u64 + 1) as u32 };
     let kinds = ["M_EX020", "M_EX010", "M_EX990", "", "P_EX100", "nonsense"];
     unsafe {
-        let arm = r.below(60);
+        let arm = r.below(62);
         if std::env::var_os("KH2_FUZZ_TRACE").is_some() {
             eprintln!("arm {arm} handle {h}");
         }
@@ -280,6 +280,19 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 kh2_limit_state(h, if r.chance(5) { std::ptr::null_mut() } else { &mut s });
                 let mut e = Kh2LimitEvent::default();
                 kh2_poll_limit_event(h, if r.chance(5) { std::ptr::null_mut() } else { &mut e });
+            }
+            52 => {
+                let items = [383u16, 159, 25, 160, r.next() as u16];
+                kh2_summon_set_owned(h, if r.chance(4) { std::ptr::null() } else { items.as_ptr() }, r.below(6) as u32);
+                let mut c = [0u16; 8];
+                let mut st = [0i32; 8];
+                kh2_summon_status(h, if r.chance(4) { std::ptr::null_mut() } else { c.as_mut_ptr() }, st.as_mut_ptr(), max(r, 8));
+                kh2_summon(h, if r.chance(2) { [447, 89, 88, 306, 0x13c][r.below(5) as usize] } else { r.int() });
+                let mut s = Kh2SummonState::default();
+                kh2_summon_state(h, if r.chance(5) { std::ptr::null_mut() } else { &mut s });
+                kh2_summon_bones(h, r.int(), fp(r, b), max(r, BUF / 16));
+                let mut e = Kh2SummonEvent::default();
+                kh2_poll_summon_event(h, if r.chance(5) { std::ptr::null_mut() } else { &mut e });
             }
             44 => {
                 kh2_give_bonus(h, if r.chance(2) { r.below(40) as i32 } else { r.int() });

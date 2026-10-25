@@ -176,6 +176,18 @@ public static class Kh2
 
     [DllImport(Lib)] public static extern int kh2_set_weapon_set(int handle, int set);
     [DllImport(Lib)] public static extern int kh2_give_bonus(int handle, int id);
+
+    public const int SummonDismiss = 0x13c;
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SummonState { public int state, index, arriving; public float timer, timerTotal; public int segments, level, exp, obj; public float posX, posY, posZ, yaw; public int motionSlot, companionsAway; }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SummonEvent { public int kind, value; public float timer; [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)] public byte[] text; }
+    [DllImport(Lib)] public static extern int kh2_summon_set_owned(int handle, ushort[] items, uint count);
+    [DllImport(Lib)] public static extern int kh2_summon_status(int handle, [Out] ushort[] cmds, [Out] int[] status, uint max);
+    [DllImport(Lib)] public static extern int kh2_summon(int handle, int cmd);
+    [DllImport(Lib)] public static extern int kh2_summon_state(int handle, out SummonState state);
+    [DllImport(Lib)] public static extern int kh2_summon_bones(int handle, int space, [Out] float[] outMatrices, uint maxBones);
+    [DllImport(Lib)] public static extern int kh2_poll_summon_event(int handle, out SummonEvent ev);
     [DllImport(Lib)] public static extern int kh2_form_abilities(int handle, int form, [Out] ushort[] outIds, uint max);
     [DllImport(Lib)] public static extern int kh2_granted_abilities(int handle, [Out] ushort[] outIds, uint max);
     [DllImport(Lib)] public static extern int kh2_state_save(int handle, [Out] byte[] outBytes, uint cap);

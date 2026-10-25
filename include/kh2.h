@@ -357,6 +357,43 @@ KH2_API int32_t kh2_limit_set_world(int32_t handle, int32_t world);
 KH2_API int32_t kh2_limit_state(int32_t handle, kh2_limit_state *out);
 KH2_API int32_t kh2_poll_limit_event(int32_t handle, kh2_limit_event *out);
 
+/* ---- Summons (kh2-rs summon.rs flow + drive_rules: Stitch, Genie, Chicken Little, Peter Pan)
+ * The host says which charms are owned; kh2_summon spends the drive points, Donald and Goofy go
+ * away, after the arrival wait the summon object appears at Sora's side with its own script
+ * ("appear_skip"), the summon timer (gauge mode 3) drains with Summon Boost and feeds the summon
+ * level; at 0 or on Dismiss its script plays "leave", then the companions come back. Ticked by
+ * kh2_party_tick. Not ported: the summons' class AI (Stitch's moves and blast, Genie's records ...),
+ * the arrival event, summon limits, Genie's Drive!. ---- */
+#define KH2_SUMMON_DISMISS 0x13c
+typedef struct kh2_summon_state {
+    int32_t state;        /* 0 none, 1 arrival event, 2 out, 3 leaving */
+    int32_t index;        /* 1-based sumn row */
+    int32_t arriving;
+    float timer, timer_total;
+    int32_t segments, level, exp;
+    int32_t object;       /* 1 when the object is out */
+    float pos[3];
+    float yaw;
+    int32_t motion_slot;
+    int32_t companions_away;
+} kh2_summon_state;
+typedef struct kh2_summon_event {
+    int32_t kind;         /* 1 started (value = command), 2 arrived (value = segments, timer, text = model),
+                             3 script mode (text), 4 level up (value), 5 leaving (value = dismissed), 6 gone */
+    int32_t value;
+    float timer;
+    char text[32];
+} kh2_summon_event;
+KH2_API int32_t kh2_summon_set_owned(int32_t handle, const uint16_t *items, uint32_t count);
+/* Writes up to max command ids and status codes (0 available, 1 not a summon, 2 charm not owned,
+ * 3 busy, 4 party missing, 5 in a form, 6 not enough drive points, 7 airborne); returns the count. */
+KH2_API int32_t kh2_summon_status(int32_t handle, uint16_t *cmds, int32_t *status, uint32_t max);
+/* 0, or minus the status code; KH2_SUMMON_DISMISS dismisses. */
+KH2_API int32_t kh2_summon(int32_t handle, int32_t cmd);
+KH2_API int32_t kh2_summon_state(int32_t handle, kh2_summon_state *out);
+KH2_API int32_t kh2_summon_bones(int32_t handle, int32_t space, float *out, uint32_t max_bones);
+KH2_API int32_t kh2_poll_summon_event(int32_t handle, kh2_summon_event *out);
+
 /* ---- Enemies (their own BDX scripts through kh2-rs's interpreter and script host) ---- */
 /* Spawns an enemy by model ("M_EX020" Shadow, "M_EX010" Soldier, "M_EX990" Dusk, ...) fighting
  * Sora `handle`; returns its id (> 0) or -1. */

@@ -89,6 +89,8 @@ struct Lib {
     party_rng: std::collections::HashMap<i32, crate::party::PartyRng>,
     limit_data: Option<Arc<crate::limit::LimitData>>,
     auto_shown: std::collections::HashMap<i32, u16>,
+    summon_data: Option<Arc<crate::summon::SummonData>>,
+    summons: std::collections::HashMap<i32, crate::summon::Summons>,
     limits: std::collections::HashMap<i32, crate::limit::Limits>,
     enemy_data: Option<Arc<crate::enemy::EnemyData>>,
     enemies: std::collections::HashMap<i32, crate::enemy::Enemies>,
@@ -175,7 +177,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
     0
 }
 
@@ -1142,7 +1144,8 @@ pub extern "C" fn kh2_party_add(handle: i32, member: i32) -> i32 {
 pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
     with(-1, |l| {
         let (Some(p), Some(s)) = (l.party.clone(), usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut)) else { return -1 };
-        if let Some(list) = l.followers.get_mut(&handle) {
+        let away = l.summons.get(&handle).is_some_and(|m| m.companions_away);
+        if let Some(list) = l.followers.get_mut(&handle).filter(|_| !away) {
             // With spawned enemies the members fight (the battle part of `party.rs`).
             let mut en = l.enemies.get_mut(&handle);
             let before = en.as_ref().map_or(0, |e| e.events.len());
@@ -1158,6 +1161,11 @@ pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
             crate::party::raise_levels(p, list, s.exp);
         }
         let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return -1 };
+        // The summon (kh2-rs `summon::tick`): its arrival, timer and object.
+        if let (Some(sm), Some(d)) = (l.summons.get_mut(&handle), l.summon_data.clone()) {
+            let battle = l.enemies.get(&handle).is_some_and(|e| e.list.iter().any(|x| x.alive()));
+            sm.tick(&d, &mut l.disc, s, &l.world, battle);
+        }
         // The limit task's countdown and script (after the party).
         if let Some(lim) = l.limits.get_mut(&handle) {
             lim.tick(s);
@@ -1908,5 +1916,216 @@ pub unsafe extern "C" fn kh2_form_abilities(handle: i32, form: i32, out: *mut u1
             }
         }
         v.len() as i32
+    })
+}
+
+fn summon_ready(l: &mut Lib) -> Result<Arc<crate::summon::SummonData>, i32> {
+    if l.summon_data.is_none() {
+        match l.disc.summons() {
+            Ok(d) => l.summon_data = Some(Arc::new(d)),
+            Err(e) => return Err(set_error(e)),
+        }
+    }
+    Ok(l.summon_data.clone().unwrap())
+}
+
+fn summon_code(r: crate::summon::SummonRefusal) -> i32 {
+    use crate::summon::SummonRefusal as R;
+    match r {
+        R::NotASummon => 1,
+        R::CharmNotOwned => 2,
+        R::Busy => 3,
+        R::PartyMissing => 4,
+        R::InForm => 5,
+        R::NotEnoughPoints => 6,
+        R::Airborne => 7,
+    }
+}
+
+/// The charms the player owns (`sumn` row items): the summons the menu lists.
+///
+/// # Safety
+/// `items` points to `count` u16 values (or `count` is 0).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_summon_set_owned(handle: i32, items: *const u16, count: u32) -> i32 {
+    let v: Vec<u16> = if items.is_null() || count == 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(items, count.min(16) as usize) }.to_vec() };
+    with(-1, |l| {
+        if let Err(e) = summon_ready(l) {
+            return e;
+        }
+        l.summons.entry(handle).or_default().owned = v;
+        0
+    })
+}
+
+fn party_ok(l: &Lib, handle: i32) -> bool {
+    l.followers.get(&handle).is_some_and(|f| f.len() >= 2 && f.iter().all(|m| !m.ko))
+}
+
+/// The summon commands and their status (0 available, 1 not a summon, 2 charm not owned, 3 busy,
+/// 4 Donald and Goofy not both in the party and standing, 5 in a form, 6 not enough drive points,
+/// 7 airborne); returns the count.
+///
+/// # Safety
+/// `cmds` and `status` are NULL or point to `max` values.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_summon_status(handle: i32, cmds: *mut u16, status: *mut i32, max: u32) -> i32 {
+    with(-1, |l| {
+        let d = match summon_ready(l) {
+            Ok(d) => d,
+            Err(e) => return e,
+        };
+        let ok = party_ok(l, handle);
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref) else { return set_error(format!("no Sora with handle {handle}")) };
+        let st = l.summons.entry(handle).or_default().status(&d, s, ok);
+        for (k, (c, r)) in st.iter().take(max as usize).enumerate() {
+            unsafe {
+                if !cmds.is_null() {
+                    *cmds.add(k) = *c;
+                }
+                if !status.is_null() {
+                    *status.add(k) = r.map_or_else(summon_code, |_| 0);
+                }
+            }
+        }
+        st.len() as i32
+    })
+}
+
+/// Summon command `cmd` (Execute 72): 0, or minus the status code. `KH2_SUMMON_DISMISS` (0x13c)
+/// dismisses the summon that is out.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_summon(handle: i32, cmd: i32) -> i32 {
+    with(-1, |l| {
+        let d = match summon_ready(l) {
+            Ok(d) => d,
+            Err(e) => return e,
+        };
+        let ok = party_ok(l, handle);
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return set_error(format!("no Sora with handle {handle}")) };
+        let sm = l.summons.entry(handle).or_default();
+        if cmd == i32::from(crate::summon::DISMISS) {
+            return if sm.dismiss() { 0 } else { set_error("no summon to dismiss") };
+        }
+        let Ok(c) = u16::try_from(cmd) else { return -1 };
+        match sm.summon(&d, s, ok, c) {
+            Ok(()) => 0,
+            Err(r) => {
+                set_error(format!("summon refused: {r:?}"));
+                -summon_code(r)
+            }
+        }
+    })
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2SummonState {
+    /// 0 none, 1 arrival event, 2 out, 3 leaving.
+    pub state: i32,
+    /// 1-based `sumn` index, 0 none.
+    pub index: i32,
+    /// 1 while the arrival wait runs.
+    pub arriving: i32,
+    pub timer: f32,
+    pub timer_total: f32,
+    pub segments: i32,
+    pub level: i32,
+    pub exp: i32,
+    /// The object: 1 when out, its place, yaw and motion slot.
+    pub object: i32,
+    pub pos: [f32; 3],
+    pub yaw: f32,
+    pub motion_slot: i32,
+    /// Donald and Goofy are away while the summon runs.
+    pub companions_away: i32,
+}
+
+/// # Safety
+/// `out` points to a writable `kh2_summon_state`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_summon_state(handle: i32, out: *mut Kh2SummonState) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let v = l.summons.get(&handle).map_or(Kh2SummonState::default(), |m| Kh2SummonState {
+            state: m.state.into(),
+            index: m.index.into(),
+            arriving: m.arrival.is_some() as i32,
+            timer: m.timer.left,
+            timer_total: m.timer.total,
+            segments: m.segments.into(),
+            level: m.exp.level.into(),
+            exp: m.exp.exp,
+            object: m.object.is_some() as i32,
+            pos: m.object.as_ref().map_or([0.0; 3], |o| o.pos.to_array()),
+            yaw: m.object.as_ref().map_or(0.0, |o| o.yaw),
+            motion_slot: m.object.as_ref().and_then(|o| o.body.slot).map_or(-1, |x| x as i32),
+            companions_away: m.companions_away as i32,
+        });
+        unsafe { *out = v };
+        0
+    })
+}
+
+/// The summon object's drawn pose (space 0 model, 1 world), 16 floats per bone.
+///
+/// # Safety
+/// `out` points to `16 * max` floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_summon_bones(handle: i32, space: i32, out: *mut f32, max: u32) -> i32 {
+    with(-1, |l| {
+        let Some(o) = l.summons.get(&handle).and_then(|m| m.object.as_ref()) else { return -1 };
+        let root = if space == 1 { o.matrix() } else { Mat4::IDENTITY };
+        unsafe { write_mats(o.body.pose.iter().map(|m| root * *m), out, max) }
+    })
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2SummonEvent {
+    /// 1 started, 2 arrived, 3 script mode, 4 level up, 5 leaving, 6 gone.
+    pub kind: i32,
+    /// Started: command; arrived: segments; level up: the level; leaving: 1 dismissed.
+    pub value: i32,
+    /// Arrived: the timer.
+    pub timer: f32,
+    /// Arrived: the model; mode: its name.
+    pub text: [u8; 32],
+}
+
+/// Takes the oldest summon event: 1 written, 0 none left.
+///
+/// # Safety
+/// `out` points to a writable `kh2_summon_event`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_poll_summon_event(handle: i32, out: *mut Kh2SummonEvent) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let Some(m) = l.summons.get_mut(&handle) else { return 0 };
+        if m.events.is_empty() {
+            return 0;
+        }
+        let text = |s: &str| {
+            let mut t = [0u8; 32];
+            for (k, b) in s.bytes().take(31).enumerate() {
+                t[k] = b;
+            }
+            t
+        };
+        use crate::summon::SummonEvent as E;
+        let v = match m.events.remove(0) {
+            E::Started { command, .. } => Kh2SummonEvent { kind: 1, value: command.into(), ..Default::default() },
+            E::Arrived { model, timer, segments } => Kh2SummonEvent { kind: 2, value: segments.into(), timer, text: text(&model) },
+            E::Mode(md) => Kh2SummonEvent { kind: 3, text: text(&md), ..Default::default() },
+            E::LevelUp(lv) => Kh2SummonEvent { kind: 4, value: lv.into(), ..Default::default() },
+            E::Leaving { dismissed } => Kh2SummonEvent { kind: 5, value: dismissed as i32, ..Default::default() },
+            E::Gone => Kh2SummonEvent { kind: 6, ..Default::default() },
+        };
+        unsafe { *out = v };
+        1
     })
 }

@@ -1,7 +1,7 @@
 # TODO (round 6)
 
 1. [x] Member scripts: kh2-rs friend_host.rs compiled in place, friend_ai transcribed (friend.rs): Donald's Cure heals Sora, Specials (Goofy's blade ...) run with their attack objects hitting enemies, no unserved host calls in the test (`member_scripts_cast_cure_and_specials`); limit motions (LIMI sets) play on Sora and the members (Goofy's limits: 299 ticks held), Auto Limit offers a partner's limit in the reaction slot and accept starts it (`limit_motions_play_on_the_bodies_and_auto_limit_offers`). Not ported: the limits' own damage (Comet's / the participants' attack objects come from objects of the LIMI set the library does not create), the scripts' effects (reported), Auto Limit needs the limit tables loaded (any kh2_limit_* call).
-2. [ ] Summons.
+2. [x] Summons (summon.rs): command status (charms owned by the host, party, form, drive points, airborne), the start (motion 0x8a, cost, companions away), the arrival (summon timer of drive_rules, the sumn Entity1 object with its own script in appear_skip through the members' host), the drain and summon level, Dismiss / timer end (leave), events and bones in the C API (disc test `summons_arrive_run_their_scripts_and_leave`: all four arrive, run, leave; no unserved host calls). Gaps: the summon classes' AI (Stitch / Genie / Chicken Little / Peter Pan move and attack in their class code, kh2-rs stitch / genie / scripted modules), the arrival event, summon limits, Genie's Drive!, the companions' fades.
 3. [ ] Enemy area set-up, area spawns, enemies hitting members.
 4. [ ] Enemy kinds on demand; heap again; fuzz extended.
 5. [ ] Struggle / boss fights.

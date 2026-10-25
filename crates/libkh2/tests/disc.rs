@@ -1316,3 +1316,48 @@ fn limit_motions_play_on_the_bodies_and_auto_limit_offers() {
     eprintln!("most ticks a body was held: {best}");
     assert!(best > 0, "a limit's motions play on Sora and a member");
 }
+
+#[test]
+fn summons_arrive_run_their_scripts_and_leave() {
+    use kh2::summon::{SummonEvent, SummonRefusal, Summons};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = d.summons().expect("summon tables");
+    let w = floor();
+    for r in &data.rows {
+        eprintln!("sumn: command {} item {} entity1 {} limit {}", r.command, r.item, r.entity1, r.limit_command);
+    }
+    for (k, row) in data.rows.iter().enumerate().take(4) {
+        let mut s = standing(&game, &w);
+        s.drive.points = kh2_game_core::drive_rules::Points { whole: 9, fraction: 0, max: 9 };
+        let mut sm = Summons::default();
+        assert_eq!(sm.summon(&data, &mut s, true, row.command), Err(SummonRefusal::CharmNotOwned));
+        sm.owned = data.rows.iter().map(|r| r.item).collect();
+        assert_eq!(sm.summon(&data, &mut s, false, row.command), Err(SummonRefusal::PartyMissing));
+        sm.summon(&data, &mut s, true, row.command).expect("summoned");
+        let (mut arrived_at, mut modes, mut dismissed, mut gone_at) = (None, Vec::new(), false, None);
+        for t in 0..4000 {
+            s.tick(&w, &Input::default());
+            sm.tick(&data, &mut d, &mut s, &w, true);
+            for e in sm.events.drain(..) {
+                match e {
+                    SummonEvent::Arrived { .. } => arrived_at = Some(t),
+                    SummonEvent::Mode(m) => modes.push(m),
+                    SummonEvent::Gone => gone_at = Some(t),
+                    _ => {}
+                }
+            }
+            if arrived_at.is_some_and(|a| t == a + 600) {
+                dismissed = sm.dismiss();
+            }
+            if gone_at.is_some() {
+                break;
+            }
+        }
+        let unserved: Vec<_> = sm.object.as_ref().map(|o| o.trace.missing()).unwrap_or_default();
+        eprintln!("summon {k} (command {}): arrived at {arrived_at:?}, modes {modes:?}, dismissed {dismissed}, gone at {gone_at:?}, points left {}, unserved {unserved:?}", row.command, s.drive.points.whole);
+        assert!(arrived_at.is_some(), "the object appears");
+        assert!(!modes.is_empty(), "its script runs");
+        assert!(gone_at.is_some(), "it leaves and the summon ends");
+    }
+}

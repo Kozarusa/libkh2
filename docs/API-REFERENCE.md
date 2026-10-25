@@ -22,6 +22,13 @@ Generated from `include/kh2.h` by `scripts/gen_api_ref.py`; do not edit by hand.
  * requests come back as limit events; the countdown and script run in kh2_party_tick, enemy hits during
  * the limit count. Not ported: the participants' own threads (the members' scripts play the attacks),
  * summon limits, the HUD; the limit's motions are reported, not played.](#limits-kh2-rs-limitrs-rules--limitscriptrs-soras-limit-commands-with-donald-and-goofy--the-party-is-sora-plus-the-members-who-follow-and-stand-kh2limitstart-spends-the-mp-starts-the--countdown-the-commands-time-times-combination-boost-and-the-limit-files-own-script-whose--requests-come-back-as-limit-events-the-countdown-and-script-run-in-kh2partytick-enemy-hits-during--the-limit-count-not-ported-the-participants-own-threads-the-members-scripts-play-the-attacks--summon-limits-the-hud-the-limits-motions-are-reported-not-played)
+- [Summons (kh2-rs summon.rs flow + drive_rules: Stitch, Genie, Chicken Little, Peter Pan)
+ * The host says which charms are owned; kh2_summon spends the drive points, Donald and Goofy go
+ * away, after the arrival wait the summon object appears at Sora's side with its own script
+ * ("appear_skip"), the summon timer (gauge mode 3) drains with Summon Boost and feeds the summon
+ * level; at 0 or on Dismiss its script plays "leave", then the companions come back. Ticked by
+ * kh2_party_tick. Not ported: the summons' class AI (Stitch's moves and blast, Genie's records ...),
+ * the arrival event, summon limits, Genie's Drive!.](#summons-kh2-rs-summonrs-flow--driverules-stitch-genie-chicken-little-peter-pan--the-host-says-which-charms-are-owned-kh2summon-spends-the-drive-points-donald-and-goofy-go--away-after-the-arrival-wait-the-summon-object-appears-at-soras-side-with-its-own-script--appearskip-the-summon-timer-gauge-mode-3-drains-with-summon-boost-and-feeds-the-summon--level-at-0-or-on-dismiss-its-script-plays-leave-then-the-companions-come-back-ticked-by--kh2partytick-not-ported-the-summons-class-ai-stitchs-moves-and-blast-genies-records---the-arrival-event-summon-limits-genies-drive)
 - [Enemies](#enemies)
 - [Field camera helper](#field-camera-helper)
 
@@ -794,6 +801,85 @@ int32_t kh2_limit_state(int32_t handle, kh2_limit_state *out);
 
 ```c
 int32_t kh2_poll_limit_event(int32_t handle, kh2_limit_event *out);
+```
+
+## Summons (kh2-rs summon.rs flow + drive_rules: Stitch, Genie, Chicken Little, Peter Pan)
+ * The host says which charms are owned; kh2_summon spends the drive points, Donald and Goofy go
+ * away, after the arrival wait the summon object appears at Sora's side with its own script
+ * ("appear_skip"), the summon timer (gauge mode 3) drains with Summon Boost and feeds the summon
+ * level; at 0 or on Dismiss its script plays "leave", then the companions come back. Ticked by
+ * kh2_party_tick. Not ported: the summons' class AI (Stitch's moves and blast, Genie's records ...),
+ * the arrival event, summon limits, Genie's Drive!.
+
+- `KH2_SUMMON_DISMISS` = `0x13c`
+
+### `kh2_summon_state`
+
+```c
+typedef struct kh2_summon_state {
+    int32_t state;        /* 0 none, 1 arrival event, 2 out, 3 leaving */
+    int32_t index;        /* 1-based sumn row */
+    int32_t arriving;
+    float timer, timer_total;
+    int32_t segments, level, exp;
+    int32_t object;       /* 1 when the object is out */
+    float pos[3];
+    float yaw;
+    int32_t motion_slot;
+    int32_t companions_away;
+} kh2_summon_state;
+```
+
+### `kh2_summon_event`
+
+```c
+typedef struct kh2_summon_event {
+    int32_t kind;         /* 1 started (value = command), 2 arrived (value = segments, timer, text = model),
+                             3 script mode (text), 4 level up (value), 5 leaving (value = dismissed), 6 gone */
+    int32_t value;
+    float timer;
+    char text[32];
+} kh2_summon_event;
+```
+
+### `kh2_summon_set_owned`
+
+```c
+int32_t kh2_summon_set_owned(int32_t handle, const uint16_t *items, uint32_t count);
+```
+
+### `kh2_summon_status`
+
+```c
+int32_t kh2_summon_status(int32_t handle, uint16_t *cmds, int32_t *status, uint32_t max);
+```
+
+Writes up to max command ids and status codes (0 available, 1 not a summon, 2 charm not owned, 3 busy, 4 party missing, 5 in a form, 6 not enough drive points, 7 airborne); returns the count.
+
+### `kh2_summon`
+
+```c
+int32_t kh2_summon(int32_t handle, int32_t cmd);
+```
+
+0, or minus the status code; KH2_SUMMON_DISMISS dismisses.
+
+### `kh2_summon_state`
+
+```c
+int32_t kh2_summon_state(int32_t handle, kh2_summon_state *out);
+```
+
+### `kh2_summon_bones`
+
+```c
+int32_t kh2_summon_bones(int32_t handle, int32_t space, float *out, uint32_t max_bones);
+```
+
+### `kh2_poll_summon_event`
+
+```c
+int32_t kh2_poll_summon_event(int32_t handle, kh2_summon_event *out);
 ```
 
 ## Enemies
