@@ -169,22 +169,56 @@ fn area_groups() {
     };
     let e = read("kh2-enemy/src/enemy.rs");
     let out = span(&e, "/// One enemy of an area's spawn group", "pub struct BattleGroups");
-    let s = read("kh2-game-core/src/shared/struggle.rs");
-    let mut st = String::new();
-    for (a, b) in [("/// `00objentry` (ObjectType, SubType) of the Struggle orb pool", "pub const ORB_POOL_TYPE"), ("/// A btl program's mission command", "pub fn mission_command"), ("/// An area trigger as the mission end looks it up", "pub struct Trig")] {
-        st.push_str(&span(&s, a, b));
-        st.push(char::from(10u8));
-    }
-    let i = s.find("impl Trig {").expect("impl Trig");
-    let end = close(s.as_bytes(), i + "impl Trig {".len());
-    st.push_str(&s[i..end]);
     let dir = std::env::var("OUT_DIR").unwrap();
     std::fs::write(Path::new(&dir).join("area_groups.rs"), out).unwrap();
-    std::fs::write(Path::new(&dir).join("struggle_bits.rs"), st).unwrap();
+}
+
+/// kh2-rs's Struggle mission manager without its Bevy systems: `kh2-event/src/struggle.rs`'s rules
+/// (event kinds, orbs, the orb tick, the game-over kind, `build`, the mission script's host
+/// `MissionHost`, `knock_out`, `note_event`) and `kh2-player/src/prize.rs`'s prize rules (launch,
+/// flight, rest, reach, draw-in, the floor sweep) that the orbs run on. `MissionHost` is made public.
+fn struggle() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates");
+    let read = |f: &str| {
+        let p = base.join(f);
+        println!("cargo:rerun-if-changed={}", p.display());
+        std::fs::read_to_string(&p).unwrap_or_else(|_| panic!("{f}"))
+    };
+    let s = read("kh2-event/src/struggle.rs");
+    let mut out = String::new();
+    for (a, b) in [
+        ("/// The orb kinds of the pool (table 0x37c238", "const ORB_KINDS"),
+        ("/// The event kind rows", "pub fn event_kinds"),
+        ("/// Orbs a reaction knocks out of the victim's counter", "pub fn orb_tick"),
+        ("/// `FUN_001b9ce0`: the game over after", "pub fn build"),
+        ("/// The integer arguments of a call", "fn ints"),
+        ("struct MissionHost<'a> {", "struct MissionHost"),
+        ("impl Host for MissionHost<'_> {", "impl Host for MissionHost"),
+        ("/// Orbs a reaction knocks out (`FUN_001caeb0`) into the pool", "fn knock_out"),
+        ("/// The log lines of the events the Struggle cares about.", "fn note_event"),
+    ] {
+        out.push_str(&span(&s, a, b));
+        out.push_str("\n\n");
+    }
+    let out = out
+        .replace("\r\n", "\n")
+        .replacen("struct MissionHost<'a> {\n    a: &'a mut Active,", "pub struct MissionHost<'a> {\n    pub a: &'a mut Active,", 1)
+        .replacen("    unknown: &'a mut HashSet<(u16, u16)>,", "    pub unknown: &'a mut HashSet<(u16, u16)>,", 1)
+        .replacen("fn knock_out(", "pub fn knock_out(", 1)
+        .replacen("fn note_event(", "pub fn note_event(", 1);
+    assert!(out.contains("pub struct MissionHost") && out.contains("pub a: &'a mut Active"), "MissionHost made public");
+    let p = read("kh2-player/src/prize.rs");
+    let mut pr = span(&p, "/// Frames between floor checks at rest", "pub fn tick");
+    pr.push_str("\n\n");
+    pr.push_str(&span(&p, "/// App (cm, Y up) and game space (Y and Z negated) are each other's mirror.", "pub fn sweep"));
+    let dir = std::env::var("OUT_DIR").unwrap();
+    std::fs::write(Path::new(&dir).join("struggle.rs"), out).unwrap();
+    std::fs::write(Path::new(&dir).join("prize.rs"), pr).unwrap();
 }
 
 fn main() {
     area_groups();
+    struggle();
     summon_rules();
     friend_bits();
     player_reaction();

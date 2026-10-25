@@ -50,9 +50,15 @@ Summons
 Enemies and reaction commands
 - An area's battle program runs on request (`kh2_area_run`: groups, kind-2 waves, kind-6 groups,
   counters, signals); the program is the host's choice (no story), the defeated are not remembered
-  across areas, the field objects that raise signals are the host's (`kh2_area_raise_event`); the
-  Struggle's mission manager is the host's (`docs/STRUGGLE.md`).
-  M_EX850 and M_EX870 wait for such a set-up and stay idle (see `ENEMY-KINDS.md`).
+  across areas, the field objects that raise signals are the host's (`kh2_area_raise_event`).
+  M_EX850 waits for such a set-up and stays idle (see `ENEMY-KINDS.md`).
+- The mission manager (kh2-rs struggle.rs, `kh2_mission_state`) starts with an area run whose
+  program has a mission command. Approximations: an object's centre is its feet + 80 cm (no body
+  shape points); only the hits taken inside `kh2_enemies_tick` knock orbs out (a member's or a
+  summon's hits in their own tick calls are not counted); the result menu (record 0x1a), the game
+  over, the layout events' pictures and the bit-3 collect latch are reported, not run; the sounds
+  are handed over by number. The opponents' bat attacks never hit Sora: kh2-rs has no Struggle
+  weapon objects, so the opponents only lose orbs (measured: `the_struggle_mission_runs_its_clock_orbs_and_result`).
 - No camera: every enemy counts as on screen. No clashes. Prize drops are reported as counts.
 - A defeat by a party member pays no experience (the event carries the values).
 - Reaction commands: talk, save, shop and limit rows through the reaction slot are refused;

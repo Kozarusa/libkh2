@@ -369,6 +369,9 @@ pub struct Sora {
     pub loadout: Option<kh2_game_core::abilities::Abilities>,
     /// Leaf Bracer's untouchable ticks (kh2-rs `Sora::leaf_bracer`).
     pub leaf_bracer: f32,
+    /// The reactions (`victim_outcome`'s effective reaction) the hits of this tick gave Sora; the
+    /// Struggle's orbs read them (kh2-rs `sora_orb_loss`). Cleared at the start of `tick`.
+    pub reactions_taken: Vec<u8>,
     /// An item use: (item id, the wait after frame trigger 6 when started).
     pub item_use: Option<(u16, Option<f32>)>,
     /// The keyblade item a form's second hand takes (Kingdom Key by default).
@@ -463,6 +466,7 @@ impl Sora {
             hand1_item: 41,
             loadout: None,
             leaf_bracer: 0.0,
+            reactions_taken: Vec::new(),
             item_use: None,
             pose: true,
             spawn: at,
@@ -676,6 +680,7 @@ impl Sora {
     }
 
     pub fn tick(&mut self, world: &World, input: &Input) {
+        self.reactions_taken.clear();
         self.consume_reaction();
         let attack = input.attack && !self.prev.attack;
         let jump = input.jump && !self.prev.jump;
@@ -1735,6 +1740,7 @@ impl Sora {
         self.hp = (self.hp - dmg).max(0);
         let ctx = VictimCtx { status: 0, grounded: self.motor.grounded, attacker_flag_4000: false, from_front, hit_part_plain: true };
         let out = rules::victim_outcome(&rules::HitRow::from_atkp(atk), useless, &ctx, &reaction.patn, &reaction.defaults, &reaction.consts);
+        self.reactions_taken.push(out.effective);
         let d = &reaction.defaults;
         let action = match out.action {
             a @ VictimAction::Blow { .. } => a,

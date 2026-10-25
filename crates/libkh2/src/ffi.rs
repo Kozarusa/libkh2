@@ -1301,6 +1301,8 @@ pub extern "C" fn kh2_enemies_tick(handle: i32) -> i32 {
             en.tick(s, &l.world, fall);
             // The area's own groups and waves (kh2-rs `spawn_waves`).
             if let Some((run, raised)) = l.area_runs.get_mut(&handle) {
+                // The mission manager a group started (kh2-rs struggle.rs: orbs, clock, script, end).
+                run.tick_mission(s, en, &l.world);
                 let r = std::mem::take(raised);
                 run.tick(en, &l.world, s.motor.pos, &r);
             }
@@ -2379,5 +2381,128 @@ pub extern "C" fn kh2_area_end(handle: i32) -> i32 {
     with(-1, |l| {
         l.area_runs.remove(&handle);
         0
+    })
+}
+
+/// The mission manager of Sora `handle`'s area run (kh2-rs `struggle::Active`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2Mission {
+    /// 1 while a manager exists (started by the area run's program, not ended).
+    pub running: i32,
+    /// Host 4.29's counters: slot 0 the player's orbs, slot 1 the opponent's.
+    pub counters: [i32; 3],
+    /// The clock's time shown (frames, 60 a second) and 1 when it counts down.
+    pub clock_frames: i32,
+    pub clock_down: i32,
+    /// The manager's update state (0 wait to show, 1 running, 2 to 4 the end).
+    pub state: i32,
+    /// 1 while a layout event plays (the groups wait, host 1.34).
+    pub event_playing: i32,
+    /// 1 when the mission stopped (`FUN_001b9940`).
+    pub stopped: i32,
+    /// How the match ended: 0 not yet, 1 a full counter on the player's side, 2 on the opponent's,
+    /// 3 the clock, 4 Sora's knock-out.
+    pub end_cause: i32,
+    /// The result the script sent: 0 none, 1 won (global event 159), 2 lost (160).
+    pub result: i32,
+    /// The end's last step: 1 the manager ended, 1 in `game_over` with the game-over path, 1 in
+    /// `menu` when it asked for the result menu (record 0x1a) and stays.
+    pub ended: i32,
+    pub game_over: i32,
+    pub menu: i32,
+    /// Orbs in the pool.
+    pub orbs: u32,
+    /// The mission id (opcode 0x15).
+    pub id: u32,
+}
+
+/// The mission manager of Sora `handle`'s area run into `out`: 1 when one exists, 0 when none.
+///
+/// # Safety
+/// `out` is NULL or points to a `Kh2Mission`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_mission_state(handle: i32, out: *mut Kh2Mission) -> i32 {
+    with(-1, |l| {
+        let Some(m) = l.area_runs.get(&handle).and_then(|(r, _)| r.mission.as_ref()) else { return 0 };
+        let a = &m.a;
+        let st = Kh2Mission {
+            running: i32::from(!m.ended),
+            counters: m.counters(),
+            clock_frames: a.clock.shown,
+            clock_down: i32::from(a.clock.down),
+            state: a.state.into(),
+            event_playing: i32::from(a.play.is_some()),
+            stopped: i32::from(a.stopped),
+            end_cause: match a.end_cause {
+                Some("win") => 1,
+                Some("lose") => 2,
+                Some("time") => 3,
+                Some("knock-out") => 4,
+                _ => 0,
+            },
+            result: match m.outcome() {
+                Some(crate::struggle::Outcome::Won) => 1,
+                Some(crate::struggle::Outcome::Lost) => 2,
+                None => 0,
+            },
+            ended: m.ended.into(),
+            game_over: m.game_over.into(),
+            menu: m.menu.into(),
+            orbs: a.orbs.len() as u32,
+            id: a.id,
+        };
+        if !out.is_null() {
+            unsafe { *out = st };
+        }
+        1
+    })
+}
+
+/// The orbs of the mission's pool: up to `max` of (x, y, z cm, kind) as 4 floats each into `out`;
+/// returns the count written (kinds 0 the player's, 2 the opponent's).
+///
+/// # Safety
+/// `out` is NULL or points to `4 * max` floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_mission_orbs(handle: i32, out: *mut f32, max: u32) -> i32 {
+    with(-1, |l| {
+        let Some(m) = l.area_runs.get(&handle).and_then(|(r, _)| r.mission.as_ref()) else { return 0 };
+        let orbs = m.orbs();
+        let n = orbs.len().min(max as usize);
+        if !out.is_null() {
+            for (k, (p, kind)) in orbs.iter().take(n).enumerate() {
+                unsafe {
+                    *out.add(4 * k) = p.x;
+                    *out.add(4 * k + 1) = p.y;
+                    *out.add(4 * k + 2) = p.z;
+                    *out.add(4 * k + 3) = f32::from(*kind);
+                }
+            }
+        }
+        n as i32
+    })
+}
+
+/// Takes the sounds the mission asked for: up to `max` of (sound number, has place, x, y, z) as 5
+/// floats each; returns the count written (the interface sounds have no place).
+///
+/// # Safety
+/// `out` is NULL or points to `5 * max` floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_mission_take_sounds(handle: i32, out: *mut f32, max: u32) -> i32 {
+    with(-1, |l| {
+        let Some(m) = l.area_runs.get_mut(&handle).and_then(|(r, _)| r.mission.as_mut()) else { return 0 };
+        let n = m.sounds.len().min(max as usize);
+        let taken: Vec<(u32, Option<Vec3>)> = m.sounds.drain(..n).collect();
+        if !out.is_null() {
+            for (k, (se, at)) in taken.iter().enumerate() {
+                let p = at.unwrap_or_default();
+                for (j, v) in [*se as f32, if at.is_some() { 1.0 } else { 0.0 }, p.x, p.y, p.z].into_iter().enumerate() {
+                    unsafe { *out.add(5 * k + j) = v };
+                }
+            }
+        }
+        taken.len() as i32
     })
 }

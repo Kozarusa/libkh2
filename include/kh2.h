@@ -438,6 +438,34 @@ KH2_API int32_t kh2_area_raise_event(int32_t handle, int32_t event, int32_t arg)
 /* Takes the events the groups raised: up to max (id, argument) pairs into out; returns the count. */
 KH2_API int32_t kh2_area_take_events(int32_t handle, int32_t *out, uint32_t max);
 KH2_API int32_t kh2_area_end(int32_t handle);
+
+/* The mission manager an area run's program starts (opcode 0x15; kh2-rs struggle.rs compiled from
+ * source): the mission file's counters, clock, layouts and script; every reaction a fighter takes
+ * knocks orbs out of its counter into the pool, the first fighter in reach takes one back; the
+ * script sends the result (global events 159 won / 160 lost, also in kh2_area_take_events). Ticked
+ * in kh2_enemies_tick. The Struggle matches are tt04 programs 182 (N_EX500_BTL), 183 (N_EX600_BTL) and 184 (Seifer). */
+typedef struct kh2_mission {
+    int32_t running;       /* 1 while the manager exists */
+    int32_t counters[3];   /* host 4.29: 0 the player's orbs, 1 the opponent's */
+    int32_t clock_frames;  /* the time shown, 60 a second */
+    int32_t clock_down;    /* 1: counts down */
+    int32_t state;         /* 0 wait to show, 1 running, 2..4 the end */
+    int32_t event_playing; /* a layout event plays (the groups wait) */
+    int32_t stopped;
+    int32_t end_cause;     /* 0 not yet, 1 player's counter full, 2 opponent's, 3 clock, 4 knock-out */
+    int32_t result;        /* 0 none, 1 won (159), 2 lost (160) */
+    int32_t ended;         /* the manager ended */
+    int32_t game_over;     /* it ended with the game-over path */
+    int32_t menu;          /* the last step asked for the result menu (record 0x1a) */
+    uint32_t orbs;         /* orbs in the pool */
+    uint32_t id;           /* the mission id */
+} kh2_mission;
+/* Returns 1 and fills out when a manager exists, 0 when none. */
+KH2_API int32_t kh2_mission_state(int32_t handle, kh2_mission *out);
+/* Up to max orbs as (x, y, z cm, kind) 4 floats each (kind 0 the player's, 2 the opponent's). */
+KH2_API int32_t kh2_mission_orbs(int32_t handle, float *out, uint32_t max);
+/* Takes up to max sounds as (number, has place, x, y, z) 5 floats each (the last 256 are kept). */
+KH2_API int32_t kh2_mission_take_sounds(int32_t handle, float *out, uint32_t max);
 /* Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load
  * on demand at their first spawn). Returns the number dropped. */
 KH2_API int32_t kh2_enemies_prune(int32_t handle);

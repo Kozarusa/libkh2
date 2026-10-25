@@ -5,6 +5,24 @@
 //! the `Resource` derive. This crate provides exactly those names so the files compile unchanged,
 //! without pulling Bevy into the library. Bevy 0.19 re-exports glam 0.32, the same types.
 
+#[macro_export]
+macro_rules! info {
+    ($($t:tt)*) => {
+        if false {
+            let _ = format!($($t)*);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! warn {
+    ($($t:tt)*) => {
+        if false {
+            let _ = format!($($t)*);
+        }
+    };
+}
+
 /// `bevy::math` (glam).
 pub mod math {
     pub use glam::*;
@@ -36,6 +54,10 @@ pub mod prelude {
         Opaque,
         Blend,
     }
+
+    /// `bevy::prelude::info!` / `warn!`: the arguments are checked, nothing is logged (the library
+    /// reports through its own events and errors).
+    pub use crate::{info, warn};
 
     /// `bevy::prelude::default`.
     pub fn default<T: Default>() -> T {

@@ -987,6 +987,23 @@ Takes the events the groups raised: up to max (id, argument) pairs into out; ret
 int32_t kh2_area_end(int32_t handle);
 ```
 
+### `kh2_mission_state`, `kh2_mission_orbs`, `kh2_mission_take_sounds`
+
+```c
+int32_t kh2_mission_state(int32_t handle, kh2_mission *out);
+int32_t kh2_mission_orbs(int32_t handle, float *out, uint32_t max);
+int32_t kh2_mission_take_sounds(int32_t handle, float *out, uint32_t max);
+```
+
+The mission manager that `kh2_area_run` starts when a group of the program has a mission command
+(area-script opcode 0x15; kh2-rs `struggle.rs`, compiled from source): the counters, the clock, the
+layouts, the mission script and the orb pool, ticked in `kh2_enemies_tick`. The Struggle matches
+are tt04 programs 182 (`TT04_MS00`, N_EX500_BTL), 183 (`TT04_MS01`, N_EX600_BTL) and 184 (`TT04_MS02`, Seifer). `kh2_mission_state` returns 1 and fills
+`out` while a manager exists (also after it ended, `ended` = 1), 0 otherwise. Its global events
+(0x7b a full counter, 0x4a the clock, 159 won, 160 lost ...) also come out of
+`kh2_area_take_events`. Orbs are (x, y, z cm, kind) 4 floats each; sounds (number, has place, x,
+y, z) 5 floats each.
+
 ### `kh2_enemies_prune`
 
 ```c

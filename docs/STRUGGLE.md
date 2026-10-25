@@ -18,9 +18,23 @@ with a test host keeping the orbs: each moves, blocks and takes hits under its s
 host call it makes is served. Their scripts hold a minimum HP (1) for the story battles; Seifer's
 can reach 0.
 
-What the library does not do (the Struggle's mission manager, kh2-rs `struggle.rs`): the mission's
-own layout and timer (the mission BAR and its script), the orb objects (the prize pool `PRIZE_TT`:
-the library reports drops as counts), the win / lose events (159 / 160) and the result screens. In
-the test the opponents never landed a hit on Sora: their attacks come from objects the mission set-up
-makes (the Struggle bats' hit volumes), which the library does not create. A host that wants the
-full Struggle keeps the score and the clock itself.
+## The mission manager (0.8)
+
+`kh2_area_run(sora, "tt04", 184)` runs Seifer's Struggle match the way the game sets it up: the
+group's program carries the mission command (opcode 0x15, `TT04_MS02`), so the library starts the
+mission manager from kh2-rs `struggle.rs` compiled from source (`build`, the mission script with
+`MissionHost`, `Active::flow_tick`, the counters and the clock, `knock_out`, `orb_tick` on the prize
+rules). Programs 182 (`TT04_MS00`, N_EX500_BTL) and 183 (`TT04_MS01`, N_EX600_BTL) are the other two.
+`kh2_enemies_tick` then ticks it: every reaction Sora or the opponent takes knocks 3 or 15 orbs out
+of its counter into the pool, the first fighter in reach takes each back (one up on its side), the
+start layout plays, the HUD and the clock come up, the clock or a full counter ends the match and the
+script sends 159 (won) or 160 (lost). `kh2_mission_state` reads it, `kh2_mission_orbs` places the
+orbs, `kh2_area_take_events` gives the global events.
+
+The disc test `the_struggle_mission_runs_its_clock_orbs_and_result` plays the three: Sora attacks,
+100 orbs are knocked out of the opponent, the 60 s clock runs out (end "time"), the script sends 159
+(Sora has more orbs: 144 to 166 against 0).
+
+Not done: the opponents' bat attacks still never hit Sora (kh2-rs has no Struggle weapon objects),
+the result menu (record 0x1a) and the game over are reported (`menu`, `game_over`), not run; the
+layout events' pictures are not drawn (their timing is kept). See `DEVIATIONS.md`.

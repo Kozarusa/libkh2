@@ -170,6 +170,17 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_area_raise_event(int handle, int ev, int arg);
     [DllImport(Lib)] public static extern int kh2_area_take_events(int handle, [Out] int[] outPairs, uint max);
     [DllImport(Lib)] public static extern int kh2_area_end(int handle);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Mission
+    {
+        public int running;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)] public int[] counters;
+        public int clockFrames, clockDown, state, eventPlaying, stopped, endCause, result, ended, gameOver, menu;
+        public uint orbs, id;
+    }
+    [DllImport(Lib)] public static extern int kh2_mission_state(int handle, out Mission state);
+    [DllImport(Lib)] public static extern int kh2_mission_orbs(int handle, [Out] float[] outOrbs, uint max);
+    [DllImport(Lib)] public static extern int kh2_mission_take_sounds(int handle, [Out] float[] outSounds, uint max);
     [DllImport(Lib)] public static extern int kh2_area_spawn(int handle, string area, int program, int withDisabled);
     [DllImport(Lib)] public static extern int kh2_enemy_count(int handle);
     [DllImport(Lib)] public static extern int kh2_enemy_state(int handle, int index, out EnemyState state);

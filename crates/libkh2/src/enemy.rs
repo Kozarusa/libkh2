@@ -327,6 +327,9 @@ pub struct Enemy {
     pub last_frame: f32,
     pub in_air: bool,
     pub hits: Vec<(bool, u8, i16)>,
+    /// The effective reactions of the hits this enemy took this tick (the Struggle's orbs read them,
+    /// kh2-rs `enemy_orb_loss`). Cleared at the start of `Enemies::tick`.
+    pub struck: Vec<u8>,
     /// Hits landed by this enemy's attacks: (trigger start) of the motion slot that landed them.
     pub landed: HashSet<(Option<usize>, i16)>,
     pub removed: bool,
@@ -514,6 +517,7 @@ impl Enemies {
             last_frame: 0.0,
             in_air: false,
             hits: Vec::new(),
+            struck: Vec::new(),
             landed: HashSet::new(),
             removed: false,
             spawn_kind,
@@ -531,6 +535,9 @@ impl Enemies {
     /// `receive_hits`), against Sora: his attacks hit them, theirs hit him.
     pub fn tick(&mut self, sora: &mut Sora, world: &World, fall_max: f32) {
         self.trace.tick += 1;
+        for e in &mut self.list {
+            e.struck.clear();
+        }
         self.spawn_created(world);
         self.apply_remote();
         self.offer(sora);
@@ -890,6 +897,7 @@ impl Enemies {
         let ctx = VictimCtx { status: 0, grounded: e.obj.motor.grounded, attacker_flag_4000: false, from_front, hit_part_plain: true };
         let out = rules::victim_outcome(&rules::HitRow::from_atkp(atk), useless, &ctx, &reaction.patn, &reaction.defaults, &reaction.consts);
         e.hits.push((rules::reaction_class(out.effective) >= 2, out.effective, atk.id as i16));
+        e.struck.push(out.effective);
         let d = &reaction.defaults;
         let action = match out.action {
             x @ VictimAction::Blow { .. } => x,

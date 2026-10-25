@@ -1680,3 +1680,84 @@ fn area_runs_set_up_groups_and_waves() {
     }
     assert!(any_wave, "some kind-2 group made a wave");
 }
+
+/// The Struggle (kh2-rs WP-7E): tt04's programs whose groups carry a mission command start the
+/// mission manager; its clock runs, the hits knock orbs out, the orbs are taken back, the script
+/// sends the result. Sora fights the opponent.
+#[test]
+fn the_struggle_mission_runs_its_clock_orbs_and_result() {
+    use kh2::area::AreaRun;
+    use kh2::enemy::{EnemyEvent, Enemies};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let w = World::from_coct(&d.coct("tt04").expect("collision"));
+    let b = d.area_battle("tt04", None);
+    let _ = b;
+    let mut probe = Enemies::new(data.clone());
+    let all = AreaRun::set_up(&mut d, "tt04", 0, &mut probe, &w).groups;
+    // The Struggle matches: the missions with the orb pool (TT04_MS00..02; Seifer is program 184).
+    let mut programs: Vec<u16> = all.iter().filter(|g| g.mission.is_some() && g.orb_pool).map(|g| g.program).collect();
+    programs.sort();
+    programs.dedup();
+    eprintln!("tt04 missions: {:?}", all.iter().filter_map(|g| g.mission.as_ref().map(|m| (g.program, m.1.clone(), g.orb_pool))).collect::<Vec<_>>());
+    let mut ran = 0;
+    for p in programs {
+        let mut en = Enemies::new(data.clone());
+        let mut run = AreaRun::set_up(&mut d, "tt04", p, &mut en, &w);
+        let Some(m) = run.mission.as_ref() else {
+            if let Some(e) = &run.mission_error {
+                eprintln!("tt04 program {p}: {e}");
+            }
+            continue;
+        };
+        let (name, start) = (m.a.name.clone(), m.counters());
+        eprintln!("tt04 program {p}: opponents {:?}", en.list.iter().map(|e| e.data.kind.model).collect::<Vec<_>>());
+        let group = run.groups.iter().find(|g| g.program == p && g.mission.is_some());
+        let at = group.and_then(|g| g.player).map(|v| v / kh2_enemy_host::SCALE).unwrap_or(w.spawn_point());
+        let mut s = Sora::new(game.clone(), at);
+        let (mut hits, mut taken, mut most_orbs, mut knocked) = (0, 0, 0, 0);
+        let mut ticks = 0;
+        for t in 0..60 * 200 {
+            ticks = t;
+            let near = en.list.iter().filter(|e| e.alive() && !e.removed).min_by(|a, b| a.pos().distance(s.motor.pos).total_cmp(&b.pos().distance(s.motor.pos))).map(|e| e.pos());
+            let stick = near.map_or([0.0, 0.0], |n| {
+                let to = n - s.motor.pos;
+                if to.length() > 150.0 { [to.x / to.length(), to.z / to.length()] } else { [0.0, 0.0] }
+            });
+            if let Some(n) = near {
+                s.target = Some(kh2::sora::Target { pos: n + Vec3::Y * 80.0, radius: 40.0, half_height: 80.0 });
+            }
+            s.tick(&w, &Input { stick, cam_look: [0.0, 1.0], attack: t % 4 == 0, ..Default::default() });
+            en.tick(&mut s, &w, game.params.sstm.fall_max);
+            for ev in en.events.drain(..) {
+                match ev {
+                    EnemyEvent::Hit { .. } => hits += 1,
+                    EnemyEvent::HitSora { .. } => taken += 1,
+                    _ => {}
+                }
+            }
+            let before = run.mission.as_ref().map_or(0, |m| m.a.orbs.len());
+            run.tick_mission(&s, &mut en, &w);
+            run.tick(&mut en, &w, s.motor.pos, &[]);
+            en.prune();
+            let Some(m) = run.mission.as_ref() else { break };
+            knocked += m.a.orbs.len().saturating_sub(before);
+            most_orbs = most_orbs.max(m.a.orbs.len());
+            if m.ended || m.outcome().is_some() {
+                break;
+            }
+        }
+        let m = run.mission.as_ref().unwrap();
+        eprintln!(
+            "tt04 program {p}: mission {name} counters {start:?} -> {:?}, clock {} frames shown, state {}, end {:?}, result {:?}, ended {}, game over {}, {knocked} orbs knocked out (at most {most_orbs} at once), Sora hit {hits}, hit Sora {taken}, {ticks} ticks, raised {:?}",
+            m.counters(), m.a.clock.shown, m.a.state, m.a.end_cause, m.outcome(), m.ended, m.game_over, run.raised
+        );
+        assert!(m.a.state >= 1, "the HUD came up");
+        assert!(knocked > 0, "hits knock orbs out");
+        assert!(m.a.end_cause.is_some() && m.outcome().is_some(), "the match ends and the script sends the result");
+        assert!(m.counters()[1] < start[1], "the opponent lost orbs");
+        ran += 1;
+    }
+    assert!(ran > 0, "a tt04 program starts a mission");
+}

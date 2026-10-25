@@ -21,6 +21,7 @@ pub mod save;
 pub mod sora;
 pub mod summon;
 pub mod spell;
+pub mod struggle;
 
 /// kh2-rs `kh2-player/src/controller_rules.rs` (stick through the camera view, walk/run split,
 /// wanted yaw; oracle-tested against the original in kh2-rs), compiled from kh2-rs's source.

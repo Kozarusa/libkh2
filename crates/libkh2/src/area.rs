@@ -124,6 +124,12 @@ pub struct AreaRun {
     rng: PlaceRng,
     /// The global events the groups raised (id, argument), for the host.
     pub raised: Vec<(u32, i32)>,
+    /// The mission manager a group's program started (opcode 0x15, kh2-rs `MissionStart`), and why
+    /// one could not start.
+    pub mission: Option<crate::struggle::Struggle>,
+    pub mission_error: Option<String>,
+    /// Raised events not yet handed to the signals.
+    unfired: Vec<(u32, i32)>,
 }
 
 /// SCALE: the compiled group code works in metres (kh2-rs's Bevy space), the library in centimetres.
@@ -167,8 +173,31 @@ impl AreaRun {
                 run.counts.push(PartCount { id: part.id, count, disabled: part.disabled });
                 run.events.push(EventPart { group: g.clone(), part: k, present: Vec::new() });
             }
+            // The program's mission command (opcode 0x15) creates the mission manager (kh2-rs WP-7E).
+            if let Some((id, name)) = &g.mission
+                && run.mission.is_none()
+            {
+                match crate::struggle::Struggle::start(disc, *id, name, g.orb_pool, &g.triggers) {
+                    Ok(m) => run.mission = Some(m),
+                    Err(e) => run.mission_error = Some(e),
+                }
+            }
         }
         run
+    }
+
+    /// The mission manager's frame (`crate::struggle::Struggle::tick`); the global events it sent go
+    /// to the area's signals on the next `tick`, and to the host with the groups' own.
+    pub fn tick_mission(&mut self, sora: &crate::sora::Sora, en: &mut crate::enemy::Enemies, world: &kh2_game_core::world::World) {
+        let Some(m) = self.mission.as_mut() else { return };
+        m.tick(sora, en, world);
+        self.raised.extend(m.sent.iter().copied());
+        self.unfired.extend(m.sent.iter().copied());
+    }
+
+    /// FUN_00190668: no group creates while an event plays (0x35e3a4) or the fight is stopped.
+    fn blocked(&self) -> bool {
+        self.mission.as_ref().is_some_and(|m| !m.ended && (m.a.play.is_some() || m.a.stopped))
     }
 
     /// One tick (kh2-rs `spawn_waves`' per-tick part and `fire_group_triggers`).
@@ -176,6 +205,7 @@ impl AreaRun {
         let at = [sora_pos.x, -sora_pos.y, -sora_pos.z];
         let player = sora_pos * M;
         let alive_serials = |en: &crate::enemy::Enemies, pid: u16| -> Vec<u16> { en.list.iter().filter(|e| e.alive() && !e.removed).filter_map(|e| e.group_serial.filter(|s| s.0 == pid).map(|s| s.1)).collect() };
+        let blocked = self.blocked();
         for (g, two, prev) in self.live.iter_mut() {
             let pid = g.parts[two.part].id;
             if self.off.contains(&pid) {
@@ -186,11 +216,12 @@ impl AreaRun {
             for m in g.members.iter().filter(|m| m.part == tp && prev.contains(&m.serial) && !live.contains(&m.serial)) {
                 two.removed(g, m);
             }
-            if two.timer > 0.0 {
+            // FUN_001989d8: while FUN_00190668 holds, the timer stands and nothing is created.
+            if !blocked && two.timer > 0.0 {
                 two.timer -= 1.0;
             }
             let mut made = Vec::new();
-            if g.parts[two.part].activators.iter().any(|v| v.contains(at)) {
+            if !blocked && g.parts[two.part].activators.iter().any(|v| v.contains(at)) {
                 let alive = |i: usize| en.list.iter().any(|e| e.alive() && e.group_serial == Some((pid, g.members[i].serial)));
                 for i in two.run(g, alive) {
                     let m = &g.members[i];
@@ -216,12 +247,14 @@ impl AreaRun {
             for _ in 0..gone {
                 for (id, arg) in kg::removal_events(&mut self.counts, i) {
                     self.raised.push((id, arg));
+                    self.unfired.push((id, arg));
                 }
             }
         }
         // FUN_00197b70 -> FUN_00197670: the raised events switch the groups their signals name.
         let mut events: Vec<(i32, i32)> = raised.to_vec();
-        events.extend(self.raised.iter().map(|&(i, a)| (i as i32, a)));
+        // Each raised event once (the host's `raised` list keeps them until it takes them).
+        events.extend(self.unfired.drain(..).map(|(i, a)| (i as i32, a)));
         kh2_enemy_host::enemy_host::set_group_enemy_sum(self.counts.iter().map(|c| c.count).sum());
         for (event, arg) in events {
             for (id, action) in self.triggers.fire(event, arg) {

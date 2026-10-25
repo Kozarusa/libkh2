@@ -124,12 +124,14 @@ pub mod shared {
     #[path = "../../../../../kh2-rs/crates/kh2-game-core/src/shared/reaction.rs"]
     #[allow(dead_code)]
     pub mod reaction;
-    /// `shared/struggle.rs`'s orb pool type, mission command and area trigger (span by `build.rs`).
+    /// `shared/struggle.rs`: the mission manager's state (header, layouts, counters, clock, the end).
+    #[path = "../../../../../kh2-rs/crates/kh2-game-core/src/shared/struggle.rs"]
     #[allow(dead_code, clippy::all)]
-    pub mod struggle {
-        use bevy::prelude::*;
-        include!(concat!(env!("OUT_DIR"), "/struggle_bits.rs"));
-    }
+    pub mod struggle;
+    /// `shared/prize.rs`: the prize records and constants the orbs use.
+    #[path = "../../../../../kh2-rs/crates/kh2-game-core/src/shared/prize.rs"]
+    #[allow(dead_code, clippy::all)]
+    pub mod prize;
     /// `shared/summon.rs`'s `KidOp` and `GENIE_NEO` (span by `build.rs`).
     pub mod summon {
         use bevy::prelude::*;
@@ -261,4 +263,30 @@ pub mod area {
 pub mod summon {
     use bevy::prelude::*;
     include!(concat!(env!("OUT_DIR"), "/summon_rules.rs"));
+}
+
+/// kh2-rs `kh2-player/src/prize.rs`'s prize rules (span by `build.rs`): what the orbs run on.
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod prize {
+    use bevy::prelude::*;
+
+    use crate::world::World;
+    pub use crate::shared::prize::{Consts, KindEntry, Phase, Prize, KINDS};
+    include!(concat!(env!("OUT_DIR"), "/prize.rs"));
+}
+
+/// kh2-rs `kh2-event/src/struggle.rs`'s mission rules and the mission script's host (spans by `build.rs`).
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod struggle {
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
+
+    use bevy::prelude::*;
+    use kh2_bdx::{Call, Host, Program, Runtime, Value};
+
+    use crate::prize::{self, Consts, Phase};
+    use crate::reaction_rules as rules;
+    use crate::shared::struggle::exe_bytes;
+    pub use crate::shared::struggle::{exe_word, parse_header, Active, Clock, Counter, EV_CLOCK_END, EV_COUNTER_EMPTY, EV_COUNTER_FULL, EV_PLAYER_KO, EV_PLAYER_LOST, EV_PLAYER_WON, Element, Finish, GameOverExits, GameOverRequest, GlobalEvent, Layout, Mission, MissionStart, Orb};
+    include!(concat!(env!("OUT_DIR"), "/struggle.rs"));
 }

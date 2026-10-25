@@ -352,6 +352,11 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 if r.chance(20) {
                     kh2_area_end(h);
                 }
+                let mut ms = Kh2Mission::default();
+                kh2_mission_state(h, if r.chance(4) { std::ptr::null_mut() } else { &mut ms });
+                let mut fl = [0f32; 40];
+                kh2_mission_orbs(h, if r.chance(4) { std::ptr::null_mut() } else { fl.as_mut_ptr() }, max(r, 10));
+                kh2_mission_take_sounds(h, if r.chance(4) { std::ptr::null_mut() } else { fl.as_mut_ptr() }, max(r, 8));
             }
             55 => {
                 let ids = [41u16, 499, r.next() as u16, 0, 526];
