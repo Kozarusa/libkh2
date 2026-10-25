@@ -146,3 +146,31 @@ pub mod enemy_ai {
 pub mod enemy_host;
 
 include!(concat!(env!("OUT_DIR"), "/kinds.rs"));
+
+/// kh2-rs `kh2-party/src/limit.rs`'s rules (spans by `build.rs`).
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod limit {
+    use bevy::prelude::*;
+    use kh2_tables::player;
+    use kh2_tables::tables as t;
+    include!(concat!(env!("OUT_DIR"), "/limit.rs"));
+}
+
+/// kh2-rs `limit_visual.rs`'s request records.
+#[allow(dead_code, clippy::all)]
+pub mod limit_visual {
+    use bevy::prelude::*;
+    include!(concat!(env!("OUT_DIR"), "/limit_visual.rs"));
+}
+
+/// kh2-rs `limit_script.rs`: the limit BAR's own script thread and its host.
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod limit_script {
+    use std::collections::BTreeMap;
+
+    use bevy::prelude::*;
+    use kh2_bdx::{Call, Host, HostTable, Program, Runtime, Value};
+
+    use crate::limit::{LimitArg, LimitReceiver, LimitScriptEvent, LimitStarted, LimitTask};
+    include!(concat!(env!("OUT_DIR"), "/limit_script.rs"));
+}

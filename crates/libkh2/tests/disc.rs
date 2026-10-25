@@ -991,3 +991,49 @@ fn members_take_hits_fall_revive_use_items_and_fight_in_every_style() {
         assert!(n > 0, "style {style} fights");
     }
 }
+
+#[test]
+fn a_limit_with_donald_runs_its_script_and_counts_down() {
+    use kh2::limit::{LimitEvent, Limits};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = d.limits().expect("limit tables");
+    let party = d.party().expect("party data");
+    let w = floor();
+    for r in data.rows.iter().take(12) {
+        eprintln!("limt {}: members {:?} command {} item {} world {} cost {} time {} file {}", r.id, r.members, r.command, r.item, r.world, r.cost, r.time, r.file);
+    }
+    let mut s = standing(&game, &w);
+    let fs = vec![kh2::party::Follower::new(&party, 0, Vec3::new(-100.0, 0.0, 0.0)), kh2::party::Follower::new(&party, 1, Vec3::new(100.0, 0.0, 0.0))];
+    let present = kh2::limit::present(&fs, &party);
+    let mut lim = Limits::default();
+    let st = lim.status(&data, &s, &present);
+    eprintln!("present {present:?}; status {st:?}");
+    // Without a party Donald's limit (282, Comet) is refused; with him it is available.
+    let alone = lim.status(&data, &s, &[]);
+    assert!(alone.iter().any(|(c, r)| *c == 282 && r.is_err()));
+    let cmd = 282;
+    assert!(st.iter().any(|(c, r)| *c == cmd && r.is_ok()));
+    let mp = s.mp;
+    lim.start(&data, &mut d, &mut s, &present, cmd).expect("starts");
+    assert!(s.mp < mp, "MP spent");
+    assert!(lim.status(&data, &s, &present).iter().all(|(_, r)| r.is_err()), "busy while it runs");
+    let mut events = Vec::new();
+    let mut ticks = 0;
+    while lim.running() && ticks < 20000 {
+        s.tick(&w, &Input::default());
+        lim.tick(&s);
+        events.append(&mut lim.events);
+        ticks += 1;
+    }
+    for _ in 0..40 {
+        lim.tick(&s);
+        events.append(&mut lim.events);
+    }
+    let motions = events.iter().filter(|e| matches!(e, LimitEvent::Motion { .. })).count();
+    let effects = events.iter().filter(|e| matches!(e, LimitEvent::Effect { .. } | LimitEvent::Named(_))).count();
+    eprintln!("limit {cmd}: {ticks} ticks, {motions} motions, {effects} effects; events {:?}", events.iter().filter(|e| !matches!(e, LimitEvent::Motion { .. } | LimitEvent::Effect { .. })).collect::<Vec<_>>());
+    assert!(matches!(events.first(), Some(LimitEvent::Started { .. })));
+    assert!(events.iter().any(|e| matches!(e, LimitEvent::Ended { .. })));
+    assert!(motions + effects > 0, "the limit's script asks for motions or effects");
+}

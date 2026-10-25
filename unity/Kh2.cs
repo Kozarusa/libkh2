@@ -137,6 +137,16 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_party_set_style(int handle, int slot, int style);
     [DllImport(Lib)] public static extern int kh2_party_set_items(int handle, int slot, ushort[] ids, byte[] counts, uint count);
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct LimitState { public int command, ticksLeft, hits; }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct LimitEvent { public int kind, a, b; public float blend; [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)] public byte[] text; }
+    [DllImport(Lib)] public static extern int kh2_limit_status(int handle, [Out] ushort[] cmds, [Out] int[] status, uint max);
+    [DllImport(Lib)] public static extern int kh2_limit_start(int handle, int cmd);
+    [DllImport(Lib)] public static extern int kh2_limit_set_world(int handle, int world);
+    [DllImport(Lib)] public static extern int kh2_limit_state(int handle, out LimitState state);
+    [DllImport(Lib)] public static extern int kh2_poll_limit_event(int handle, out LimitEvent ev);
+
     [DllImport(Lib)] public static extern int kh2_party_add(int handle, int member);
     [DllImport(Lib)] public static extern int kh2_party_tick(int handle);
     [DllImport(Lib)] public static extern int kh2_party_state(int handle, int slot, out MemberState state);

@@ -270,6 +270,17 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 kh2_reaction_accept(h);
                 kh2_reaction_force_offer(h, r.int());
             }
+            51 => {
+                let mut c = [0u16; 32];
+                let mut st = [0i32; 32];
+                kh2_limit_status(h, if r.chance(4) { std::ptr::null_mut() } else { c.as_mut_ptr() }, if r.chance(4) { std::ptr::null_mut() } else { st.as_mut_ptr() }, max(r, 32));
+                kh2_limit_start(h, if r.chance(2) { [282, 344, 255, 338, 484][r.below(5) as usize] } else { r.int() });
+                kh2_limit_set_world(h, r.int());
+                let mut s = Kh2LimitState::default();
+                kh2_limit_state(h, if r.chance(5) { std::ptr::null_mut() } else { &mut s });
+                let mut e = Kh2LimitEvent::default();
+                kh2_poll_limit_event(h, if r.chance(5) { std::ptr::null_mut() } else { &mut e });
+            }
             44 => {
                 kh2_set_weapon_set(h, r.int());
                 let p = if r.chance(4) { std::ptr::null_mut() } else { b.u16s.as_mut_ptr() };

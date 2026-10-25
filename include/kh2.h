@@ -311,6 +311,37 @@ KH2_API int32_t kh2_party_tick(int32_t handle);
 KH2_API int32_t kh2_party_state(int32_t handle, int32_t slot, kh2_member_state *out);
 KH2_API int32_t kh2_party_bones(int32_t handle, int32_t slot, int32_t space, float *out, uint32_t max_bones);
 
+/* ---- Limits (kh2-rs limit.rs rules + limit_script.rs: Sora's limit commands with Donald and Goofy)
+ * The party is Sora plus the members who follow and stand. kh2_limit_start spends the MP, starts the
+ * countdown (the command's Time, times Combination Boost) and the limit file's own script, whose
+ * requests come back as limit events; the countdown and script run in kh2_party_tick, enemy hits during
+ * the limit count. Not ported: the participants' own threads (the members' scripts play the attacks),
+ * summon limits, the HUD; the limit's motions are reported, not played. ---- */
+typedef struct kh2_limit_state {
+    int32_t command;      /* running command, 0 none */
+    int32_t ticks_left;
+    int32_t hits;
+} kh2_limit_state;
+#define KH2_LIMIT_STARTED 1   /* a = command, b = time, text = file */
+#define KH2_LIMIT_ENDED 2     /* a = command, b = hits */
+#define KH2_LIMIT_MOTION 3    /* a = participant handle, b = LIMI motion id, blend */
+#define KH2_LIMIT_EFFECT 4    /* a = participant handle, b = PAX element */
+#define KH2_LIMIT_NAMED 5     /* text = event name */
+#define KH2_LIMIT_STOPPED 6   /* the script thread ended; text = why */
+typedef struct kh2_limit_event {
+    int32_t kind, a, b;
+    float blend;
+    char text[32];
+} kh2_limit_event;
+/* Writes up to max command ids and status codes (0 available, 1 wrong world, 2 locked, 3 member
+ * absent, 4 ability missing, 5 no MP, 6 summon gauge, 7 a limit runs); returns the command count. */
+KH2_API int32_t kh2_limit_status(int32_t handle, uint16_t *cmds, int32_t *status, uint32_t max);
+/* 0, or minus the status code. A sub-command of the running limit goes to its script (event 23). */
+KH2_API int32_t kh2_limit_start(int32_t handle, int32_t cmd);
+KH2_API int32_t kh2_limit_set_world(int32_t handle, int32_t world);
+KH2_API int32_t kh2_limit_state(int32_t handle, kh2_limit_state *out);
+KH2_API int32_t kh2_poll_limit_event(int32_t handle, kh2_limit_event *out);
+
 /* ---- Enemies (their own BDX scripts through kh2-rs's interpreter and script host) ---- */
 /* Spawns an enemy by model ("M_EX020" Shadow, "M_EX010" Soldier, "M_EX990" Dusk, ...) fighting
  * Sora `handle`; returns its id (> 0) or -1. */

@@ -13,6 +13,7 @@ pub mod enemy;
 pub mod ffi;
 pub mod party;
 pub mod replay;
+pub mod limit;
 pub mod save;
 pub mod sora;
 pub mod spell;

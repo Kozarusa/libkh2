@@ -87,6 +87,8 @@ struct Lib {
     party: Option<Arc<crate::party::PartyData>>,
     followers: std::collections::HashMap<i32, Vec<crate::party::Follower>>,
     party_rng: std::collections::HashMap<i32, crate::party::PartyRng>,
+    limit_data: Option<Arc<crate::limit::LimitData>>,
+    limits: std::collections::HashMap<i32, crate::limit::Limits>,
     enemy_data: Option<Arc<crate::enemy::EnemyData>>,
     enemies: std::collections::HashMap<i32, crate::enemy::Enemies>,
 }
@@ -172,7 +174,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), enemy_data: None, enemies: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, limits: Default::default(), enemy_data: None, enemies: Default::default() });
     0
 }
 
@@ -1140,8 +1142,18 @@ pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
         let (Some(p), Some(s)) = (l.party.clone(), usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut)) else { return -1 };
         if let Some(list) = l.followers.get_mut(&handle) {
             // With spawned enemies the members fight (the battle part of `party.rs`).
-            let en = l.enemies.get_mut(&handle);
-            crate::party::tick_battle(&p, list, l.party_rng.entry(handle).or_default(), s, &l.world, en);
+            let mut en = l.enemies.get_mut(&handle);
+            let before = en.as_ref().map_or(0, |e| e.events.len());
+            crate::party::tick_battle(&p, list, l.party_rng.entry(handle).or_default(), s, &l.world, en.as_deref_mut());
+            if let (Some(e), Some(lim)) = (en, l.limits.get_mut(&handle)) {
+                for _ in e.events[before.min(e.events.len())..].iter().filter(|x| matches!(x, crate::enemy::EnemyEvent::Hit { .. })) {
+                    lim.count_hit();
+                }
+            }
+        }
+        // The limit task's countdown and script (after the party).
+        if let Some(lim) = l.limits.get_mut(&handle) {
+            lim.tick(s);
         }
         0
     })
@@ -1261,7 +1273,14 @@ pub extern "C" fn kh2_enemies_tick(handle: i32) -> i32 {
         let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return -1 };
         let fall = s.game.params.sstm.fall_max;
         if let Some(en) = l.enemies.get_mut(&handle) {
+            let before = en.events.len();
             en.tick(s, &l.world, fall);
+            // Sora's effective hits count for a running limit (FUN_001b3dc8).
+            if let Some(lim) = l.limits.get_mut(&handle) {
+                for _ in en.events[before.min(en.events.len())..].iter().filter(|x| matches!(x, crate::enemy::EnemyEvent::Hit { .. })) {
+                    lim.count_hit();
+                }
+            }
             en.list.len() as i32
         } else {
             0
@@ -1622,5 +1641,170 @@ pub unsafe extern "C" fn kh2_poll_member_event(handle: i32, out: *mut Kh2MemberE
             return 1;
         }
         0
+    })
+}
+
+fn limit_code(r: &kh2_enemy_host::limit::Refusal) -> i32 {
+    use kh2_enemy_host::limit::Refusal as R;
+    match r {
+        R::WrongWorld => 1,
+        R::Locked => 2,
+        R::MemberAbsent(_) => 3,
+        R::AbilityMissing(_) => 4,
+        R::NotEnoughMp => 5,
+        R::SummonGaugeEmpty => 6,
+        R::Busy => 7,
+    }
+}
+
+fn limit_ready(l: &mut Lib) -> Result<Arc<crate::limit::LimitData>, i32> {
+    if l.limit_data.is_none() {
+        match l.disc.limits() {
+            Ok(d) => l.limit_data = Some(Arc::new(d)),
+            Err(e) => return Err(set_error(e)),
+        }
+    }
+    Ok(l.limit_data.clone().unwrap())
+}
+
+/// The limit commands and their status for Sora `handle` with the party that follows him: writes up to
+/// `max` command ids and status codes (0 available, 1 wrong world, 2 locked, 3 a member is absent or
+/// knocked out, 4 the limit ability is not learned, 5 not enough MP, 6 summon gauge, 7 a limit runs);
+/// returns the number of commands.
+///
+/// # Safety
+/// `cmds` and `status` are NULL or point to `max` values each.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_limit_status(handle: i32, cmds: *mut u16, status: *mut i32, max: u32) -> i32 {
+    with(-1, |l| {
+        let d = match limit_ready(l) {
+            Ok(d) => d,
+            Err(e) => return e,
+        };
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref) else { return set_error(format!("no Sora with handle {handle}")) };
+        let present = match (l.followers.get(&handle), l.party.as_ref()) {
+            (Some(f), Some(p)) => crate::limit::present(f, p),
+            _ => Vec::new(),
+        };
+        let st = l.limits.entry(handle).or_default().status(&d, s, &present);
+        for (k, (c, r)) in st.iter().take(max as usize).enumerate() {
+            unsafe {
+                if !cmds.is_null() {
+                    *cmds.add(k) = *c;
+                }
+                if !status.is_null() {
+                    *status.add(k) = r.as_ref().map_or_else(limit_code, |_| 0);
+                }
+            }
+        }
+        st.len() as i32
+    })
+}
+
+/// Starts limit command `cmd` (the accepted command): MP spent, the countdown and the limit's own
+/// script start. Returns 0, or minus the status code of `kh2_limit_status`. A sub-command of the
+/// running limit goes to its script (event 23).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_limit_start(handle: i32, cmd: i32) -> i32 {
+    with(-1, |l| {
+        let d = match limit_ready(l) {
+            Ok(d) => d,
+            Err(e) => return e,
+        };
+        let Ok(cmd) = u16::try_from(cmd) else { return set_error("no such command") };
+        let present = match (l.followers.get(&handle), l.party.as_ref()) {
+            (Some(f), Some(p)) => crate::limit::present(f, p),
+            _ => Vec::new(),
+        };
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return set_error(format!("no Sora with handle {handle}")) };
+        match l.limits.entry(handle).or_default().start(&d, &mut l.disc, s, &present, cmd) {
+            Ok(()) => 0,
+            Err(r) => {
+                set_error(format!("limit refused: {r:?}"));
+                -limit_code(&r)
+            }
+        }
+    })
+}
+
+/// The world id the limit rows are tested against (0 by default: world-bound rows are refused).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_limit_set_world(handle: i32, world: i32) -> i32 {
+    with(-1, |l| {
+        l.limits.entry(handle).or_default().world = world.clamp(0, u16::MAX as i32) as u16;
+        0
+    })
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2LimitState {
+    /// The running command, 0 none.
+    pub command: i32,
+    pub ticks_left: i32,
+    pub hits: i32,
+}
+
+/// # Safety
+/// `out` points to a writable `kh2_limit_state`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_limit_state(handle: i32, out: *mut Kh2LimitState) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let st = l.limits.get(&handle).map_or(Kh2LimitState::default(), |m| Kh2LimitState { command: m.task.map_or(0, |t| i32::from(t.0)), ticks_left: m.task.map_or(0, |t| t.1 as i32), hits: m.hits() as i32 });
+        unsafe { *out = st };
+        0
+    })
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2LimitEvent {
+    /// 1 started, 2 ended, 3 participant motion, 4 PAX element, 5 named event, 6 script stopped.
+    pub kind: i32,
+    /// Started / ended: the command; motion / effect: the participant handle.
+    pub a: i32,
+    /// Started: time; ended: hits; motion / effect: the id.
+    pub b: i32,
+    /// Motion: the blend.
+    pub blend: f32,
+    /// Started: the file; named: the event name; stopped: the reason (NUL-terminated, cut).
+    pub text: [u8; 32],
+}
+
+/// Takes the oldest limit event: 1 written, 0 none left.
+///
+/// # Safety
+/// `out` points to a writable `kh2_limit_event`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_poll_limit_event(handle: i32, out: *mut Kh2LimitEvent) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let Some(m) = l.limits.get_mut(&handle) else { return 0 };
+        if m.events.is_empty() {
+            return 0;
+        }
+        let text = |s: &str| {
+            let mut t = [0u8; 32];
+            for (k, b) in s.bytes().take(31).enumerate() {
+                t[k] = b;
+            }
+            t
+        };
+        use crate::limit::LimitEvent as E;
+        let v = match m.events.remove(0) {
+            E::Started { command, file, time, .. } => Kh2LimitEvent { kind: 1, a: command.into(), b: time.into(), text: text(&file), ..Default::default() },
+            E::Ended { command, hits } => Kh2LimitEvent { kind: 2, a: command.into(), b: hits as i32, ..Default::default() },
+            E::Motion { who, id, blend } => Kh2LimitEvent { kind: 3, a: who as i32, b: id as i32, blend, ..Default::default() },
+            E::Effect { who, id } => Kh2LimitEvent { kind: 4, a: who as i32, b: id.into(), ..Default::default() },
+            E::Named(n) => Kh2LimitEvent { kind: 5, text: text(&n), ..Default::default() },
+            E::ScriptStopped(w) => Kh2LimitEvent { kind: 6, text: text(&w), ..Default::default() },
+        };
+        unsafe { *out = v };
+        1
     })
 }

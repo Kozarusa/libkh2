@@ -358,6 +358,7 @@ name = "libkh2-enemy-host"
 version = "0.5.0"
 dependencies = [
  "kh2-anim",
+ "kh2-bar",
  "kh2-bdx",
  "kh2-model",
  "kh2-tables",
