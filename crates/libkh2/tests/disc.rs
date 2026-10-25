@@ -396,7 +396,7 @@ fn drive_forms_enter_swap_and_revert() {
         s.drive.points = kh2_game_core::drive_rules::Points { whole: 9, fraction: 0, max: 9 };
         s.drive.owned[form as usize] = true;
         let base_bones = s.body.pose.len();
-        let mut load = |f: u8| d.form_assets(&data, f, 0).ok().map(Arc::new);
+        let mut load = |f: u8| d.form_assets(&data, f, 0, 41).ok().map(Arc::new);
         let entered = s.drive_enter(form, &mut load).expect("enter");
         assert_eq!(entered, form, "out of battle there is no Anti roll");
         assert_eq!(s.state, State::FormChange);
@@ -518,6 +518,34 @@ fn spells_report_attack_stages_with_disc_rows_and_damage() {
             assert!(amount > 0 && hp == (5 + amount).min(s.max_hp));
         } else {
             assert!(dmg.iter().all(|&x| x > 0));
+        }
+    }
+}
+
+#[test]
+fn valor_master_final_carry_a_second_keyblade_on_the_left_hand() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = game.drive.clone().unwrap();
+    assert!(data.keyblades().contains(&41));
+    let w = floor();
+    for form in 1..=4u8 {
+        let a = d.form_assets(&data, form, 0, 41).expect("form assets");
+        eprintln!("form {form}: hands {:?}", a.files.hands);
+        assert_eq!(a.weapon2.is_some(), form != 2, "the second blade of form {form}");
+        let mut s = standing(&game, &w);
+        s.drive.points.whole = 9;
+        s.drive.points.max = 9;
+        s.drive.owned[form as usize] = true;
+        let arc = Arc::new(a);
+        s.drive_enter(form, &mut |_| Some(arc.clone())).unwrap();
+        for _ in 0..400 {
+            s.tick(&w, &Input { attack: s.timer as i32 % 4 == 0, ..Default::default() });
+        }
+        if let Some(w2) = &s.weapon2 {
+            let hand = s.weapon2_matrix().w_axis.truncate();
+            eprintln!("form {form}: second blade {} bones, motion {}, left hand at {hand:?}", w2.pose.len(), w2.tag());
+            assert!(w2.pose.len() > 1 && hand.is_finite());
         }
     }
 }

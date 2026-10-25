@@ -49,6 +49,8 @@ pub struct FormAssets {
     pub files: FormFiles,
     pub body: Arc<Rig>,
     pub weapon: Option<Arc<Rig>>,
+    /// The second hand's keyblade (Valor, Master, Final), on bone `HAND_BONES[1]`.
+    pub weapon2: Option<Arc<Rig>>,
     pub moves: Arc<Moveset>,
     pub leaps: Arc<AttackLeaps>,
 }
@@ -97,30 +99,37 @@ impl DriveData {
         })
     }
 
-    /// kh2-rs `DriveRules::files`: a form's files in world `world` (memt merge, no story flags).
-    /// decided: the form's second keyblade is the form record's weapon word (kh2-rs takes it from
-    /// the inventory, `take_form_keyblade`).
-    pub fn files(&self, form: u8, world: u16) -> Option<FormFiles> {
+    /// kh2-rs `DriveRules::files`: a form's files in world `world` (memt merge, no story flags) with
+    /// the keyblade item of the second hand (kh2-rs `rules::take_form_keyblade`: Valor, Master and
+    /// Final take one; 0 for the others).
+    pub fn files(&self, form: u8, world: u16, hand1_item: u16) -> Option<FormFiles> {
         let rec = rules::memt_merge(&self.memt, world, |_| false);
         let obj = rules::merged_form_object(&rec, form)?;
-        let hand1 = self.memt.form_weapon(form).unwrap_or(0);
-        self.object_files(obj, hand1)
+        self.object_files(obj, if matches!(form, 1 | 3 | 4) { hand1_item } else { 0 })
+    }
+
+    /// The keyblade items (item type 2), for the host's choice of the second blade.
+    pub fn keyblades(&self) -> Vec<u16> {
+        self.items.iter().filter(|i| i.r#type == rules::KEYBLADE_TYPE).map(|i| i.id).collect()
     }
 }
 
 impl Disc {
     /// kh2-rs `drive::load_assets`: the form's body, its hand-0 weapon and its attack table.
-    pub fn form_assets(&mut self, data: &DriveData, form: u8, world: u16) -> Result<FormAssets, LoadError> {
-        let files = data.files(form, world).ok_or_else(|| LoadError(format!("form {form}: no object")))?;
+    /// `hand1_item` is the keyblade item of the second hand (decided: the host picks it; kh2-rs takes
+    /// the first keyblade of the inventory; `kh2_drive_enter` defaults to the Kingdom Key).
+    pub fn form_assets(&mut self, data: &DriveData, form: u8, world: u16, hand1_item: u16) -> Result<FormAssets, LoadError> {
+        let files = data.files(form, world, hand1_item).ok_or_else(|| LoadError(format!("form {form}: no object")))?;
         let body = Arc::new(self.rig_named(&files.model, &files.mset)?);
-        let weapon = match &files.hands[0] {
+        let mut hand = |h: usize| match &files.hands[h] {
             Some((_, m, s)) => self.rig_named(m, s).ok().map(Arc::new),
             None => None,
         };
+        let (weapon, weapon2) = (hand(0), hand(1));
         let ptya = kh2_tables::subfile(&mut self.0, &t::PTYA).map_err(|e| LoadError(format!("ptya: {e}")))?;
         let moves = Moveset::parse(&ptya, files.moveset as usize).unwrap_or_default();
         let leaps = AttackLeaps::parse(&ptya, files.moveset as usize);
-        Ok(FormAssets { files, body, weapon, moves: Arc::new(moves), leaps: Arc::new(leaps) })
+        Ok(FormAssets { files, body, weapon, weapon2, moves: Arc::new(moves), leaps: Arc::new(leaps) })
     }
 }
 

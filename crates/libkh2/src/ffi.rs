@@ -77,7 +77,7 @@ struct Lib {
     disc: Disc,
     world: World,
     soras: Vec<Option<Sora>>,
-    forms: std::collections::HashMap<u8, Arc<crate::drive::FormAssets>>,
+    forms: std::collections::HashMap<(u8, u16), Arc<crate::drive::FormAssets>>,
     cameras: Vec<Option<crate::camera::Camera>>,
 }
 
@@ -510,6 +510,7 @@ fn pose_of(s: &Sora, which: i32) -> Option<(&[Mat4], Mat4)> {
     match which {
         0 => Some((&s.body.pose, s.body_matrix())),
         1 => s.weapon.as_ref().map(|w| (w.pose.as_slice(), s.weapon_matrix())),
+        2 => s.weapon2.as_ref().map(|w| (w.pose.as_slice(), s.weapon2_matrix())),
         _ => None,
     }
 }
@@ -555,14 +556,7 @@ pub unsafe extern "C" fn kh2_get_bones(handle: i32, which: i32, space: i32, out:
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kh2_get_rest_bones(handle: i32, which: i32, out: *mut f32, max: u32) -> i32 {
     sora_do(handle, -1, |s, _| {
-        let rig = match which {
-            0 => &s.body.rig,
-            1 => match &s.weapon {
-                Some(w) => &w.rig,
-                None => return -1,
-            },
-            _ => return -1,
-        };
+        let Some(rig) = rig_of(s, which) else { return -1 };
         unsafe { write_mats(kh2_model::rest_pose(&rig.model.bones).into_iter(), out, max) }
     })
 }
@@ -577,14 +571,7 @@ pub unsafe extern "C" fn kh2_bone_parents(handle: i32, which: i32, out: *mut i32
         return -1;
     }
     sora_do(handle, -1, |s, _| {
-        let rig = match which {
-            0 => &s.body.rig,
-            1 => match &s.weapon {
-                Some(w) => &w.rig,
-                None => return -1,
-            },
-            _ => return -1,
-        };
+        let Some(rig) = rig_of(s, which) else { return -1 };
         let n = rig.model.bones.len().min(max as usize);
         for (i, b) in rig.model.bones.iter().take(n).enumerate() {
             unsafe { *out.add(i) = b.parent };
@@ -863,12 +850,13 @@ pub extern "C" fn kh2_drive_enter(handle: i32, form: i32) -> i32 {
         let Some(data) = l.game.drive.clone() else { return Err("no drive tables".to_string()) };
         let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return Err(format!("no Sora with handle {handle}")) };
         let (disc, cache) = (&mut l.disc, &mut l.forms);
+        let hand1 = s.hand1_item;
         let mut load = |f: u8| -> Option<Arc<crate::drive::FormAssets>> {
-            if let Some(a) = cache.get(&f) {
+            if let Some(a) = cache.get(&(f, hand1)) {
                 return Some(a.clone());
             }
-            let a = Arc::new(disc.form_assets(&data, f, 0).ok()?);
-            cache.insert(f, a.clone());
+            let a = Arc::new(disc.form_assets(&data, f, 0, hand1).ok()?);
+            cache.insert((f, hand1), a.clone());
             Some(a)
         };
         s.drive_enter(form.clamp(0, 255) as u8, &mut load)
@@ -917,6 +905,7 @@ fn rig_of(s: &Sora, which: i32) -> Option<Arc<crate::anim::Rig>> {
     match which {
         0 => Some(s.body.rig.clone()),
         1 => s.weapon.as_ref().map(|w| w.rig.clone()),
+        2 => s.weapon2.as_ref().map(|w| w.rig.clone()),
         _ => None,
     }
 }
@@ -1011,6 +1000,16 @@ pub extern "C" fn kh2_damage(handle: i32, atkp: i32, sub_id: i32, defense: i32, 
 pub extern "C" fn kh2_set_level(handle: i32, level: i32) -> i32 {
     sora_do(handle, -1, |s, _| {
         s.set_level(level);
+        0
+    })
+}
+
+/// The keyblade item (item id) a drive form's second hand takes (Valor, Master, Final; default the
+/// Kingdom Key, 41). Applies to the next entry.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_drive_set_second_keyblade(handle: i32, item: i32) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        s.hand1_item = item.clamp(0, u16::MAX as i32) as u16;
         0
     })
 }

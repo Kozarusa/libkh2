@@ -61,6 +61,8 @@ pub struct Growth {
 }
 /// The bone the keyblade hangs from (kh2-rs `shared::sora::HAND_BONES[0]`).
 pub const HAND_BONE: usize = 178;
+/// The left hand, where a form's second keyblade hangs (kh2-rs `HAND_BONES[1]`).
+pub const HAND_BONE_2: usize = 86;
 
 /// Controller state (kh2-rs `shared::sora::State`, the v1 subset).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -308,6 +310,10 @@ pub struct Sora {
     pub target: Option<Target>,
     pub body: Anim,
     pub weapon: Option<Anim>,
+    /// A drive form's second keyblade.
+    pub weapon2: Option<Anim>,
+    /// The keyblade item a form's second hand takes (Kingdom Key by default).
+    pub hand1_item: u16,
     /// The attack table and its leaps (the base body's, or a drive form's).
     pub moves: Arc<moveset::Moveset>,
     pub leaps: Arc<crate::data::AttackLeaps>,
@@ -385,6 +391,8 @@ impl Sora {
             base: None,
             body,
             weapon,
+            weapon2: None,
+            hand1_item: 41,
             pose: true,
             spawn: at,
             prev: Input::default(),
@@ -931,7 +939,7 @@ impl Sora {
         let before = (self.body.slot, self.body.frame);
         self.body.step(self.pose);
         self.magic_trigger(before);
-        if let Some(w) = self.weapon.as_mut() {
+        for w in [self.weapon.as_mut(), self.weapon2.as_mut()].into_iter().flatten() {
             w.follow(&self.body);
             if self.pose {
                 w.pose_now();
@@ -1091,6 +1099,7 @@ impl Sora {
         let from = self.drive.form;
         self.body = Anim::new(body);
         self.weapon = weapon.map(Anim::new);
+        self.weapon2 = None;
         self.moves = moves;
         self.leaps = leaps;
         self.growth = growth;
@@ -1129,6 +1138,7 @@ impl Sora {
                 }
                 self.body = Anim::new(a.body.clone());
                 self.weapon = a.weapon.clone().map(Anim::new);
+                self.weapon2 = a.weapon2.clone().map(Anim::new);
                 self.moves = a.moves.clone();
                 self.leaps = a.leaps.clone();
                 self.drive.files = Some(a.files.clone());
@@ -1374,6 +1384,7 @@ impl Sora {
     /// weapons, then the body; Sora's swing windows are in the keyblade's motions).
     pub fn attack_triggers(&self) -> Vec<(i16, i16)> {
         let mut out = self.weapon.as_ref().map(Self::live).unwrap_or_default();
+        out.extend(self.weapon2.as_ref().map(Self::live).unwrap_or_default());
         out.extend(Self::live(&self.body));
         out
     }
@@ -1401,6 +1412,9 @@ impl Sora {
         if let Some(w) = &self.weapon {
             add(w, self.weapon_matrix());
         }
+        if let Some(w) = &self.weapon2 {
+            add(w, self.weapon2_matrix());
+        }
         add(&self.body, body_m);
         out
     }
@@ -1413,6 +1427,11 @@ impl Sora {
     /// The keyblade's world matrix (the hand bone of the drawn pose).
     pub fn weapon_matrix(&self) -> Mat4 {
         self.body_matrix() * self.body.pose.get(HAND_BONE).copied().unwrap_or(Mat4::IDENTITY)
+    }
+
+    /// The second keyblade's world matrix (the left hand bone of the drawn pose).
+    pub fn weapon2_matrix(&self) -> Mat4 {
+        self.body_matrix() * self.body.pose.get(HAND_BONE_2).copied().unwrap_or(Mat4::IDENTITY)
     }
 
     pub fn combo_window(&self) -> bool {

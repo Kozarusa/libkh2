@@ -164,7 +164,8 @@ KH2_API int32_t kh2_set_growth(int32_t handle, uint8_t high_jump, uint8_t quick_
 /* Skeleton evaluation each tick (default on). Off: no bones, no attack volumes. */
 KH2_API int32_t kh2_set_pose_enabled(int32_t handle, int32_t on);
 
-/* Skeletons: which = 0 body, 1 keyblade (hangs from body bone 178). */
+/* Skeletons: which = 0 body, 1 keyblade (hangs from body bone 178), 2 a drive form's second
+ * keyblade (bone 86; Valor, Master, Final). */
 KH2_API int32_t kh2_bone_count(int32_t handle, int32_t which);
 /* space = 0: model space (body: relative to Sora's root, the body transform is pos + yaw;
  * keyblade: relative to the hand bone); 1: world space. 16 floats per bone, column-major. */
@@ -222,6 +223,8 @@ KH2_API int32_t kh2_drive_enter(int32_t handle, int32_t form);
 KH2_API int32_t kh2_drive_revert(int32_t handle);
 /* objentry ids of the form's body and hand 0 / hand 1 weapons (-1 none). */
 KH2_API int32_t kh2_drive_objects(int32_t handle, int32_t out[3]);
+/* The keyblade item the second hand takes on the next entry (default 41, the Kingdom Key). */
+KH2_API int32_t kh2_drive_set_second_keyblade(int32_t handle, int32_t item);
 KH2_API int32_t kh2_drive_outgoing_damage(int32_t handle, int32_t atk_type, int32_t damage);
 
 /* ---- Animation export (any slot, independent of what Sora plays; see docs/SKINNING.md) ---- */

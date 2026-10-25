@@ -138,7 +138,11 @@ Spell attacks (step 1 of round 3): each fired spell sends `KH2_EV_SPELL_ATTACK` 
 `atkp` row, `magi` size, life, speed, start and direction; `kh2_damage` computes a row's damage
 with Sora's `lvup` stats; Cure heals Sora (`KH2_EV_HEALED`).
 
-Not in v1: enemies, the spells' flight paths, the second keyblade of a form, summons, sounds and effects, moving platforms. See `DESIGN.md`.
+Second keyblade: Valor, Master and Final hold a second blade on the left hand (bone 86) with the
+form's own left-hand motion set (`W_EX010_BTLF_L` ...); bones `which = 2`, attack volumes included,
+`kh2_drive_set_second_keyblade` picks the item.
+
+Not in v1: enemies, the spells' flight paths, summons, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits
 

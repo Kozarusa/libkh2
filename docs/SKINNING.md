@@ -48,6 +48,10 @@ in the bone matrices, matching how the animator draws (poses relative to the roo
 
 ## Drive forms
 
+Valor, Master and Final hold a second keyblade: `kh2_get_bones(h, 2, 0, ...)`, relative to body
+bone 86 (the left hand); its glb is the same keyblade model.
+
+
 A form swaps Sora's body (`P_EX100_BTLF` etc.). After `KH2_EV_FORM_CHANGED`, load the form's glb
 (`kh2_drive_objects` gives the objentry id; the model name is the form model) and rebind; the bone
 count can differ from the base body's.

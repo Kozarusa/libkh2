@@ -117,6 +117,7 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_report_hit_atkp(int handle, int atkp);
     [DllImport(Lib)] public static extern int kh2_drive_enter(int handle, int form);
     [DllImport(Lib)] public static extern int kh2_drive_revert(int handle);
+    [DllImport(Lib)] public static extern int kh2_drive_set_second_keyblade(int handle, int item);
     [DllImport(Lib)] public static extern int kh2_drive_objects(int handle, int[] outIds);
     [DllImport(Lib)] public static extern int kh2_motion_slot_count(int handle, int which);
     [DllImport(Lib)] public static extern int kh2_motion_slot(int handle, int which, int motionId, int variant);
