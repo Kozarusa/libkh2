@@ -135,6 +135,10 @@ decided: world 0 for the memt merge, Donald and Goofy present, no form abilities
 kind (the ability system is not ported), the second keyblade not loaded (hand 1 id only when the
 memt record names it), drain factor 1.0 (no Form Boost), assets loaded on first entry and cached.
 
+Step 6: `anim::sample` evaluates a slot with a fresh rig state (the animator keeps its own);
+the disc test checks both agree on A300. Meshes stay out of the library (decided): kh2-extras
+exports them as glb with node i = bone i, so the bone matrices drive them (`docs/SKINNING.md`).
+
 Not covered: enemies, magic, summons, items,
 the dodge roll, reaction commands, the auto-target, sounds and effects (frame triggers are
 reported, not played), the game's exact COCT walker (`Oct`, unwired in kh2-rs too), weapon

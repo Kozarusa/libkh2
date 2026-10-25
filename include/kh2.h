@@ -203,6 +203,20 @@ KH2_API int32_t kh2_drive_revert(int32_t handle);
 KH2_API int32_t kh2_drive_objects(int32_t handle, int32_t out[3]);
 KH2_API int32_t kh2_drive_outgoing_damage(int32_t handle, int32_t atk_type, int32_t damage);
 
+/* ---- Animation export (any slot, independent of what Sora plays; see docs/SKINNING.md) ---- */
+typedef struct kh2_motion_info {
+    float frame_start, frame_end, frame_return;
+    float fps;              /* the animator steps fps / 60 frames per 60 Hz tick */
+    int32_t has_root_motion;
+    char tag[8];            /* e.g. "A300" */
+} kh2_motion_info;
+KH2_API int32_t kh2_motion_slot_count(int32_t handle, int32_t which);
+/* variant: 0 battle + weapon, 1 battle, 2 field, 3 field + weapon (the game's fallback applies). */
+KH2_API int32_t kh2_motion_slot(int32_t handle, int32_t which, int32_t motion_id, int32_t variant);
+KH2_API int32_t kh2_motion_info(int32_t handle, int32_t which, int32_t slot, kh2_motion_info *out);
+/* Bone matrices of `slot` at `frame` relative to the motion's root; root = (x, y, z, yaw) or NULL. */
+KH2_API int32_t kh2_sample_motion(int32_t handle, int32_t which, int32_t slot, float frame, float *out, uint32_t max_bones, float *root);
+
 /* ---- Field camera helper (kh2-rs camera_rules, oracle-tested there) ---- */
 #define KH2_CAM_RESET 1u   /* R3: behind Sora */
 #define KH2_CAM_SELECT 2u  /* look-around */

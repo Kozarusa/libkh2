@@ -108,6 +108,10 @@ roll) with kh2-rs's drive rules: entry checks, cost, Anti/Final roll, change mot
 form body, keyblade and attack table swapped in, the form's growth ability, form timer and
 revert, HP/MP refill (disc test `drive_forms_enter_swap_and_revert`).
 
+Animation export: `kh2_sample_motion` (any slot at any frame, root motion separate),
+`kh2_motion_info`, `kh2_motion_slot`; skinning with kh2-extras glb files is described in
+`docs/SKINNING.md`.
+
 Not in v1: enemies, spell objects and their damage, the second keyblade of a form, summons, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits

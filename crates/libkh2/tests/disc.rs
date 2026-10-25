@@ -431,3 +431,24 @@ fn drive_forms_enter_swap_and_revert() {
         assert!(!s.drive.in_form && s.body.rig.model.bones.len() == game.sora.model.bones.len());
     }
 }
+
+#[test]
+fn any_motion_slot_samples_like_the_animator() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let rig = game.sora.clone();
+    let slot = rig.mset.by_tag("A300").next().expect("A300");
+    let m = rig.mset.get(slot).unwrap().motion.as_ref().unwrap();
+    let mut a = kh2::anim::Anim::new(rig.clone());
+    a.restart(Some(slot), false, 0.0);
+    let mut worst: f32 = 0.0;
+    for _ in 0..10 {
+        a.step(true);
+        let (p, _) = kh2::anim::sample(&rig, slot, a.frame).unwrap();
+        worst = worst.max(kh2_anim::blend::max_bone_delta(&p, &a.pose));
+    }
+    let (_, r0) = kh2::anim::sample(&rig, slot, m.frame_start).unwrap();
+    let (_, r1) = kh2::anim::sample(&rig, slot, m.frame_end).unwrap();
+    eprintln!("A300 slot {slot}: frames {}..{} at {} fps, sample vs animator worst bone delta {worst}, root {:?} -> {:?}", m.frame_start, m.frame_end, m.fps, r0, r1);
+    assert!(worst < 0.5, "{worst}");
+}

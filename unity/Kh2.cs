@@ -109,6 +109,9 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_drive_enter(int handle, int form);
     [DllImport(Lib)] public static extern int kh2_drive_revert(int handle);
     [DllImport(Lib)] public static extern int kh2_drive_objects(int handle, int[] outIds);
+    [DllImport(Lib)] public static extern int kh2_motion_slot_count(int handle, int which);
+    [DllImport(Lib)] public static extern int kh2_motion_slot(int handle, int which, int motionId, int variant);
+    [DllImport(Lib)] public static extern int kh2_sample_motion(int handle, int which, int slot, float frame, [Out] float[] outMatrices, uint maxBones, [Out] float[] root);
     [DllImport(Lib)] public static extern int kh2_motion_tag(int handle, byte[] buf, uint len);
 
     public static string LastError()

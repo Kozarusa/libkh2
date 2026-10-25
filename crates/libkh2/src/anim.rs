@@ -224,3 +224,23 @@ impl Anim {
         self.posed = true;
     }
 }
+
+/// A motion slot sampled at a frame (no blending, a fresh rig state): the pose relative to the
+/// motion's root (as the animator draws it) and the root itself (model-space translation and yaw;
+/// zero for motions without root motion).
+pub fn sample(rig: &Rig, slot: usize, frame: f32) -> Option<(Vec<Mat4>, kh2_anim::motion::RootPose)> {
+    let m = rig.mset.get(slot)?.motion.as_ref()?;
+    let mut st = kh2_anim::rig::RigState::default();
+    let mut pose = m.pose_with(&rig.model.bones, frame, &mut st);
+    let root = match &m.data {
+        kh2_anim::motion::Data::Interpolated(ip) => ip.root_at(m.tick(frame)).unwrap_or_default(),
+        _ => Default::default(),
+    };
+    if root != Default::default() {
+        let undo = (Mat4::from_translation(root.translation) * Mat4::from_rotation_y(root.yaw)).inverse();
+        for p in &mut pose {
+            *p = undo * *p;
+        }
+    }
+    Some((pose, root))
+}

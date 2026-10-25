@@ -861,3 +861,88 @@ pub extern "C" fn kh2_drive_outgoing_damage(handle: i32, atk_type: i32, damage: 
         None => damage,
     })
 }
+
+fn rig_of(s: &Sora, which: i32) -> Option<Arc<crate::anim::Rig>> {
+    match which {
+        0 => Some(s.body.rig.clone()),
+        1 => s.weapon.as_ref().map(|w| w.rig.clone()),
+        _ => None,
+    }
+}
+
+/// Number of slots in the motion set of the body (0) or keyblade (1); slots may be empty.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_motion_slot_count(handle: i32, which: i32) -> i32 {
+    sora_do(handle, -1, |s, _| rig_of(s, which).map_or(-1, |r| r.mset.slots.len() as i32))
+}
+
+/// The slot of a motion id in a variant (0 battle + weapon, 1 battle, 2 field, 3 field + weapon),
+/// with the game's variant fallback; -1 when the motion set has none.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_motion_slot(handle: i32, which: i32, motion_id: i32, variant: i32) -> i32 {
+    use kh2_anim::PlayerState as P;
+    let v = match variant {
+        0 => P::BattleWeapon,
+        1 => P::BattleNoWeapon,
+        2 => P::FieldNoWeapon,
+        _ => P::FieldWeapon,
+    };
+    sora_do(handle, -1, |s, _| rig_of(s, which).and_then(|r| r.mset.slot(motion_id.max(0) as usize, v)).map_or(-1, |x| x as i32))
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2MotionInfo {
+    pub frame_start: f32,
+    pub frame_end: f32,
+    pub frame_return: f32,
+    /// Frames per second the motion is authored at (the animator steps fps / 60 frames per tick).
+    pub fps: f32,
+    pub has_root_motion: i32,
+    pub tag: [u8; 8],
+}
+
+/// A slot's frame range, rate and tag. Returns 0, or -1 for an empty slot.
+///
+/// # Safety
+/// `out` points to a writable `kh2_motion_info`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_motion_info(handle: i32, which: i32, slot: i32, out: *mut Kh2MotionInfo) -> i32 {
+    if out.is_null() || slot < 0 {
+        return -1;
+    }
+    sora_do(handle, -1, |s, _| {
+        let Some(r) = rig_of(s, which) else { return -1 };
+        let Some(sl) = r.mset.get(slot as usize) else { return -1 };
+        let Some(m) = sl.motion.as_ref() else { return -1 };
+        let mut tag = [0u8; 8];
+        for (i, b) in sl.tag.bytes().take(7).enumerate() {
+            tag[i] = b;
+        }
+        let root = matches!(&m.data, kh2_anim::motion::Data::Interpolated(ip) if ip.root.as_ref().is_some_and(|x| x.enabled));
+        unsafe { *out = Kh2MotionInfo { frame_start: m.frame_start, frame_end: m.frame_end, frame_return: m.frame_return, fps: m.fps, has_root_motion: root as i32, tag } };
+        0
+    })
+}
+
+/// Samples any motion slot at `frame` (the motion's own frame units): up to `max` bone matrices
+/// (model space, relative to the motion's root, 16 floats column-major) and the root as
+/// (x, y, z, yaw) in `root` (may be NULL). Independent of what Sora plays. Returns the bone count.
+///
+/// # Safety
+/// `out` points to `16 * max` floats; `root` is NULL or points to 4 floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_sample_motion(handle: i32, which: i32, slot: i32, frame: f32, out: *mut f32, max: u32, root: *mut f32) -> i32 {
+    if slot < 0 {
+        return -1;
+    }
+    sora_do(handle, -1, |s, _| {
+        let Some(r) = rig_of(s, which) else { return -1 };
+        let Some((pose, rp)) = crate::anim::sample(&r, slot as usize, frame) else { return -1 };
+        if !root.is_null() {
+            let v = [rp.translation.x, rp.translation.y, rp.translation.z, rp.yaw];
+            unsafe { std::ptr::copy_nonoverlapping(v.as_ptr(), root, 4) };
+        }
+        unsafe { write_mats(pose.into_iter(), out, max) }
+    })
+}
