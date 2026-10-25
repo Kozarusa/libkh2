@@ -335,6 +335,11 @@ pub struct Sora {
     pub exp: i32,
     /// A reaction command's player side.
     pub reaction: ReactionRun,
+    /// The equipped items (weapon, armor, accessories; kh2-rs `Progress::equipment`): their `item_stat`
+    /// rows build the status (FUN_001a0c08). The Kingdom Key by default.
+    pub equipment: Vec<u16>,
+    /// The resistances the equipment folds (status +0x1a8..+0x1ae, percent per element).
+    pub resist: [i32; 7],
     /// The weapon chosen at the start (record +0xe: 0 Sword, 1 Shield, 2 Staff): the `lvup` ability
     /// column a level gives (kh2-rs `Progress::raise_level`).
     pub weapon_set: u8,
@@ -432,6 +437,8 @@ impl Sora {
             level: 1,
             exp: 0,
             reaction: ReactionRun::default(),
+            equipment: vec![41],
+            resist: [100; 7],
             weapon_set: 0,
             ap: 0,
             granted: Vec::new(),
@@ -1368,10 +1375,15 @@ impl Sora {
         let level = level.clamp(1, p.levels.len().max(1) as i32);
         let l = p.levels.get((level - 1) as usize);
         self.level = level;
-        self.strength = l.map_or(2, |l| l.strength as i32) + p.weapon_attack;
-        self.magic = l.map_or(6, |l| l.magic as i32) + p.weapon_magic;
-        self.defense = l.map_or(2, |l| l.defense as i32);
-        self.ap = l.map_or(0, |l| l.ap as i32);
+        // kh2-rs `GameData::sora_status`: the `lvup` row plus every equipped item's `item_stat` row
+        // (FUN_001a0c08; AP and the resistance fold too).
+        let (g, ap, resist) = crate::equipment::gear(&p.items, &p.item_stats, &self.equipment);
+        let g = if p.item_stats.is_empty() { [p.weapon_attack, p.weapon_magic, 0] } else { g };
+        self.strength = l.map_or(2, |l| l.strength as i32) + g[0];
+        self.magic = l.map_or(6, |l| l.magic as i32) + g[1];
+        self.defense = l.map_or(2, |l| l.defense as i32) + g[2];
+        self.ap = l.map_or(0, |l| l.ap as i32) + ap;
+        self.resist = resist;
     }
 
     /// The attack stages of a fired spell (kh2-rs `magic.rs` event 21 and the spell objects): the
@@ -1466,7 +1478,9 @@ impl Sora {
     pub fn set_loadout(&mut self, ids: &[u16]) -> bool {
         let Some(rules) = self.game.ability_rules.clone() else { return false };
         let mut l = kh2_game_core::abilities::Abilities::new(rules);
-        for &id in ids {
+        // The host's list plus the abilities the equipment carries (`item_stat` +2).
+        let p = self.game.params.clone();
+        for &id in ids.iter().chain(crate::equipment::abilities(&p.items, &p.item_stats, &self.equipment).iter()) {
             l.equip_ability(id);
         }
         if self.drive.in_form {
@@ -1482,6 +1496,18 @@ impl Sora {
     /// the growth ability of the form's chain at its display level).
     fn form_abilities(&self) -> Vec<u16> {
         self.form_ability_list(self.drive.form)
+    }
+
+    /// Equips `items` (weapon, armor, accessories): the status is rebuilt from the level row plus
+    /// their `item_stat` rows (kh2-rs `GameData::sora_status`), and their abilities join the loadout
+    /// when one is set.
+    pub fn set_equipment(&mut self, items: &[u16]) {
+        self.equipment = items.iter().copied().filter(|&i| i != 0).take(16).collect();
+        self.set_level(self.level);
+        if self.loadout.is_some() {
+            let ids = self.loadout_ids.clone();
+            self.set_loadout(&ids);
+        }
     }
 
     /// The ability list form `form` gives at its current level (kh2-rs `drive::form_ability_list`):

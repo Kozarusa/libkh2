@@ -82,7 +82,7 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
     let max = |r: &mut Rng, cap: usize| if r.chance(3) { cap as u32 } else { r.below(cap as u64 + 1) as u32 };
     let kinds = ["M_EX020", "M_EX010", "M_EX990", "", "P_EX100", "nonsense"];
     unsafe {
-        let arm = r.below(64);
+        let arm = r.below(65);
         if std::env::var_os("KH2_FUZZ_TRACE").is_some() {
             eprintln!("arm {arm} handle {h}");
         }
@@ -342,6 +342,13 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 if r.chance(10) {
                     kh2_area_spawn(h, if r.chance(4) { std::ptr::null() } else { a.as_ptr() }, r.int(), r.int());
                 }
+            }
+            55 => {
+                let ids = [41u16, 499, r.next() as u16, 0, 526];
+                kh2_set_equipment(h, if r.chance(4) { std::ptr::null() } else { ids.as_ptr() }, r.below(6) as u32);
+                kh2_party_set_equipment(h, r.int(), ids.as_ptr(), r.below(6) as u32);
+                let mut info = Kh2ItemInfo::default();
+                kh2_item_info(r.int(), if r.chance(5) { std::ptr::null_mut() } else { &mut info });
             }
             54 => {
                 kh2_enemies_set_mission(h, r.int(), r.int(), r.int(), r.int());

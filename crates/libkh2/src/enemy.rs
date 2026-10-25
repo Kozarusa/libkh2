@@ -786,7 +786,7 @@ impl Enemies {
         // The enemies' live attacks against Sora's hurt volumes.
         let sora_hurt = if sora.pose { hurt_volumes(&sora.body.rig, &sora.body.pose, sora.body_matrix()) } else { Vec::new() };
         let sora_hurt = if sora_hurt.is_empty() { vec![Volume { a: sora.motor.pos + Vec3::Y * 35.0, b: sora.motor.pos + Vec3::Y * 115.0, r: 35.0 }] } else { sora_hurt };
-        let to = Stats { level: sora.level, max_hp: sora.max_hp, strength: sora.strength, magic: sora.magic, defense: sora.defense, max_taken: i32::MAX, min_taken: 1, max_dealt: i32::MAX, min_dealt: 0, weakness: [100; 7], ..Default::default() };
+        let to = Stats { level: sora.level, max_hp: sora.max_hp, strength: sora.strength, magic: sora.magic, defense: sora.defense, max_taken: i32::MAX, min_taken: 1, max_dealt: i32::MAX, min_dealt: 0, weakness: sora.resist, ..Default::default() };
         // Bit 3 of the player's flags (host 1.70 / 1.71): no hit reaches him (FUN_0019a4f0).
         let unhittable = sora.reaction.unhittable;
         for e in self.list.iter_mut().filter(|e| e.alive() && !e.removed && !unhittable) {

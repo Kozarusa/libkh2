@@ -180,6 +180,11 @@ public static class Kh2
 
     [DllImport(Lib)] public static extern int kh2_set_weapon_set(int handle, int set);
     [DllImport(Lib)] public static extern int kh2_give_bonus(int handle, int id);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ItemInfo { public ushort id; public byte kind, ap; public ushort command, name, description, amount, shopBuy, shopSell; public byte attack, magic, defense; [MarshalAs(UnmanagedType.ByValArray, SizeConst = 7)] public byte[] resist; public ushort ability; }
+    [DllImport(Lib)] public static extern int kh2_item_info(int id, out ItemInfo info);
+    [DllImport(Lib)] public static extern int kh2_set_equipment(int handle, ushort[] ids, uint count);
+    [DllImport(Lib)] public static extern int kh2_party_set_equipment(int handle, int slot, ushort[] ids, uint count);
 
     public const int SummonDismiss = 0x13c;
     [StructLayout(LayoutKind.Sequential)]

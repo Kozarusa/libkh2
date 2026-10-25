@@ -953,6 +953,8 @@ fn members_take_hits_fall_revive_use_items_and_fight_in_every_style() {
     }
     let mut fs = vec![Follower::new(&party, 0, Vec3::new(-100.0, 0.0, 0.0))];
     fs[0].items = vec![(1, 3)];
+    // Cure (ability 168) not equipped: the item handler answers.
+    fs[0].abilities.retain(|&a| a != 168);
     let mut used = Vec::new();
     for _ in 0..600 {
         s.tick(&w, &Input::default());
@@ -1481,4 +1483,43 @@ fn struggle_opponents_fight_with_mission_counters() {
         fights += 1;
     }
     assert!(fights > 0);
+}
+
+#[test]
+fn equipment_builds_the_status_and_items_are_described() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let party = d.party().expect("party data");
+    let w = floor();
+    let p = &game.params;
+    let info = |id| kh2::equipment::info(&p.items, &p.item_stats, id).unwrap();
+    let kk = info(41);
+    eprintln!("Kingdom Key: {kk:?}");
+    let blade = p.items.iter().filter(|i| i.r#type == 2).map(|i| info(i.id)).max_by_key(|i| i.attack).unwrap();
+    for i in p.items.iter().map(|i| info(i.id)).filter(|i| i.defense > 0 || i.resist.iter().any(|&r| r != 100 && r != 0)).take(6) {
+        eprintln!("gear {i:?}");
+    }
+    let armor = p.items.iter().map(|i| info(i.id)).filter(|i| i.kind != 0 && i.kind != 2).max_by_key(|i| (i.defense, i.resist.iter().filter(|&&r| r != 100).count())).unwrap();
+    eprintln!("strongest keyblade {blade:?}; an armor {armor:?}");
+    let mut s = standing(&game, &w);
+    let (str0, def0, res0) = (s.strength, s.defense, s.resist);
+    s.set_equipment(&[blade.id, armor.id]);
+    eprintln!("Sora: strength {str0} -> {}, defense {def0} -> {}, resistances {res0:?} -> {:?}, AP {}", s.strength, s.defense, s.resist, s.ap);
+    assert_eq!(s.strength - str0, i32::from(blade.attack) - i32::from(kk.attack));
+    assert_eq!(s.defense - def0, i32::from(armor.defense) + i32::from(blade.defense) - i32::from(kk.defense));
+    if armor.resist.iter().any(|&r| r != 100) {
+        assert_ne!(s.resist, res0);
+    }
+    // The record keeps the equipment.
+    let rec = s.save();
+    let mut t = standing(&game, &w);
+    t.load(&rec).unwrap();
+    assert_eq!((t.equipment.clone(), t.strength, t.resist), (s.equipment.clone(), s.strength, s.resist));
+    // A member's equipment adds to his status.
+    let mut f = kh2::party::Follower::new(&party, 0, Vec3::ZERO);
+    let before = f.stats(&party);
+    f.equipment.push(armor.id);
+    let after = f.stats(&party);
+    eprintln!("Donald: defense {} -> {}, weakness {:?} -> {:?}", before.defense, after.defense, before.weakness, after.weakness);
+    assert_eq!(after.defense - before.defense, i32::from(armor.defense));
 }

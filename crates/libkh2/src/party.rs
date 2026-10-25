@@ -113,8 +113,9 @@ pub struct PartyData {
     pub item_frac: (f32, f32),
     pub hp_items: (Vec<u16>, Vec<u16>),
     pub mp_items: (Vec<u16>, Vec<u16>),
-    /// The items (`item` of 03system.bin) for the item handlers' effect.
+    /// The items (`item` of 03system.bin) for the item handlers' effect, and their `item_stat` rows.
     pub items: Vec<kh2_tables::tables::Item>,
+    pub item_stats: Vec<kh2_tables::tables::ItemStat>,
     /// The scripts' host table, host 1.247's numbers and the `atkp` rows (the attack objects' rows).
     pub table: Option<kh2_bdx::HostTable>,
     pub free: Option<kh2_game_core::party_rules::FreePointConsts>,
@@ -167,6 +168,7 @@ impl Disc {
         let sstm = kh2_tables::player::load_sstm(&mut self.0).ok();
         let plrp = kh2_tables::load::<t::Plrp>(&mut self.0, &t::PLRP).map(|d| d.rows).unwrap_or_default();
         let items = kh2_tables::load::<t::Item>(&mut self.0, &t::ITEM).map(|d| d.rows).unwrap_or_default();
+        let item_stats = kh2_tables::load::<t::ItemStat>(&mut self.0, &t::ITEM_STAT).map(|d| d.rows).unwrap_or_default();
         let table = kh2_bdx::HostTable::from_exe(&exe);
         let free = kh2_game_core::party_rules::FreePointConsts::from_exe(&exe);
         let atkp = kh2_enemy_host::data::GameData { atkp: kh2_tables::load::<t::Atkp>(&mut self.0, &t::ATKP).map(|d| d.rows).unwrap_or_default() };
@@ -220,7 +222,7 @@ impl Disc {
             });
         }
         let sora_byte = objs.iter().find(|r| r.model_name == "P_EX100").map_or(1, |r| r.weapon_joint);
-        Ok(PartyData { consts, members, ai, orders, half, stop, sstm, mp_gate_w, item_frac, hp_items, mp_items, items, table, free, atkp, sora_byte })
+        Ok(PartyData { consts, members, ai, orders, half, stop, sstm, mp_gate_w, item_frac, hp_items, mp_items, items, item_stats, table, free, atkp, sora_byte })
     }
 }
 
@@ -288,6 +290,8 @@ pub struct Follower {
     pub limit_hold: bool,
     /// The member's equipped abilities (the new game's; the host may change them).
     pub abilities: Vec<u16>,
+    /// The member's equipped items (weapon, armor, accessories): their `item_stat` rows add to the status.
+    pub equipment: Vec<u16>,
 }
 
 /// The target record of a running special: an enemy (by id) or a party member (Cure).
@@ -379,6 +383,7 @@ impl Follower {
             charge: Default::default(),
             limit_hold: false,
             abilities: m.abilities.clone(),
+            equipment: vec![WEAPON_ITEMS[member.min(1)]],
         }
     }
 
@@ -404,7 +409,9 @@ impl Follower {
     /// The member's status block for the damage formula at its level.
     pub fn stats(&self, data: &PartyData) -> kh2_enemy_host::data::Stats {
         let (strength, magic, defense) = data.members[self.member].status(self.level);
-        kh2_enemy_host::data::Stats { level: i32::from(self.level), max_hp: self.hp_max, strength, magic, defense, max_taken: i32::MAX, min_taken: 1, max_dealt: i32::MAX, weakness: [100; 7], ..Default::default() }
+        // kh2-rs `MemberStatus::member_status` / `member_ap_resistances`: plus the equipment's rows.
+        let (g, ap, weakness) = crate::equipment::gear(&data.items, &data.item_stats, &self.equipment);
+        kh2_enemy_host::data::Stats { level: i32::from(self.level), max_hp: self.hp_max, strength: strength + g[0], magic: magic + g[1], defense: defense + g[2], ap, max_taken: i32::MAX, min_taken: 1, max_dealt: i32::MAX, weakness, ..Default::default() }
     }
 
     fn vital(&self) -> battle::Vital {

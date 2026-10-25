@@ -2201,3 +2201,78 @@ pub extern "C" fn kh2_enemies_set_mission(handle: i32, on: i32, c0: i32, c1: i32
         None => set_error("no enemies for this Sora (spawn one first)"),
     })
 }
+
+/// # Safety
+/// `ids` points to `count` u16 values (or is NULL).
+unsafe fn ids_of(ids: *const u16, count: u32) -> Vec<u16> {
+    if ids.is_null() || count == 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(ids, count.min(16) as usize) }.to_vec() }
+}
+
+/// Sora's equipment (weapon, armor, accessories; item ids): the status is rebuilt from the level row
+/// plus the items' `item_stat` rows (attack, magic, defense, AP, resistances) and their abilities join
+/// the loadout. Default: the Kingdom Key.
+///
+/// # Safety
+/// `ids` points to `count` u16 values (or `count` is 0).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_set_equipment(handle: i32, ids: *const u16, count: u32) -> i32 {
+    let v = unsafe { ids_of(ids, count) };
+    sora_do(handle, -1, |s, _| {
+        s.set_equipment(&v);
+        0
+    })
+}
+
+/// A party member's equipment (their `item_stat` rows add to the member's status).
+///
+/// # Safety
+/// `ids` points to `count` u16 values (or `count` is 0).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_party_set_equipment(handle: i32, slot: i32, ids: *const u16, count: u32) -> i32 {
+    let v = unsafe { ids_of(ids, count) };
+    member_do(handle, slot, -1, |m, _| {
+        m.equipment = v;
+        0
+    })
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2ItemInfo {
+    pub id: u16,
+    /// `item.Type` (2 keyblade, 3 staff, 4 shield, 19 ability ...).
+    pub kind: u8,
+    pub ap: u8,
+    pub command: u16,
+    pub name: u16,
+    pub description: u16,
+    /// `Flag1 | Rank << 8`.
+    pub amount: u16,
+    pub shop_buy: u16,
+    pub shop_sell: u16,
+    pub attack: u8,
+    pub magic: u8,
+    pub defense: u8,
+    /// Physical, fire, blizzard, thunder, dark, light, general.
+    pub resist: [u8; 7],
+    pub ability: u16,
+}
+
+/// What item `id` is (the `item` row and its `item_stat` row): 0, or -1 for no such item.
+///
+/// # Safety
+/// `out` points to a writable `kh2_item_info`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_item_info(id: i32, out: *mut Kh2ItemInfo) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let p = &l.game.params;
+        let Some(i) = u16::try_from(id).ok().and_then(|id| crate::equipment::info(&p.items, &p.item_stats, id)) else { return set_error("no such item") };
+        unsafe {
+            *out = Kh2ItemInfo { id: i.id, kind: i.kind, ap: i.ap, command: i.command, name: i.name, description: i.description, amount: i.amount, shop_buy: i.shop_buy, shop_sell: i.shop_sell, attack: i.attack, magic: i.magic, defense: i.defense, resist: i.resist, ability: i.ability }
+        };
+        0
+    })
+}

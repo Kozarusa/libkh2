@@ -234,11 +234,31 @@ KH2_API int32_t kh2_set_weapon_set(int32_t handle, int32_t set);
 /* Bonus reward `id` (bons rows, once per id): Sora's max HP / MP / drive gauge and items (KH2_EV_BONUS),
  * the following members' max HP / MP (KH2_MEMBER_BONUS). 1 given, 0 given before, -1 error. */
 KH2_API int32_t kh2_give_bonus(int32_t handle, int32_t id);
+/* ---- Items and equipment (kh2-rs GameData::sora_status / member_status: item_stat rows) ----
+ * The inventory is the host's; the library describes items and applies equipment: every equipped
+ * item's item_stat row adds attack, magic, defense and AP, scales the resistances, and its ability
+ * joins the loadout. Sora's equipment is saved in the record. */
+typedef struct kh2_item_info {
+    uint16_t id;
+    uint8_t kind;         /* item.Type: 2 keyblade, 3 staff, 4 shield, 19 ability ... */
+    uint8_t ap;
+    uint16_t command, name, description; /* cmd row, message ids */
+    uint16_t amount;      /* Flag1 | Rank << 8 */
+    uint16_t shop_buy, shop_sell;
+    uint8_t attack, magic, defense;
+    uint8_t resist[7];    /* physical, fire, blizzard, thunder, dark, light, general (percent) */
+    uint16_t ability;     /* the ability the item carries, 0 none */
+} kh2_item_info;
+/* 0, or -1 for no such item. */
+KH2_API int32_t kh2_item_info(int32_t id, kh2_item_info *out);
+/* Sora's equipment (item ids: weapon, armor, accessories; up to 16). Default: the Kingdom Key. */
+KH2_API int32_t kh2_set_equipment(int32_t handle, const uint16_t *ids, uint32_t count);
+KH2_API int32_t kh2_party_set_equipment(int32_t handle, int32_t slot, const uint16_t *ids, uint32_t count);
 /* Drive form `form` (1..5): its ability list at its level (fmlv grants + growth ability). */
 KH2_API int32_t kh2_form_abilities(int32_t handle, int32_t form, uint16_t *out, uint32_t max);
 /* Abilities given by level-ups, oldest first: writes up to max, returns the count (equip: kh2_set_loadout). */
 KH2_API int32_t kh2_granted_abilities(int32_t handle, uint16_t *out, uint32_t max);
-/* Save record ("KH2S" v2): level, EXP, HP/MP, AP, spell levels, weapon set, given and equipped
+/* Save record ("KH2S" v3): level, EXP, HP/MP, AP, spell levels, weapon set, given and equipped
  * abilities, drive gauge/forms/levels, position and yaw. Not saved: motion, combo, cast, an active
  * form, enemies, party. save writes when cap is enough and returns the size; load returns 0, or -1
  * with nothing changed for a record that is not valid. */

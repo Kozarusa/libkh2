@@ -71,6 +71,8 @@ pub struct Params {
     /// +0x7c (MP gained during the charge shortens it by this much per point), +0x144 (the HP
     /// fraction at or below which the experience multiplier applies).
     pub items: Vec<t::Item>,
+    /// The `item_stat` rows (equipment: attack, magic, defense, AP, resistances, ability).
+    pub item_stats: Vec<t::ItemStat>,
     pub charge_feed: f32,
     pub low_hp_fraction: f32,
 }
@@ -253,7 +255,7 @@ impl Disc {
         let at = |off: usize| raw.as_ref().filter(|s| s.words.len() > off / 4).map_or(0.0, |s| s.f32(off));
         let (charge_feed, low_hp_fraction) = (at(0x7c), at(0x144));
         let bons = kh2_tables::load::<t::Bons>(&mut self.0, &t::BONS).map(|d| d.rows).unwrap_or_default();
-        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera, magc, cmd, magi, levels, bons, weapon_attack, weapon_magic, items, charge_feed, low_hp_fraction })
+        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera, magc, cmd, magi, levels, bons, weapon_attack, weapon_magic, item_stats: stats.clone(), items, charge_feed, low_hp_fraction })
     }
 
     /// Everything Sora needs.

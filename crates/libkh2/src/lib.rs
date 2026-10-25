@@ -10,6 +10,7 @@ pub mod camera;
 pub mod data;
 pub mod drive;
 pub mod enemy;
+pub mod equipment;
 pub mod ffi;
 pub mod party;
 pub mod replay;

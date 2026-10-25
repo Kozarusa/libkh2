@@ -5,7 +5,7 @@
 3. [x] Area battle groups (area.rs: kh2-rs area_groups; `kh2_area_spawn`; spawn kind / parameters reach the scripts): tt03's Dusks act on tt03's collision, eh06's M_EX870 acts with its record (1 of 4; the others wait for signals / counters), test `area_battle_groups_spawn_and_fight`. Not ported: the areas' signals, triggers, waves, missions (kh2-rs TriggerTable, struggle), story-state program choice. M_EX850 not placed by any scanned area. Enemies hitting members: done since round 5 (their attacks' volumes); targeting a member is not in the enemies' scripts.
 4. [x] Enemy kinds load on demand through a second disc reader and are freed when unused (kh2_enemies_prune / kh2_enemies_clear); heap 122 MiB -> 17.6 MiB idle, 28 MiB with 50 enemies of 3 kinds (docs/PERFORMANCE.md); fuzz covers members, limits, summons, area spawns, prune / clear (64 arms); golden / replay green.
 5. [x] Struggle opponents (Seifer, N_EX500_BTL, N_EX600_BTL) from tt04's own groups with host-kept mission counters (kh2_enemies_set_mission, host 4.29): they move, block, take hits, no unserved calls (test struggle_opponents_fight_with_mission_counters, docs/STRUGGLE.md). Not ported: the mission manager (layout, timer, orb objects, win/lose events); the opponents' bat attacks come from mission objects, so they never hit Sora.
-6. [ ] Items / equipment.
+6. [x] Items / equipment (equipment.rs: kh2-rs sora_status / member_status item_stat sums, resistance fold, the items' abilities into the loadout; kh2_item_info, kh2_set_equipment, kh2_party_set_equipment; saved in the record v3; test equipment_builds_the_status_and_items_are_described). The inventory stays the host's.
 7. [ ] Safety audit, layout asserts, CHANGELOG, version.
 
 # TODO (round 5)
