@@ -144,7 +144,17 @@ fn reaction_cmd() {
     std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("reaction_cmd.rs"), out).unwrap();
 }
 
+/// kh2-rs `shared/party.rs`'s pure span: `HpChange` and `hp_change` (FUN_00186238, the party HP method).
+fn party_hp() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-game-core/src/shared/party.rs");
+    println!("cargo:rerun-if-changed={}", src.display());
+    let text = std::fs::read_to_string(&src).expect("shared/party.rs");
+    let out = span(&text, "/// What `FUN_00186238`", "pub fn hp_change");
+    std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("party_hp.rs"), out).unwrap();
+}
+
 fn main() {
+    party_hp();
     reaction_cmd();
     rng();
     party_battle();

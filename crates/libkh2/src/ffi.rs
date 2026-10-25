@@ -1137,12 +1137,11 @@ pub extern "C" fn kh2_party_add(handle: i32, member: i32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
     with(-1, |l| {
-        let (Some(p), Some(s)) = (l.party.clone(), usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref)) else { return -1 };
-        let (pos, yaw, fall, pose, params) = (s.motor.pos, s.motor.yaw, s.game.params.sstm.fall_max, s.pose, s.game.params.clone());
+        let (Some(p), Some(s)) = (l.party.clone(), usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut)) else { return -1 };
         if let Some(list) = l.followers.get_mut(&handle) {
-            // With spawned enemies the members fight (the battle subset of `party.rs`).
-            let en = l.enemies.get_mut(&handle).map(|e| (e, &params));
-            crate::party::tick_battle(&p, list, l.party_rng.entry(handle).or_default(), pos, yaw, &l.world, fall, pose, en);
+            // With spawned enemies the members fight (the battle part of `party.rs`).
+            let en = l.enemies.get_mut(&handle);
+            crate::party::tick_battle(&p, list, l.party_rng.entry(handle).or_default(), s, &l.world, en);
         }
         0
     })
@@ -1156,6 +1155,17 @@ pub struct Kh2MemberState {
     pub member: i32,
     pub motion_slot: i32,
     pub frame: f32,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub mp: i32,
+    pub max_mp: i32,
+    /// 1 while knocked out.
+    pub ko: i32,
+    pub level: i32,
+    pub style: i32,
+    pub strength: i32,
+    pub magic: i32,
+    pub defense: i32,
 }
 
 /// The state of follower `slot` of Sora `handle`.
@@ -1169,7 +1179,26 @@ pub unsafe extern "C" fn kh2_party_state(handle: i32, slot: i32, out: *mut Kh2Me
     }
     with(-1, |l| {
         let Some(f) = l.followers.get(&handle).and_then(|v| v.get(usize::try_from(slot).ok()?)) else { return -1 };
-        unsafe { *out = Kh2MemberState { pos: f.motor.pos.to_array(), yaw: f.motor.yaw, member: f.member as i32, motion_slot: f.body.slot.map_or(-1, |x| x as i32), frame: f.body.frame } };
+        let (strength, magic, defense) = l.party.as_ref().map_or((0, 0, 0), |p| p.members[f.member].status(f.level));
+        unsafe {
+            *out = Kh2MemberState {
+                pos: f.motor.pos.to_array(),
+                yaw: f.motor.yaw,
+                member: f.member as i32,
+                motion_slot: f.body.slot.map_or(-1, |x| x as i32),
+                frame: f.body.frame,
+                hp: f.hp,
+                max_hp: f.hp_max,
+                mp: f.mp,
+                max_mp: f.mp_max,
+                ko: f.ko as i32,
+                level: i32::from(f.level),
+                style: i32::from(f.style),
+                strength,
+                magic,
+                defense,
+            }
+        };
         0
     })
 }
@@ -1479,5 +1508,119 @@ pub unsafe extern "C" fn kh2_state_load(handle: i32, bytes: *const u8, len: u32)
     sora_do(handle, -1, |s, _| match s.load(&b) {
         Ok(()) => 0,
         Err(e) => set_error(e),
+    })
+}
+
+fn member_do<R>(handle: i32, slot: i32, fallback: R, f: impl FnOnce(&mut crate::party::Follower, &crate::party::PartyData) -> R) -> R {
+    let mut f = Some(f);
+    let r = with(None, |l| {
+        let p = l.party.clone()?;
+        let m = l.followers.get_mut(&handle)?.get_mut(usize::try_from(slot).ok()?)?;
+        Some((f.take().unwrap())(m, &p))
+    });
+    match r {
+        Some(v) => v,
+        None => {
+            set_error(format!("no party member {slot} of Sora {handle}"));
+            fallback
+        }
+    }
+}
+
+/// A member's level (1..99): its status is the `lvup` row of the level plus the new game's bytes.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_party_set_level(handle: i32, slot: i32, level: i32) -> i32 {
+    member_do(handle, slot, -1, |m, _| {
+        m.level = level.clamp(1, 99) as u8;
+        0
+    })
+}
+
+/// A member's HP / MP and maxima (maxima 1..9999 / 0..9999). HP 0 knocks the member out.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_party_set_vitals(handle: i32, slot: i32, hp: i32, max_hp: i32, mp: i32, max_mp: i32) -> i32 {
+    member_do(handle, slot, -1, |m, p| {
+        m.hp_max = max_hp.clamp(1, 9999);
+        m.mp_max = max_mp.clamp(0, 9999);
+        m.mp = mp.clamp(0, m.mp_max);
+        let want = hp.clamp(0, m.hp_max);
+        if m.ko && want > 0 {
+            m.change_hp(want, p);
+        } else if !m.ko {
+            m.change_hp(want - m.hp, p);
+        }
+        0
+    })
+}
+
+/// A member's battle style (setting byte 0; 0..3: the target choice and battle distance of the style).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_party_set_style(handle: i32, slot: i32, style: i32) -> i32 {
+    member_do(handle, slot, -1, |m, _| match u8::try_from(style) {
+        Ok(s) if s <= 3 => {
+            m.style = s;
+            0
+        }
+        _ => set_error("style is 0..3"),
+    })
+}
+
+/// A member's battle item stock (`count` item ids and their counts): its HP / MP item handlers use them.
+///
+/// # Safety
+/// `ids` and `counts` point to `count` values each (or `count` is 0).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_party_set_items(handle: i32, slot: i32, ids: *const u16, counts: *const u8, count: u32) -> i32 {
+    let n = count.min(64) as usize;
+    let v: Vec<(u16, u8)> = if n == 0 || ids.is_null() || counts.is_null() { Vec::new() } else { unsafe { std::slice::from_raw_parts(ids, n).iter().copied().zip(std::slice::from_raw_parts(counts, n).iter().copied()).collect() } };
+    member_do(handle, slot, -1, |m, _| {
+        m.items = v;
+        0
+    })
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2MemberEvent {
+    /// The member's slot.
+    pub slot: i32,
+    /// 1 hit by an enemy, 2 knocked out, 3 revived, 4 used an item.
+    pub kind: i32,
+    /// Hit: the enemy id; item: the item id.
+    pub id: i32,
+    /// Hit: atkp row; item: the target (0 Sora, 1 the member, 2 the other member).
+    pub atkp: i32,
+    pub damage: i32,
+    /// HP after (hit, revived).
+    pub hp: i32,
+}
+
+/// Takes the oldest member event of Sora `handle`'s party: 1 written, 0 none left.
+///
+/// # Safety
+/// `out` points to a writable `kh2_member_event`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_poll_member_event(handle: i32, out: *mut Kh2MemberEvent) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let Some(list) = l.followers.get_mut(&handle) else { return 0 };
+        for (slot, f) in list.iter_mut().enumerate() {
+            if f.events.is_empty() {
+                continue;
+            }
+            use crate::party::MemberEvent as E;
+            let s = slot as i32;
+            let v = match f.events.remove(0) {
+                E::Hit { by, atkp, damage, hp } => Kh2MemberEvent { slot: s, kind: 1, id: by as i32, atkp: atkp.into(), damage, hp },
+                E::KnockedOut => Kh2MemberEvent { slot: s, kind: 2, ..Default::default() },
+                E::Revived { hp } => Kh2MemberEvent { slot: s, kind: 3, hp, ..Default::default() },
+                E::ItemUsed { item, who } => Kh2MemberEvent { slot: s, kind: 4, id: item.into(), atkp: who.into(), ..Default::default() },
+            };
+            unsafe { *out = v };
+            return 1;
+        }
+        0
     })
 }

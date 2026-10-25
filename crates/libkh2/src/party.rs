@@ -10,10 +10,22 @@
 //! motion; `member_hands` for the weapon; the members' hits use the enemies' hurt shapes and the
 //! damage formula like Sora's.
 //!
-//! decided: no member scripts (the specials, Cure and the item handlers are never feasible), no
-//! limits, revive, warp through the trail (a member beyond `WARP_DISTANCE` is put back beside Sora),
-//! the members are not hit by enemies; their stats are the level 1 rows of their `lvup` tables, their
-//! weapons the base items (Mage's Staff 75, Knight's Shield 49, as kh2-rs's harness aid).
+//! Round 5: the members are characters: HP and MP (the new game's `plrp` rows), their status from
+//! their `lvup` table at their level plus the `plrp` bytes (kh2-rs `MemberStatus::member_status`),
+//! enemies' attacks hit them (kh2-rs `party_receive_hits`: damage, the victim reaction motion,
+//! FUN_00186238's HP method `hp_change` with knock-out), the knock-out lies in motion 0x36 and the
+//! revive count-down (`revive_time` from `prty` StunTime, `revive_step`, `revive_heal` with the
+//! `sstm` words 0x58 / 0x5c) stands them up with motion 0x37; the battle styles 0..3 (`dispatch`
+//! by class and style, the style's battle distance; style 1 reads Sora's target); the danger test,
+//! the MP gate and the emergency pass (`danger_member`, `mp_gate`, `emergency`); the HP / MP item
+//! handlers (`item_pick` with the executable's item orders and fractions, the items' effect through
+//! kh2-rs `item_effect`) from the stock the host gives (`Follower::items`).
+//!
+//! decided: no member scripts, so the specials and Cure (which switch the member's script to a
+//! mode) are never feasible; an item takes effect when chosen (no use motion); no limits; warp
+//! through the trail (a member beyond `WARP_DISTANCE` is put back beside Sora); the weapons are the
+//! base items (Mage's Staff 75, Knight's Shield 49, as kh2-rs's harness aid); no equipment (the
+//! status is the `lvup` row plus the `plrp` bytes); the setting bytes are all 0 (a new game's).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -30,6 +42,12 @@ use crate::data::{Disc, LoadError};
 /// Distance from Sora beyond which a follower is placed back beside him (app rule).
 pub const WARP_DISTANCE: f32 = 3000.0;
 const BLEND: f32 = 8.0;
+/// kh2-rs `party.rs`: `MOTION_DOWN` 0x36 (KO), 0x37 the get-up.
+const MOTION_DOWN: i32 = 0x36;
+const MOTION_GET_UP: i32 = 0x37;
+/// An item handler's two choice orders, and the part of a status block it reads.
+type ItemLists = (Vec<u16>, Vec<u16>);
+type VitalPart = fn(&battle::Vital) -> (i32, i32);
 
 /// The members libkh2 knows (model names) with their weapon items and hand bones (kh2-rs
 /// `party.rs`: `DONALD_HAND` 131, `GOOFY_HAND` 101).
@@ -50,7 +68,27 @@ pub struct MemberData {
     pub turn: f32,
     pub jump: f32,
     pub radius: f32,
-    pub stats: kh2_enemy_host::data::Stats,
+    /// NeoStatus (2 Donald, 3 Goofy): the `lvup` table and the `plrp` row.
+    pub neo: u16,
+    /// The new game's `plrp` row: maximum HP and MP, and the record's strength / magic / defense.
+    pub hp_max: i32,
+    pub mp_max: i32,
+    pub base: (i32, i32, i32),
+    /// The member's `lvup` table (kh2-rs `MemberStatus::lvup_row`).
+    pub lvup: Vec<kh2_tables::tables::Lvup>,
+    /// `prty` StunTime (the revive time) and MpDrive.
+    pub stun: f32,
+    pub mp_drive: f32,
+}
+
+impl MemberData {
+    /// kh2-rs `MemberStatus::member_status` without equipment: the `lvup` row of the level (held at
+    /// the table's end) plus the record's bytes.
+    pub fn status(&self, level: u8) -> (i32, i32, i32) {
+        let row = (!self.lvup.is_empty()).then(|| &self.lvup[(level.max(1) as usize).min(self.lvup.len()) - 1]);
+        let (s, m, d) = row.map_or((0, 0, 0), |r| (r.strength as i32, r.magic as i32, r.defense as i32));
+        (s + self.base.0, m + self.base.1, d + self.base.2)
+    }
 }
 
 /// The party tables (kh2-rs `PartyData`, the parts the follow and the battle subset use).
@@ -61,6 +99,21 @@ pub struct PartyData {
     pub orders: [[u8; 4]; 4],
     pub half: f32,
     pub stop: (f32, f32),
+    /// The `sstm` record (revive heal 0x58, field revive scale 0x5c, revive scale 0x54).
+    pub sstm: Option<kh2_tables::player::Sstm>,
+    /// FUN_00110f90's MP-gate weights, the item handlers' fractions and choice orders.
+    pub mp_gate_w: (f32, f32),
+    pub item_frac: (f32, f32),
+    pub hp_items: (Vec<u16>, Vec<u16>),
+    pub mp_items: (Vec<u16>, Vec<u16>),
+    /// The items (`item` of 03system.bin) for the item handlers' effect.
+    pub items: Vec<kh2_tables::tables::Item>,
+}
+
+impl PartyData {
+    fn sstm_f32(&self, off: usize) -> f32 {
+        self.sstm.as_ref().filter(|s| s.words.len() > off / 4).map_or(0.0, |s| s.f32(off))
+    }
 }
 
 impl Disc {
@@ -93,6 +146,14 @@ impl Disc {
         let f = |va: u32| rules::exe_bytes(&exe, va, 4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]));
         let half = f(0x3784ac).unwrap_or(0.5);
         let stop = (f(0x378564).unwrap_or(0.0), f(0x378568).unwrap_or(0.0));
+        let g = |va: u32| f(va).unwrap_or(0.0);
+        let mp_gate_w = (g(battle::MP_GATE_SLOPE), g(battle::MP_GATE_BASE));
+        let item_frac = (g(battle::HP_ITEM_FRACTION), g(battle::MP_ITEM_FRACTION));
+        let hp_items = (battle::item_order(&exe, battle::HP_ITEMS_ONE, battle::HP_ITEM_CHOICES), battle::item_order(&exe, battle::HP_ITEMS_MANY, battle::HP_ITEM_CHOICES));
+        let mp_items = (battle::item_order(&exe, battle::MP_ITEMS_ONE, battle::MP_ITEM_CHOICES), battle::item_order(&exe, battle::MP_ITEMS_MANY, battle::MP_ITEM_CHOICES));
+        let sstm = kh2_tables::player::load_sstm(&mut self.0).ok();
+        let plrp = kh2_tables::load::<t::Plrp>(&mut self.0, &t::PLRP).map(|d| d.rows).unwrap_or_default();
+        let items = kh2_tables::load::<t::Item>(&mut self.0, &t::ITEM).map(|d| d.rows).unwrap_or_default();
         let mut members = Vec::new();
         for (k, model) in MEMBERS.iter().enumerate() {
             let row = objs.iter().find(|o| o.model_name == *model).ok_or_else(|| LoadError(format!("objentry: no {model}")))?;
@@ -111,21 +172,19 @@ impl Disc {
                 let mset = d.wmst.get(ms).and_then(|n| n.first()).filter(|s| !s.is_empty()).cloned()?;
                 self.rig_named(&w.model_name, &mset).ok().map(Arc::new)
             });
-            // decided: the level 1 row of the member's `lvup` table (character index = NeoStatus - 1).
-            let l = lvup.get((row.neo_status as usize).saturating_sub(1)).and_then(|t| t.first());
-            let stats = kh2_enemy_host::data::Stats {
-                level: 1,
-                max_hp: 20,
-                strength: l.map_or(2, |l| l.strength as i32),
-                magic: l.map_or(2, |l| l.magic as i32),
-                defense: l.map_or(2, |l| l.defense as i32),
-                max_taken: i32::MAX,
-                min_taken: 1,
-                max_dealt: i32::MAX,
-                weakness: [100; 7],
-                ..Default::default()
-            };
+            // kh2-rs `MemberStatus::lvup_row`: the table of NeoStatus (1..=13 itself), the new game's
+            // `plrp` row 0 of the character (FUN_001c0b80).
+            let neo = row.neo_status;
+            let table = lvup.get((neo as usize).max(1) - 1).filter(|t| !t.is_empty()).or_else(|| lvup.first()).cloned().unwrap_or_default();
+            let pr = plrp.iter().find(|r| r.id == 0 && u16::from(r.character) == neo);
             members.push(MemberData {
+                neo,
+                hp_max: pr.map_or(20, |r| i32::from(r.hp)),
+                mp_max: pr.map_or(0, |r| i32::from(r.mp)),
+                base: pr.map_or((0, 0, 0), |r| (i32::from(r.strength), i32::from(r.magic), i32::from(r.defense))),
+                lvup: table,
+                stun: p.map_or(0.0, |p| p.stun_time),
+                mp_drive: p.map_or(0.0, |p| p.mp_drive),
                 model: model.to_string(),
                 thresholds: consts.thresholds(class),
                 walk: p.map_or(0.0, |p| p.walk_speed),
@@ -136,11 +195,10 @@ impl Disc {
                 class,
                 weapon,
                 hand: HAND_BONES[k],
-                stats,
                 rig,
             });
         }
-        Ok(PartyData { consts, members, ai, orders, half, stop })
+        Ok(PartyData { consts, members, ai, orders, half, stop, sstm, mp_gate_w, item_frac, hp_items, mp_items, items })
     }
 }
 
@@ -168,6 +226,37 @@ pub struct Follower {
     pub want_yaw: Option<f32>,
     /// Hits landed by this member's current action: (enemy id, trigger start).
     pub landed: HashSet<(u32, i16)>,
+    pub level: u8,
+    pub hp: i32,
+    pub hp_max: i32,
+    pub mp: i32,
+    pub mp_max: i32,
+    /// +0x7f8 bit 4 (KO) and the revive timer +0xb40.
+    pub ko: bool,
+    pub revive: f32,
+    /// +0xb00, the invincibility timer.
+    pub invuln: f32,
+    /// A hurt or get-up motion that holds the member until it ends.
+    pub hurt: Option<usize>,
+    /// The battle style (setting byte 0): 0..3.
+    pub style: u8,
+    /// The battle item stock: (item id, count). The host gives it (kh2-rs: the record's item slots).
+    pub items: Vec<(u16, u8)>,
+    /// Enemy attacks that landed on this member: (enemy id, its motion slot, trigger start).
+    pub hit_by: HashSet<(u32, Option<usize>, i16)>,
+    /// What happened to this member since the host last took it.
+    pub events: Vec<MemberEvent>,
+}
+
+/// Something that happened to a member.
+#[derive(Clone, Debug, PartialEq)]
+pub enum MemberEvent {
+    /// An enemy's attack: atkp row, damage, HP after.
+    Hit { by: u32, atkp: i16, damage: i32, hp: i32 },
+    KnockedOut,
+    Revived { hp: i32 },
+    /// An item handler used `item` on `who` (0 Sora, 1 this member, 2 the other member).
+    ItemUsed { item: u16, who: u8 },
 }
 
 impl Follower {
@@ -187,7 +276,46 @@ impl Follower {
             speed: 0.0,
             want_yaw: None,
             landed: HashSet::new(),
+            level: 1,
+            hp: m.hp_max,
+            hp_max: m.hp_max,
+            mp: m.mp_max,
+            mp_max: m.mp_max,
+            ko: false,
+            revive: 0.0,
+            invuln: 0.0,
+            hurt: None,
+            style: 0,
+            items: Vec::new(),
+            hit_by: HashSet::new(),
+            events: Vec::new(),
         }
+    }
+
+    /// The member's status block for the damage formula at its level.
+    pub fn stats(&self, data: &PartyData) -> kh2_enemy_host::data::Stats {
+        let (strength, magic, defense) = data.members[self.member].status(self.level);
+        kh2_enemy_host::data::Stats { level: i32::from(self.level), max_hp: self.hp_max, strength, magic, defense, max_taken: i32::MAX, min_taken: 1, max_dealt: i32::MAX, weakness: [100; 7], ..Default::default() }
+    }
+
+    fn vital(&self) -> battle::Vital {
+        battle::Vital { hp: self.hp, hp_max: self.hp_max, mp: self.mp, mp_max: self.mp_max }
+    }
+
+    /// FUN_00186238 through kh2-rs `hp_change`; a knock-out starts the revive timer (FUN_0017ce60).
+    pub fn change_hp(&mut self, delta: i32, data: &PartyData) -> kh2_game_core::party_hp::HpChange {
+        let scale = if data.sstm.is_some() { data.sstm_f32(0x54) } else { 1.0 };
+        let c = kh2_game_core::party_hp::hp_change(&mut self.hp, self.hp_max, 0, &mut self.ko, delta, scale);
+        if c.knocked_out {
+            self.revive = battle::revive_time(data.members[self.member].stun, 1.0);
+            self.attack = None;
+            self.held = None;
+            self.events.push(MemberEvent::KnockedOut);
+        }
+        if c.revived {
+            self.events.push(MemberEvent::Revived { hp: self.hp });
+        }
+        c
     }
 
     pub fn matrix(&self) -> Mat4 {
@@ -219,23 +347,35 @@ impl Default for PartyRng {
 }
 
 /// One tick of the followers in the field (no enemies): kh2-rs `party.rs`'s follow path.
-#[allow(clippy::too_many_arguments)]
-pub fn tick(data: &PartyData, followers: &mut [Follower], rng: &mut PartyRng, player: Vec3, player_yaw: f32, world: &World, fall_max: f32, pose: bool) {
-    tick_battle(data, followers, rng, player, player_yaw, world, fall_max, pose, None);
+pub fn tick(data: &PartyData, followers: &mut [Follower], rng: &mut PartyRng, sora: &mut crate::sora::Sora, world: &World) {
+    tick_battle(data, followers, rng, sora, world, None);
 }
 
-/// One tick of the followers with the battle subset when `enemies` is given and one is within
-/// the class's battle distance of Sora.
-#[allow(clippy::too_many_arguments)]
-pub fn tick_battle(data: &PartyData, followers: &mut [Follower], rng: &mut PartyRng, player: Vec3, player_yaw: f32, world: &World, fall_max: f32, pose: bool, enemies: Option<(&mut crate::enemy::Enemies, &crate::data::Params)>) {
+/// One tick of the followers (after Sora's) with the battle part when `enemies` is given and one is
+/// within the style's battle distance of Sora.
+pub fn tick_battle(data: &PartyData, followers: &mut [Follower], rng: &mut PartyRng, sora: &mut crate::sora::Sora, world: &World, enemies: Option<&mut crate::enemy::Enemies>) {
     let _stream = kh2_game_core::rng::stream(0);
     kh2_game_core::rng::set_state(rng.0);
-    tick_inner(data, followers, player, player_yaw, world, fall_max, pose, enemies);
+    tick_inner(data, followers, sora, world, enemies);
     rng.0 = kh2_game_core::rng::state();
 }
 
-#[allow(clippy::too_many_arguments)]
-fn tick_inner(data: &PartyData, followers: &mut [Follower], player: Vec3, player_yaw: f32, world: &World, fall_max: f32, pose: bool, mut enemies: Option<(&mut crate::enemy::Enemies, &crate::data::Params)>) {
+/// The item's effect on a status block (kh2-rs `item_effect`, multiplier 100: the members have no
+/// Item Boost here).
+fn item_on(data: &PartyData, item: u16, v: &mut battle::Vital) -> bool {
+    let Some(row) = data.items.iter().find(|i| i.id == item) else { return false };
+    let amount = row.flag1 as u16 | (row.rank as u16) << 8;
+    let mut x = kh2_game_core::items::Vitals { hp: v.hp, hp_max: v.hp_max, hp_min: 0, mp: v.mp, mp_max: v.mp_max, ..Default::default() };
+    let ok = kh2_game_core::items::item_effect(item, amount, 100, &mut x, 0.0);
+    v.hp = x.hp;
+    v.mp = x.mp;
+    ok
+}
+
+fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::sora::Sora, world: &World, mut enemies: Option<&mut crate::enemy::Enemies>) {
+    let game = sora.game.clone();
+    let params = &game.params;
+    let (player, player_yaw, fall_max, pose) = (sora.motor.pos, sora.motor.yaw, params.sstm.fall_max, sora.pose);
     let c = &data.consts;
     let mut inputs = [None; 2];
     for (i, f) in followers.iter().take(2).enumerate() {
@@ -246,10 +386,40 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], player: Vec3, player
     // The enemies' hurt shapes (centre, radius) by id: the members' targets.
     let foes: Vec<(u32, Vec<(Vec3, f32)>)> = enemies
         .as_ref()
-        .map(|(en, _)| en.list.iter().filter(|e| e.alive() && e.data.kind.status).map(|e| (e.id, crate::enemy::hurt_volumes(&e.data.rig, &e.anim.pose, e.matrix()).into_iter().map(|v| ((v.a + v.b) * 0.5, v.r)).collect())).collect())
+        .map(|en| en.list.iter().filter(|e| e.alive() && e.data.kind.status).map(|e| (e.id, crate::enemy::hurt_volumes(&e.data.rig, &e.anim.pose, e.matrix()).into_iter().map(|v| ((v.a + v.b) * 0.5, v.r)).collect())).collect())
         .unwrap_or_default();
-    for (i, f) in followers.iter_mut().enumerate() {
+    // Sora's target as an object index (style 1's `0x34e9b0`): the enemy nearest his target point.
+    let player_target = sora.target.and_then(|t| foes.iter().enumerate().flat_map(|(fi, (_, s))| s.iter().enumerate().map(move |(si, &(ct, _))| ((fi, si), ct.distance(t.pos)))).min_by(|a, b| a.1.total_cmp(&b.1)).map(|x| x.0));
+    let vitals: Vec<battle::Vital> = followers.iter().map(Follower::vital).collect();
+    let n = followers.len();
+    for i in 0..n {
+        let (left, right) = followers.split_at_mut(i);
+        let (f, right) = right.split_first_mut().unwrap();
+        let mut other: Option<&mut Follower> = left.first_mut().or(right.first_mut());
         let m = &data.members[f.member];
+        if f.invuln > 0.0 {
+            f.invuln -= 1.0;
+        }
+        // A reaction or get-up motion that ended frees the member.
+        if let Some(slot) = f.hurt
+            && (f.body.finished || f.body.slot != Some(slot))
+        {
+            f.hurt = None;
+        }
+        let in_battle_now = !foes.is_empty();
+        // FUN_0017ca70: the KO'd member's revive count-down; at 0 FUN_0017cc20 heals maxHP x sstm +0x58.
+        if f.ko && battle::revive_step(&mut f.revive, 1.0, in_battle_now, data.sstm_f32(0x5c)) {
+            let heal = battle::revive_heal(f.hp_max, data.sstm_f32(0x58)).max(1);
+            if f.change_hp(heal, data).revived {
+                let rig = f.body.rig.clone();
+                let order = data.orders[battle::motion_state(in_battle_now, f.weapon.is_some())];
+                let up = battle::remap(MOTION_GET_UP, order, |s| rig.mset.has(s));
+                if up.is_some() {
+                    f.body.restart(up, false, 4.0);
+                    f.hurt = up;
+                }
+            }
+        }
         if f.motor.pos.distance(player) > WARP_DISTANCE {
             f.motor = Motor { pos: points.get(i).copied().flatten().unwrap_or(player), grounded: true, ..Motor::default() };
             f.attack = None;
@@ -259,12 +429,20 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], player: Vec3, player
         let ground_dir = to_player.with_y(0.0).normalize_or_zero();
         let facing = f.motor.forward();
         let ai = data.ai.get(&m.class);
-        let in_battle = ai.is_some_and(|a| !foes.is_empty() && foes.iter().any(|(_, s)| s.iter().any(|(ct, _)| ct.distance(player) < battle::battle_distance(a.params.battle, 0, data.half) + a.params.range)));
+        let in_battle = ai.is_some_and(|a| !foes.is_empty() && foes.iter().any(|(_, s)| s.iter().any(|(ct, _)| ct.distance(player) < battle::battle_distance(a.params.battle, f.style, data.half) + a.params.range)));
         let order = data.orders[battle::motion_state(in_battle, f.weapon.is_some())];
         if f.timer > 0.0 {
             f.timer -= 1.0;
         }
-        let free = f.attack.is_none();
+        // KO'd: lie in motion 0x36 (FUN_0017e2d8), nothing else.
+        if f.ko {
+            let rig = f.body.rig.clone();
+            let down = battle::remap(MOTION_DOWN, order, |s| rig.mset.has(s));
+            if f.hurt.is_none() && f.body.slot != down && down.is_some() {
+                f.body.restart(down, false, 4.0);
+            }
+        }
+        let free = f.attack.is_none() && f.hurt.is_none() && !f.ko;
         let mut delta = Vec3::ZERO;
         let mut start: Option<(Option<usize>, battle::Entry)> = None;
         let mut follow_up: Option<battle::FollowUp> = None;
@@ -284,10 +462,10 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], player: Vec3, player
                 // The target (style 0, FUN_0010dcf0 / FUN_0010cf90 via kh2-rs `refresh_target`).
                 let cands: Vec<battle::Cand> = foes.iter().enumerate().flat_map(|(fi, (_, shapes))| shapes.iter().enumerate().map(move |(si, &(centre, radius))| battle::Cand { fighter: fi, shape: si, centre, radius, enabled: true, targetable: true })).collect();
                 let index = |id: u32| foes.iter().position(|x| x.0 == id);
-                let scene = battle::TargetScene { member: pos, player, attacker: None, player_target: None, player_hit: None, cands: &cands, held: &[], attack_gate: false, previous: f.target.and_then(|(id, s)| Some((index(id)?, s))) };
+                let scene = battle::TargetScene { member: pos, player, attacker: None, player_target, player_hit: None, cands: &cands, held: &[], attack_gate: false, previous: f.target.and_then(|(id, s)| Some((index(id)?, s))) };
                 let shape_of = |t: (u32, usize)| foes.iter().find(|x| x.0 == t.0).and_then(|x| x.1.get(t.1).copied());
-                let too_far = battle::battle_distance(ai.params.battle, 0, data.half) < relation(pos, player).2;
-                if let Some((chooser, test)) = battle::dispatch(m.class, 0) {
+                let too_far = battle::battle_distance(ai.params.battle, f.style, data.half) < relation(pos, player).2;
+                if let Some((chooser, test)) = battle::dispatch(m.class, f.style) {
                     let now = f.target.filter(|_| !too_far).and_then(|t| Some(((index(t.0)?, t.1), shape_of(t)?.0)));
                     let counted = f.choosing.current.and_then(|k| ai.records.get(k)).is_some_and(|r| r.flags & battle::flag::NOT_COUNTED == 0);
                     if battle::needs_retarget(test, false, now, counted, &ai.params, &scene) {
@@ -297,7 +475,22 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], player: Vec3, player
                 let tshape = f.target.and_then(shape_of);
                 let (tdy, tdir, tgd) = tshape.map_or((0.0, Vec3::ZERO, 0.0), |(ct, _)| relation(pos, ct));
                 let target_ok = tshape.is_some() && !too_far;
-                let now = MemberNow { standing: f.motor.grounded, free: true, status: true, mp: 0, mp_gate: false, mp_charge: false, target_ok, dy: tdy, gd: tgd, facing_dot: facing.dot(tdir), radius: tshape.map_or(0.0, |s| s.1) };
+                // FUN_00110f90: the MP gate of this frame; FUN_0010f830: the member in danger.
+                let roll = kh2_game_core::rng::friend_roll();
+                let player_v = battle::Vital { hp: sora.hp, hp_max: sora.max_hp, mp: sora.mp, mp_max: sora.max_mp };
+                let me_v = f.vital();
+                let other_v = vitals.iter().enumerate().find(|(k, _)| *k != i).map(|(_, v)| *v);
+                let danger = battle::danger_member(player_v, me_v, other_v, false);
+                let mp_gate = danger.is_some() || battle::mp_gate(roll, ai.params.mp_chance, f.mp, f.mp_max, data.mp_gate_w.0, data.mp_gate_w.1);
+                let now = MemberNow { standing: f.motor.grounded, free: true, status: true, mp: f.mp, mp_gate, mp_charge: false, target_ok, dy: tdy, gd: tgd, facing_dot: facing.dot(tdir), radius: tshape.map_or(0.0, |s| s.1) };
+                let stock: Vec<u16> = f.items.iter().filter(|x| x.1 > 0).map(|x| x.0).collect();
+                let item_choice = |h: Handler| -> Option<(battle::Who, u16)> {
+                    let (frac, lists, value): (f32, &ItemLists, VitalPart) = match h {
+                        Handler::HpItem => (data.item_frac.0, &data.hp_items, |v| (v.hp, v.hp_max)),
+                        _ => (data.item_frac.1, &data.mp_items, |v| (v.mp, v.mp_max)),
+                    };
+                    battle::item_pick(danger, me_v, player_v, other_v, frac, value, &lists.0, &lists.1, |_| 0, |it| now.standing && stock.contains(&it))
+                };
                 let toward = |fo: &mut Follower| {
                     if target_ok {
                         battle::approach_step(&mut fo.follow, tdir, tgd, tdy, &m.thresholds, m.walk, m.run, data.stop)
@@ -316,12 +509,19 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], player: Vec3, player
                         Handler::Approach => (if cont { waited } else { current != Some(k) }) && !any_attack(skip),
                         Handler::Wait => (!cont || waited) && !any_attack(skip),
                         Handler::GoofyWait => (!cont || waited) && target_ok,
+                        Handler::HpItem | Handler::MpItem => battle::feasible(r, &now, Some(0), false) && item_choice(r.handler).is_some(),
+                        // decided: Special and Cure switch the member's script, which is not run.
                         _ => false,
                     }
                 };
                 let chain = f.motor.grounded && target_ok;
                 let mut choosing = std::mem::take(&mut f.choosing);
-                let choice = battle::choose(&ai.records, &mut choosing, &ai.params, m.class, &now, false, chain, |_| Some(0), can, kh2_game_core::rng::friend_roll, kh2_game_core::rng::friend_rand);
+                // FUN_0010f8d8 first when someone is in danger, else FUN_0010fcd0.
+                let urgent = if danger.is_some() { battle::emergency(&ai.records, &mut choosing, true, false, |k| can(k, false), kh2_game_core::rng::friend_rand) } else { None };
+                let choice = match urgent {
+                    Some(k) => Choice::Do(k),
+                    None => battle::choose(&ai.records, &mut choosing, &ai.params, m.class, &now, false, chain, |_| Some(0), can, kh2_game_core::rng::friend_roll, kh2_game_core::rng::friend_rand),
+                };
                 f.choosing = choosing;
                 if let Choice::FollowUp(k) = choice {
                     follow_up = ai.followups.get(k as usize).copied();
@@ -353,6 +553,41 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], player: Vec3, player
                                 f.timer = kh2_game_core::rng::range(ai.params.wait_b.0, ai.params.wait_b.1);
                             }
                             (dir, speed) = toward(f);
+                        }
+                        Handler::HpItem | Handler::MpItem => {
+                            (dir, speed) = (facing, 0.0);
+                            if let Some((who, item)) = item_choice(r.handler) {
+                                // decided: the effect now (the game plays the item motion first).
+                                let used = match who {
+                                    battle::Who::Player => sora.apply_item_mult(item, 100),
+                                    battle::Who::Me => {
+                                        let mut v = f.vital();
+                                        let ok = item_on(data, item, &mut v);
+                                        f.mp = v.mp;
+                                        f.change_hp(v.hp - f.hp, data);
+                                        ok
+                                    }
+                                    battle::Who::Other => match other.as_mut() {
+                                        Some(o) => {
+                                            let mut v = o.vital();
+                                            let ok = item_on(data, item, &mut v);
+                                            o.mp = v.mp;
+                                            o.change_hp(v.hp - o.hp, data);
+                                            ok
+                                        }
+                                        None => false,
+                                    },
+                                };
+                                if used && let Some(s) = f.items.iter_mut().find(|x| x.0 == item && x.1 > 0) {
+                                    s.1 -= 1;
+                                    let w = match who {
+                                        battle::Who::Player => 0,
+                                        battle::Who::Me => 1,
+                                        battle::Who::Other => 2,
+                                    };
+                                    f.events.push(MemberEvent::ItemUsed { item, who: w });
+                                }
+                            }
                         }
                         Handler::GoofyWait => {
                             if continuing && let Some(h) = f.held {
@@ -434,7 +669,7 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], player: Vec3, player
         }
         let airborne = (!f.motor.grounded).then(|| f.motor.jump_dy(fall_max));
         f.motor.move_by(world, delta, airborne);
-        if f.attack.is_none() {
+        if f.attack.is_none() && f.hurt.is_none() && !f.ko {
             if f.follow.turning {
                 f.motor.turn_to(ground_dir, m.turn);
             } else if let Some(y) = f.want_yaw {
@@ -453,8 +688,55 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], player: Vec3, player
                 w.pose_now();
             }
         }
+        // The enemies' live attacks against this member (kh2-rs `party_receive_hits`): not while KO'd
+        // or invincible.
+        if let Some(en) = enemies.as_mut()
+            && !f.ko
+            && f.invuln <= 0.0
+            && let Some(reaction) = params.reaction.as_ref()
+        {
+            let hurt = crate::enemy::hurt_volumes(&m.rig, &f.body.pose, f.matrix());
+            let hurt = if hurt.is_empty() { vec![crate::enemy::Volume { a: f.motor.pos + Vec3::Y * m.radius, b: f.motor.pos + Vec3::Y * 90.0, r: m.radius }] } else { hurt };
+            let to = f.stats(data);
+            f.hit_by.retain(|k| en.list.iter().any(|e| e.id == k.0 && e.anim.slot == k.1));
+            for e in en.list.iter().filter(|e| e.alive() && !e.removed) {
+                for (atkp, start, v) in crate::enemy::live_attacks(&e.anim, e.matrix()) {
+                    let key = (e.id, e.anim.slot, start);
+                    if f.ko || f.hit_by.contains(&key) || !hurt.iter().any(|h| crate::enemy::overlap(&v, h)) {
+                        continue;
+                    }
+                    f.hit_by.insert(key);
+                    let Some(atk) = params.atkp(atkp) else { continue };
+                    let useless = kh2_game_core::reaction_rules::is_ineffective(to.weakness[(atk.element as usize).min(6)], to.weakness[6]);
+                    let dmg = if useless { crate::enemy::damage(atk, &e.stats, &to) } else { crate::enemy::damage(atk, &e.stats, &to).max(1) };
+                    let ko = f.change_hp(-dmg, data).knocked_out;
+                    f.events.push(MemberEvent::Hit { by: e.id, atkp, damage: dmg, hp: f.hp });
+                    let dir = (f.motor.pos - e.pos()).with_y(0.0).normalize_or_zero();
+                    let from_front = f.motor.forward().dot(-dir) > 0.0;
+                    use kh2_game_core::reaction_rules::{self as rr, VictimAction, VictimCtx};
+                    let ctx = VictimCtx { status: 0, grounded: f.motor.grounded, attacker_flag_4000: false, from_front, hit_part_plain: true };
+                    let out = rr::victim_outcome(&rr::HitRow::from_atkp(atk), useless, &ctx, &reaction.patn, &reaction.defaults, &reaction.consts);
+                    let motion = match out.action {
+                        VictimAction::Flinch { motion, fallback } | VictimAction::FlinchPush { motion, fallback, .. } => Some((motion as i32, Some(fallback as i32))),
+                        VictimAction::Class14 { motion, .. } | VictimAction::Blow { motion, .. } => Some((motion as i32, None)),
+                        _ => None,
+                    };
+                    if let Some((mo, fb)) = motion.filter(|_| !ko) {
+                        let rig = f.body.rig.clone();
+                        let slot = battle::remap(mo, order, |s| rig.mset.has(s)).or_else(|| fb.and_then(|x| battle::remap(x, order, |s| rig.mset.has(s))));
+                        if slot.is_some() {
+                            f.body.restart(slot, false, 2.0);
+                            f.hurt = slot;
+                            f.attack = None;
+                            f.held = None;
+                            f.landed.clear();
+                        }
+                    }
+                }
+            }
+        }
         // The member's live attacks against the enemies (kh2-rs `combat.rs` for the party's fighters).
-        if let Some((en, params)) = enemies.as_mut() {
+        if let Some(en) = enemies.as_mut() {
             let mut attacks = crate::enemy::live_attacks(&f.body, f.matrix());
             if let Some(w) = &f.weapon {
                 attacks.extend(crate::enemy::live_attacks(w, f.weapon_matrix(data)));
@@ -466,9 +748,9 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], player: Vec3, player
                     }
                     let Some(atk) = params.atkp(atkp).cloned() else { continue };
                     f.landed.insert((e.id, startf));
-                    let dmg = crate::enemy::damage(&atk, &m.stats, &e.stats);
+                    let dmg = crate::enemy::damage(&atk, &f.stats(data), &e.stats);
                     let dir = (e.pos() - f.motor.pos).with_y(0.0).normalize_or_zero();
-                    if let Some(r) = params.reaction.as_ref() {
+                    if let Some(r) = game.params.reaction.as_ref() {
                         crate::enemy::Enemies::receive(e, &atk, dmg, dir, r);
                     }
                     let (id, hp) = (e.id, e.hp);

@@ -1431,11 +1431,17 @@ impl Sora {
 
     /// The item's effect on Sora now (FUN_001a12a0 through kh2-rs `item_effect`).
     pub fn apply_item(&mut self, item: u16) -> bool {
+        let mult = 100 + self.loadout.as_ref().map_or(0, |l| l.block().item_boost as i32);
+        self.apply_item_mult(item, mult)
+    }
+
+    /// The item's effect with the user's multiplier (100 plus the user's Item Boost): a party
+    /// member's item on Sora passes its own.
+    pub fn apply_item_mult(&mut self, item: u16, mult: i32) -> bool {
         use kh2_game_core::items::{item_effect, Vitals};
         let p = self.game.params.clone();
         let Some(row) = p.items.iter().find(|i| i.id == item) else { return false };
         let amount = row.flag1 as u16 | (row.rank as u16) << 8;
-        let mult = 100 + self.loadout.as_ref().map_or(0, |l| l.block().item_boost as i32);
         let d = &self.drive.points;
         let mut v = Vitals { hp: self.hp, hp_max: self.max_hp, hp_min: 0, mp: self.mp, mp_max: self.max_mp, charge_left: self.charge.left, charge_total: self.charge.total, drive_fraction: d.fraction, drive_points: d.whole, drive_max: d.max };
         let before = (self.hp, self.mp, d.whole as i32 * 100 + d.fraction as i32);

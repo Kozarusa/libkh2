@@ -84,3 +84,9 @@ pub mod reaction_cmd {
     pub const EXECUTE_EVENT: u16 = 0x7f;
     include!(concat!(env!("OUT_DIR"), "/reaction_cmd.rs"));
 }
+
+/// kh2-rs `shared::party::hp_change` (the party HP method, KO and revive), by `build.rs`.
+#[allow(dead_code, clippy::all)]
+pub mod party_hp {
+    include!(concat!(env!("OUT_DIR"), "/party_hp.rs"));
+}

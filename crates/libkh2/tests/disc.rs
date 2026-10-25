@@ -654,7 +654,7 @@ fn donald_and_goofy_follow_sora() {
     let run = Input { stick: [0.0, 1.0], cam_look: [0.0, 1.0], ..Default::default() };
     for t in 0..400 {
         s.tick(&w, &if t < 300 { run } else { Input::default() });
-        kh2::party::tick(&party, &mut f, &mut rng, s.motor.pos, s.motor.yaw, &w, game.params.sstm.fall_max, true);
+        kh2::party::tick(&party, &mut f, &mut rng, &mut s, &w);
     }
     for x in &f {
         let dist = x.motor.pos.distance(s.motor.pos);
@@ -791,7 +791,7 @@ fn donald_and_goofy_fight_an_enemy() {
     let mut hits = Vec::new();
     for _ in 0..1200 {
         s.tick(&w, &Input::default());
-        tick_battle(&party, &mut fs, &mut rng, s.motor.pos, s.motor.yaw, &w, game.params.sstm.fall_max, true, Some((&mut en, &game.params)));
+        tick_battle(&party, &mut fs, &mut rng, &mut s, &w, Some(&mut en));
         en.tick(&mut s, &w, game.params.sstm.fall_max);
         for ev in en.events.drain(..) {
             if let EnemyEvent::Hit { atkp, damage, .. } = ev {
@@ -888,5 +888,106 @@ fn level_ups_give_the_lvup_rows_abilities_and_the_record_saves() {
         bad[6] = 200; // level 200
         assert!(t.load(&bad).is_err());
         assert_eq!(t.save(), before);
+    }
+}
+
+#[test]
+fn members_take_hits_fall_revive_use_items_and_fight_in_every_style() {
+    use kh2::enemy::Enemies;
+    use kh2::party::{tick_battle, Follower, MemberEvent, PartyRng};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let party = d.party().expect("party data");
+    let w = floor();
+    for m in &party.members {
+        eprintln!("{}: neo {} HP {} MP {} base {:?} lvup rows {} stun {} status at 1 {:?} at 20 {:?}", m.model, m.neo, m.hp_max, m.mp_max, m.base, m.lvup.len(), m.stun, m.status(1), m.status(20));
+        assert!(m.hp_max > 0 && !m.lvup.is_empty());
+        if let Some(a) = party.ai.get(&m.class) {
+            eprintln!("  class {}: battle {} range {} player_range {} player_near {} retarget {} half {}", m.class, a.params.battle, a.params.range, a.params.player_range, a.params.player_near, a.params.retarget, party.half);
+        }
+    }
+    // Hits, KO and revive: Soldiers around the members, who have little HP.
+    let mut s = standing(&game, &w);
+    s.max_hp = 999;
+    s.hp = 999;
+    let mut en = Enemies::new(data.clone());
+    for k in 0..4 {
+        en.spawn("M_EX010", Vec3::new(-150.0 + 100.0 * k as f32, 0.0, 250.0), std::f32::consts::PI, &w);
+    }
+    for e in en.list.iter_mut() {
+        e.hp = 100000;
+    }
+    let mut rng = PartyRng::default();
+    let mut fs = vec![Follower::new(&party, 0, Vec3::new(-100.0, 0.0, 150.0)), Follower::new(&party, 1, Vec3::new(100.0, 0.0, 150.0))];
+    for f in fs.iter_mut() {
+        f.hp = 3;
+    }
+    let (mut hits, mut kos, mut revives) = (0, 0, 0);
+    for _ in 0..4000 {
+        s.hp = 999;
+        s.tick(&w, &Input::default());
+        tick_battle(&party, &mut fs, &mut rng, &mut s, &w, Some(&mut en));
+        en.tick(&mut s, &w, game.params.sstm.fall_max);
+        en.events.clear();
+        for f in fs.iter_mut() {
+            for e in f.events.drain(..) {
+                match e {
+                    MemberEvent::Hit { .. } => hits += 1,
+                    MemberEvent::KnockedOut => kos += 1,
+                    MemberEvent::Revived { .. } => revives += 1,
+                    _ => {}
+                }
+            }
+        }
+    }
+    eprintln!("members: {hits} hits taken, {kos} knock-outs, {revives} revives; HP {:?}", fs.iter().map(|f| (f.hp, f.hp_max, f.ko)).collect::<Vec<_>>());
+    assert!(hits > 0 && kos > 0 && revives > 0);
+    // Items: Sora in danger, Donald holds Potions.
+    let mut s = standing(&game, &w);
+    s.hp = 2;
+    let mut en = Enemies::new(data.clone());
+    en.spawn("M_EX990", Vec3::new(0.0, 0.0, 400.0), std::f32::consts::PI, &w);
+    for e in en.list.iter_mut() {
+        e.rt = None;
+    }
+    let mut fs = vec![Follower::new(&party, 0, Vec3::new(-100.0, 0.0, 0.0))];
+    fs[0].items = vec![(1, 3)];
+    let mut used = Vec::new();
+    for _ in 0..600 {
+        s.tick(&w, &Input::default());
+        tick_battle(&party, &mut fs, &mut rng, &mut s, &w, Some(&mut en));
+        en.tick(&mut s, &w, game.params.sstm.fall_max);
+        used.extend(fs[0].events.drain(..).filter(|e| matches!(e, MemberEvent::ItemUsed { .. })));
+    }
+    eprintln!("items used {used:?}; Sora HP {} / {}; stock {:?}", s.hp, s.max_hp, fs[0].items);
+    assert!(used.contains(&MemberEvent::ItemUsed { item: 1, who: 0 }) && s.hp > 2);
+    // Every style fights.
+    for style in 0..4u8 {
+        let mut s = standing(&game, &w);
+        s.max_hp = 999;
+        s.hp = 999;
+        let mut en = Enemies::new(data.clone());
+        // Style 2 takes only enemies whose surface is within the class's +0x84 (100) of Sora.
+        let z = if style == 2 { 110.0 } else { 250.0 };
+        en.spawn("M_EX990", Vec3::new(0.0, 0.0, z), std::f32::consts::PI, &w);
+        for e in en.list.iter_mut() {
+            e.rt = None;
+            e.hp = 100000;
+        }
+        s.target = Some(kh2::sora::Target { pos: Vec3::new(0.0, 80.0, z), radius: 40.0, half_height: 80.0 });
+        let mut fs = vec![Follower::new(&party, 0, Vec3::new(-100.0, 0.0, 0.0)), Follower::new(&party, 1, Vec3::new(100.0, 0.0, 0.0))];
+        for f in fs.iter_mut() {
+            f.style = style;
+        }
+        let mut n = 0;
+        for _ in 0..1200 {
+            s.tick(&w, &Input::default());
+            tick_battle(&party, &mut fs, &mut rng, &mut s, &w, Some(&mut en));
+            en.tick(&mut s, &w, game.params.sstm.fall_max);
+            n += en.events.drain(..).filter(|e| matches!(e, kh2::enemy::EnemyEvent::Hit { .. })).count();
+        }
+        eprintln!("style {style}: {n} hits");
+        assert!(n > 0, "style {style} fights");
     }
 }

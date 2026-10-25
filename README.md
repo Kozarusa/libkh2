@@ -179,7 +179,13 @@ own `prty` speeds and idle/walk/run motions (disc test `donald_and_goofy_follow_
 they fight: kh2-rs `party_battle` (target choice of style 0, the AI class records from the executable,
 `choose`, feasibility, approach step, slot remap), attack motions with their weapons (staff 75,
 shield 49) and damage on enemy hurt shapes, reported as enemy `Hit` events (disc test
-`donald_and_goofy_fight_an_enemy`). decided: no member scripts, limits, Cure, items; members are not hit.
+`donald_and_goofy_fight_an_enemy`). Since 0.5 they are characters: HP/MP from the new game's `plrp`
+rows, status from their `lvup` table at their level (`kh2_party_set_level`), enemies hit them
+(damage, reaction motions, FUN_00186238's HP method), a knock-out lies down until the revive timer
+(`prty` StunTime, `sstm` 0x58 / 0x5c) stands them up, styles 0..3 (`kh2_party_set_style`), the danger
+test, emergency pass and HP/MP item handlers spend the stock the host gives (`kh2_party_set_items`);
+events via `kh2_poll_member_event` (disc test `members_take_hits_fall_revive_use_items_and_fight_in_every_style`).
+decided: no member scripts (Specials and Cure are never chosen), no equipment, items act at once.
 
 Enemies (`kh2_enemy_spawn`, `kh2_enemies_tick`): any kind of kh2-rs's list (Shadow, Soldier, Dusk and
 50 more) under its own BDX script through kh2-rs's interpreter and its script host compiled in

@@ -20,7 +20,7 @@
 
 /* The version this header describes; kh2_version() returns the library's (same packing). */
 #define KH2_VERSION_MAJOR 0
-#define KH2_VERSION_MINOR 4
+#define KH2_VERSION_MINOR 5
 #define KH2_VERSION_PATCH 0
 #define KH2_VERSION ((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)
 
@@ -271,15 +271,39 @@ KH2_API int32_t kh2_motion_info(int32_t handle, int32_t which, int32_t slot, kh2
 KH2_API int32_t kh2_sample_motion(int32_t handle, int32_t which, int32_t slot, float frame, float *out, uint32_t max_bones, float *root);
 
 /* ---- Party members (kh2-rs party_rules + party_battle: field follow; with spawned enemies
- * kh2_party_tick runs the battle subset: target choice, action records, attack motions, weapons, damage
- * reported as kh2_enemy_event hits. No member scripts, limits, Cure or items.) ---- */
+ * kh2_party_tick runs the battle part: target choice of the member's style (0..3), action records,
+ * attack motions, weapons, damage reported as kh2_enemy_event hits; enemies hit the members (HP from
+ * the new game's plrp rows, status from lvup at the member's level), knock-out and the revive timer,
+ * the danger test, emergency pass and HP/MP item handlers from the host's item stock. Not ported:
+ * member scripts (Specials, Cure), limits, equipment.) ---- */
 typedef struct kh2_member_state {
     float pos[3];
     float yaw;
     int32_t member;       /* 0 Donald, 1 Goofy */
     int32_t motion_slot;
     float frame;
+    int32_t hp, max_hp, mp, max_mp;
+    int32_t ko;           /* 1 while knocked out (the revive timer runs) */
+    int32_t level, style;
+    int32_t strength, magic, defense;
 } kh2_member_state;
+#define KH2_MEMBER_HIT 1      /* id = enemy id, atkp, damage, hp after */
+#define KH2_MEMBER_KO 2
+#define KH2_MEMBER_REVIVED 3  /* hp after */
+#define KH2_MEMBER_ITEM 4     /* id = item, atkp = target (0 Sora, 1 the member, 2 the other member) */
+typedef struct kh2_member_event {
+    int32_t slot, kind, id, atkp, damage, hp;
+} kh2_member_event;
+/* 1 written, 0 none left. */
+KH2_API int32_t kh2_poll_member_event(int32_t handle, kh2_member_event *out);
+/* Level 1..99 (status = lvup row + the new game's bytes). */
+KH2_API int32_t kh2_party_set_level(int32_t handle, int32_t slot, int32_t level);
+/* HP/MP and maxima; HP 0 knocks out, HP > 0 on a KO'd member revives (scaled as the game does). */
+KH2_API int32_t kh2_party_set_vitals(int32_t handle, int32_t slot, int32_t hp, int32_t max_hp, int32_t mp, int32_t max_mp);
+/* Battle style 0..3 (setting byte 0). */
+KH2_API int32_t kh2_party_set_style(int32_t handle, int32_t slot, int32_t style);
+/* The member's battle items: `count` ids with their counts (the HP/MP item handlers spend them). */
+KH2_API int32_t kh2_party_set_items(int32_t handle, int32_t slot, const uint16_t *ids, const uint8_t *counts, uint32_t count);
 /* Adds Donald (0) or Goofy (1) following Sora; returns the member's slot 0/1 or -1. */
 KH2_API int32_t kh2_party_add(int32_t handle, int32_t member);
 /* One tick of the followers (after kh2_tick). */

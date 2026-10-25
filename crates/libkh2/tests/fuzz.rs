@@ -235,6 +235,14 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 let slot = r.int();
                 kh2_party_state(h, slot, if r.chance(4) { std::ptr::null_mut() } else { &mut m });
                 kh2_party_bones(h, slot, r.int(), fp(r, b), max(r, BUF / 16));
+                kh2_party_set_level(h, slot, r.int());
+                kh2_party_set_vitals(h, slot, r.int(), r.int(), r.int(), r.int());
+                kh2_party_set_style(h, slot, r.int());
+                let ids = [1u16, 2, 3, r.next() as u16];
+                let counts = [r.byte(), r.byte(), r.byte(), r.byte()];
+                kh2_party_set_items(h, slot, if r.chance(4) { std::ptr::null() } else { ids.as_ptr() }, counts.as_ptr(), r.below(5) as u32);
+                let mut ev = Kh2MemberEvent::default();
+                kh2_poll_member_event(h, if r.chance(5) { std::ptr::null_mut() } else { &mut ev });
             }
             35..=36 => {
                 let k = CString::new(kinds[r.below(kinds.len() as u64) as usize]).unwrap();

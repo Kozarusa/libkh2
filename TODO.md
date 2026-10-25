@@ -1,3 +1,13 @@
+# TODO (round 5)
+
+1. [x] Party members as characters: HP/MP (plrp), status from lvup by level, enemy hits with reaction motions, KO / revive timer, styles 0..3, danger + emergency pass + HP/MP item handlers from a host stock (disc test `members_take_hits_fall_revive_use_items_and_fight_in_every_style`). Not ported: Specials/Cure (need the member scripts), equipment, auto-heal of reserve members.
+2. [ ] Limits.
+3. [ ] Script-to-Sora commands; enemies offering reaction commands on their own.
+4. [ ] Bonus levels; drive form ability lists.
+5. [ ] More areas / enemy kinds.
+6. [ ] Packaging, Unity sample, Python ctypes example.
+7. [ ] Performance report, docs pass.
+
 # TODO (round 4)
 
 1. [x] Enemies under their BDX scripts.

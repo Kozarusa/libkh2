@@ -189,8 +189,8 @@ fn main() {
             eprintln!("event: {e:?}");
         }
         if let Some(p) = party.as_ref() {
-            let fighting = enemies.as_mut().filter(|e| !e.list.is_empty()).map(|e| (e, &game.params));
-            kh2::party::tick_battle(p, &mut followers, &mut party_rng, sora.motor.pos, sora.motor.yaw, &world, game.params.sstm.fall_max, true, fighting);
+            let fighting = enemies.as_mut().filter(|e| !e.list.is_empty());
+            kh2::party::tick_battle(p, &mut followers, &mut party_rng, &mut sora, &world, fighting);
         }
         if let Some(en) = enemies.as_mut() {
             en.tick(&mut sora, &world, game.params.sstm.fall_max);

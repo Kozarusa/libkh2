@@ -182,7 +182,7 @@ fn battle_replays_the_same() {
             let to = s.target.map_or(Vec3::ZERO, |t| (t.pos - s.motor.pos).with_y(0.0));
             let stick = if to.length() > 150.0 { [to.x / to.length(), to.z / to.length()] } else { [0.0, 0.0] };
             s.tick(&w, &input(stick, t % 6 == 0, false, false));
-            kh2::party::tick_battle(&party, &mut fs, &mut rng, s.motor.pos, s.motor.yaw, &w, g.params.sstm.fall_max, true, Some((&mut en, &g.params)));
+            kh2::party::tick_battle(&party, &mut fs, &mut rng, &mut s, &w, Some(&mut en));
             en.tick(&mut s, &w, g.params.sstm.fall_max);
             let ev: Vec<String> = en.events.drain(..).map(|e| format!("{e:?}")).collect();
             lines.push(format!("{} | {} | {}", snapshot(&s), kh2::replay::battle_snapshot(&en, &fs), ev.join(",")));

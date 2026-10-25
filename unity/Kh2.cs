@@ -128,7 +128,14 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_motion_slot(int handle, int which, int motionId, int variant);
     [DllImport(Lib)] public static extern int kh2_sample_motion(int handle, int which, int slot, float frame, [Out] float[] outMatrices, uint maxBones, [Out] float[] root);
     [StructLayout(LayoutKind.Sequential)]
-    public struct MemberState { public float posX, posY, posZ, yaw; public int member, motionSlot; public float frame; }
+    public struct MemberState { public float posX, posY, posZ, yaw; public int member, motionSlot; public float frame; public int hp, maxHp, mp, maxMp, ko, level, style, strength, magic, defense; }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MemberEvent { public int slot, kind, id, atkp, damage, hp; }
+    [DllImport(Lib)] public static extern int kh2_poll_member_event(int handle, out MemberEvent ev);
+    [DllImport(Lib)] public static extern int kh2_party_set_level(int handle, int slot, int level);
+    [DllImport(Lib)] public static extern int kh2_party_set_vitals(int handle, int slot, int hp, int maxHp, int mp, int maxMp);
+    [DllImport(Lib)] public static extern int kh2_party_set_style(int handle, int slot, int style);
+    [DllImport(Lib)] public static extern int kh2_party_set_items(int handle, int slot, ushort[] ids, byte[] counts, uint count);
 
     [DllImport(Lib)] public static extern int kh2_party_add(int handle, int member);
     [DllImport(Lib)] public static extern int kh2_party_tick(int handle);
