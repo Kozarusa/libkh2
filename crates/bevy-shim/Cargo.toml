@@ -1,0 +1,10 @@
+[package]
+name = "libkh2-bevy-shim"
+description = "The few `bevy::prelude` names kh2-rs's pure movement modules use (glam math, `default()`, a no-op `Resource`)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glam = "0.32"
+libkh2-bevy-shim-derive = { path = "../bevy-shim-derive" }

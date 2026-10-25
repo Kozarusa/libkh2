@@ -1,0 +1,20 @@
+[package]
+name = "libkh2"
+description = "A libsm64-style embeddable Sora controller for Kingdom Hearts II, reading the user's own disc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "kh2"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+kh2_game_core = { package = "libkh2-pure", path = "../kh2-pure" }
+glam = "0.32"
+kh2-anim = { path = "../../../kh2-rs/crates/kh2-anim" }
+kh2-archive = { path = "../../../kh2-rs/crates/kh2-archive" }
+kh2-bar = { path = "../../../kh2-rs/crates/kh2-bar" }
+kh2-map = { path = "../../../kh2-rs/crates/kh2-map" }
+kh2-model = { path = "../../../kh2-rs/crates/kh2-model" }
+kh2-tables = { path = "../../../kh2-rs/crates/kh2-tables" }

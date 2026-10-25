@@ -1,0 +1,17 @@
+[package]
+name = "libkh2-pure"
+description = "kh2-rs's oracle-tested movement and collision modules (motor.rs, world.rs) compiled in place without Bevy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# The included files carry kh2-rs's own unit tests, which need the rest of kh2-game-core; they run
+# in kh2-rs. libkh2's tests cover the behaviour through the library.
+test = false
+doctest = false
+
+[dependencies]
+bevy = { package = "libkh2-bevy-shim", path = "../bevy-shim" }
+kh2-map = { path = "../../../kh2-rs/crates/kh2-map" }
+kh2-model = { path = "../../../kh2-rs/crates/kh2-model" }

@@ -1,0 +1,9 @@
+[package]
+name = "libkh2-bevy-shim-derive"
+description = "No-op `Resource` derive for compiling kh2-rs pure modules without Bevy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+proc-macro = true
