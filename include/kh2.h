@@ -303,11 +303,35 @@ KH2_API int32_t kh2_enemy_bones(int32_t handle, int32_t index, int32_t space, fl
 #define KH2_EN_EFFECT 4     /* value = element of its effect file */
 #define KH2_EN_DROP 5       /* value = przt row, prizes per kind */
 #define KH2_EN_REMOVED 6
+#define KH2_EN_REACTION 7   /* an accepted reaction command reached its script: atkp = command, value = handled */
 typedef struct kh2_enemy_event {
     int32_t kind, id, atkp, damage, value, enmp, lvpm_experience, enmp_experience;
     uint32_t prizes[9];
 } kh2_enemy_event;
 KH2_API int32_t kh2_poll_enemy_event(int32_t handle, kh2_enemy_event *out);
+
+/* ---- Reaction commands (kh2-rs reaction_cmd: range trigger 20 offers, cmd row status, generic accept) ----
+ * The library fills slot 1 each kh2_enemies_tick; the host shows the prompt and calls accept on its
+ * button. The target script gets event 11 on the next tick (KH2_EN_REACTION). What the script then asks
+ * of Sora (PlayerReactionCmd), limits (Execute 81) and talk/save/shop rows are not ported. No enemy kind
+ * the library spawns offers one from its motions; kh2_reaction_force_offer is kh2-rs's harness offer. */
+#define KH2_REACT_AVAILABLE 0
+#define KH2_REACT_BLOCKED 1
+#define KH2_REACT_TOO_FAR 2
+#define KH2_REACT_NO_MP 3
+#define KH2_REACT_NOT_PORTED 4
+typedef struct kh2_reaction_offer {
+    int32_t cmd;      /* cmd row id */
+    int32_t from;     /* offering enemy id */
+    int32_t status;   /* KH2_REACT_* */
+    uint32_t message; /* the prompt's message id */
+} kh2_reaction_offer;
+/* 1 written, 0 nothing offered. */
+KH2_API int32_t kh2_reaction_offer(int32_t handle, kh2_reaction_offer *out);
+/* Returns the accepted command id, or -1 (nothing available offered). */
+KH2_API int32_t kh2_reaction_accept(int32_t handle);
+/* Every living enemy offers `cmd` (0 stops). */
+KH2_API int32_t kh2_reaction_force_offer(int32_t handle, int32_t cmd);
 
 /* ---- Field camera helper (kh2-rs camera_rules, oracle-tested there) ---- */
 #define KH2_CAM_RESET 1u   /* R3: behind Sora */

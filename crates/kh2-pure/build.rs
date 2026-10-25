@@ -125,7 +125,27 @@ fn rng() {
     std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("rng.rs"), text).unwrap();
 }
 
+/// kh2-rs `kh2-party/src/reaction_cmd.rs`'s pure span (the offer read from range trigger 20, the
+/// `cmd` row fields, the availability status, the native gate), from its `TRIGGER` constant to
+/// `window_at`; the one name it takes from a Bevy module (`shared::reaction::EXECUTE_EVENT`, 0x7f)
+/// is restated, and the test-only disc scan is dropped.
+fn reaction_cmd() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-party/src/reaction_cmd.rs");
+    println!("cargo:rerun-if-changed={}", src.display());
+    let text = std::fs::read_to_string(&src).expect("reaction_cmd.rs");
+    let mut out = span(&text, "/// Range trigger id of the offer.", "pub fn window_at");
+    let scan = out.find("#[cfg(test)]").expect("reaction_cmd.rs scan_mset");
+    let open = scan + out[scan..].find('{').unwrap() + 1;
+    let end = close(out.as_bytes(), open);
+    out.replace_range(scan..end, "");
+    let name = "crate::shared::reaction::EXECUTE_EVENT";
+    assert!(out.contains(name), "reaction_cmd.rs changed its EXECUTE_EVENT use");
+    let out = out.replace(name, "EXECUTE_EVENT");
+    std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("reaction_cmd.rs"), out).unwrap();
+}
+
 fn main() {
+    reaction_cmd();
     rng();
     party_battle();
     items();

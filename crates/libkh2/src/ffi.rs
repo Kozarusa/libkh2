@@ -1282,7 +1282,8 @@ pub unsafe extern "C" fn kh2_enemy_bones(handle: i32, index: i32, space: i32, ou
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Kh2EnemyEvent {
-    /// 1 Sora hit an enemy, 2 an enemy hit Sora, 3 defeated, 4 effect, 5 prize drop, 6 removed.
+    /// 1 Sora hit an enemy, 2 an enemy hit Sora, 3 defeated, 4 effect, 5 prize drop, 6 removed,
+    /// 7 reaction command delivered (`atkp` = command id, `value` = 1 when the script handled it).
     pub kind: i32,
     pub id: i32,
     pub atkp: i32,
@@ -1320,8 +1321,68 @@ pub unsafe extern "C" fn kh2_poll_enemy_event(handle: i32, out: *mut Kh2EnemyEve
             E::Effect { id, effect } => Kh2EnemyEvent { kind: 4, id: id as i32, value: effect.into(), ..Default::default() },
             E::Drop { id, row, prizes, .. } => Kh2EnemyEvent { kind: 5, id: id as i32, value: row.into(), prizes, ..Default::default() },
             E::Removed { id } => Kh2EnemyEvent { kind: 6, id: id as i32, ..Default::default() },
+            E::Reaction { id, cmd, handled } => Kh2EnemyEvent { kind: 7, id: id as i32, atkp: cmd.into(), value: handled as i32, ..Default::default() },
         };
         unsafe { *out = v };
         1
+    })
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2ReactionOffer {
+    /// The `cmd` row id offered in slot 1.
+    pub cmd: i32,
+    /// The offering enemy's id.
+    pub from: i32,
+    /// 0 available, 1 blocked (flags/lock/form), 2 too far, 3 not enough MP, 4 not ported.
+    pub status: i32,
+    /// The command's message id (the prompt's text).
+    pub message: u32,
+}
+
+/// The reaction command offered to Sora `handle` this tick (kh2-rs `reaction_cmd`): 1 written,
+/// 0 none offered.
+///
+/// # Safety
+/// `out` points to a writable `kh2_reaction_offer`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_reaction_offer(handle: i32, out: *mut Kh2ReactionOffer) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let Some(o) = l.enemies.get(&handle).and_then(|e| e.offer) else { return 0 };
+        use crate::enemy::Status as S;
+        let status = match o.status {
+            S::Available => 0,
+            S::Blocked => 1,
+            S::TooFar => 2,
+            S::NoMp => 3,
+            S::NotPorted => 4,
+        };
+        unsafe { *out = Kh2ReactionOffer { cmd: o.cmd.into(), from: o.from as i32, status, message: o.message } };
+        1
+    })
+}
+
+/// Accepts the offered reaction command (the Triangle press): returns the command id, or -1 when
+/// nothing available is offered. The target's script receives it on the next `kh2_enemies_tick`.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_reaction_accept(handle: i32) -> i32 {
+    with(-1, |l| {
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return -1 };
+        let Some(en) = l.enemies.get_mut(&handle) else { return -1 };
+        en.accept(s).map_or(-1, i32::from)
+    })
+}
+
+/// Test harness (kh2-rs `FakeOffer`): every living enemy of Sora `handle` offers `cmd` (0 stops).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_reaction_force_offer(handle: i32, cmd: i32) -> i32 {
+    with(-1, |l| {
+        let Some(en) = l.enemies.get_mut(&handle) else { return -1 };
+        en.fake_offer = u16::try_from(cmd).ok().filter(|&c| c != 0);
+        0
     })
 }

@@ -19,6 +19,8 @@
 //! no spawn groups from the area scripts (the host spawns), no camera (every enemy is on screen),
 //! prize drops reported as counts (no prize objects).
 
+pub use kh2_game_core::reaction_cmd::Status;
+use kh2_game_core::reaction_cmd::{offers_at, status, CmdRow, Ctx, Offer};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -64,6 +66,8 @@ pub struct EnemyData {
     pub enmp: Vec<t::Enmp>,
     pub lvpm: Vec<t::Lvpm>,
     pub player_model: u8,
+    /// The `cmd` rows a reaction offer reads (kh2-rs `ReactionRules`).
+    pub cmds: Vec<CmdRow>,
 }
 
 impl EnemyData {
@@ -138,7 +142,8 @@ impl Disc {
             kinds.insert(kind.model, kd.clone());
             kinds.insert(kind.name, kd);
         }
-        Ok(EnemyData { kinds, table, prizes, enmp, lvpm, player_model })
+        let cmds = kh2_tables::load::<t::Cmd>(&mut self.0, &t::CMD).map(|t| t.rows.iter().map(CmdRow::from).collect()).unwrap_or_default();
+        Ok(EnemyData { kinds, table, prizes, enmp, lvpm, player_model, cmds })
     }
 }
 
@@ -229,6 +234,8 @@ pub enum EnemyEvent {
     Drop { id: u32, row: u16, prizes: [u32; 9], items: Vec<u16> },
     /// The enemy is gone (hidden by its script, or fell out of the map).
     Removed { id: u32 },
+    /// An accepted reaction command reached enemy `id`'s script as event 11 (`handled`: the script has a handler).
+    Reaction { id: u32, cmd: u16, handled: bool },
 }
 
 /// One enemy (kh2-rs `Enemy` + `AiBrain` + its `Animator`).
@@ -288,11 +295,30 @@ pub struct Enemies {
     pub world_level: i32,
     /// Sora's spells in flight (`spell.rs`).
     pub spells: crate::spell::Spells,
+    /// The command in the player's slot 1 this tick (kh2-rs `ReactionOffer`).
+    pub offer: Option<ReactionOffer>,
+    /// kh2-rs's harness `FakeOffer`: every living enemy offers this command (no enemy the library
+    /// can spawn offers one from its motions).
+    pub fake_offer: Option<u16>,
+    /// Accepted commands waiting for their target's tick: (enemy id, command, position index).
+    pub reactions: Vec<(u32, u16, i16)>,
+    /// Use counters by `ReactionCount` slot (kh2-rs `ReactionUses`, capped at 999).
+    pub uses: HashMap<u16, u16>,
+}
+
+/// An offered reaction command (kh2-rs `reaction_cmd::Active`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ReactionOffer {
+    pub cmd: u16,
+    pub pos: i16,
+    pub from: u32,
+    pub status: Status,
+    pub message: u32,
 }
 
 impl Enemies {
     pub fn new(data: Arc<EnemyData>) -> Enemies {
-        Enemies { data, list: Vec::new(), serial: 0, next_id: 1, trace: AiTrace::default(), mail: Vec::new(), seed: 1, events: Vec::new(), sora_landed: HashSet::new(), world_level: 1, spells: Default::default() }
+        Enemies { data, list: Vec::new(), serial: 0, next_id: 1, trace: AiTrace::default(), mail: Vec::new(), seed: 1, events: Vec::new(), sora_landed: HashSet::new(), world_level: 1, spells: Default::default(), offer: None, fake_offer: None, reactions: Vec::new(), uses: HashMap::new() }
     }
 
     /// kh2-rs `enemy::spawn_enemy` + `enemy_ai::ai_attach`: the kind by its name (`M_EX020` Shadow,
@@ -354,6 +380,7 @@ impl Enemies {
     /// `receive_hits`), against Sora: his attacks hit them, theirs hit him.
     pub fn tick(&mut self, sora: &mut Sora, world: &World, fall_max: f32) {
         self.trace.tick += 1;
+        self.offer(sora);
         self.combat(sora);
         self.spells_tick(sora, world);
         // Last tick's messages go to every scripted object, each with its own delay (FUN_00187250).
@@ -432,6 +459,17 @@ impl Enemies {
                 }
                 for (code, arg) in motion_events {
                     rt.event(&mut host, 17, &[handle, u32::from(code), u32::from(arg)]);
+                }
+                // An accepted reaction command: event 0xb with (player, command id, target record)
+                // (kh2-rs `enemy_ai`, FUN_00177c20 -> FUN_0016b420).
+                for k in (0..self.reactions.len()).rev() {
+                    if self.reactions[k].0 != e.id {
+                        continue;
+                    }
+                    let (_, cmd, pos) = self.reactions.remove(k);
+                    let rec = host.obj.new_record(handle, pos);
+                    let handled = rt.event(&mut host, 11, &[kh2_enemy_host::enemy_obj::PLAYER, cmd as u32, rec]);
+                    self.events.push(EnemyEvent::Reaction { id: e.id, cmd, handled });
                 }
                 for (sender, name, delay) in mail.remove(&e.id).unwrap_or_default() {
                     rt.receive_message(&mut host, &name, sender, delay);
@@ -767,6 +805,57 @@ impl Enemies {
                 self.events.push(EnemyEvent::Defeated { id, enmp: e.enmp, lvpm_experience: table, enmp_experience: row, paid });
             }
         }
+    }
+
+    /// kh2-rs `reaction_cmd::offer` for the enemies: the range trigger 20 offers of their playing
+    /// motions (and the harness offer), each row's status for Sora; the last one found holds slot 1.
+    fn offer(&mut self, sora: &Sora) {
+        self.offer = None;
+        if sora.hp <= 0 || matches!(sora.state, crate::sora::State::Down) {
+            return;
+        }
+        // decided: the form field is the drive form while one is on (kh2-rs `DriveState::object_form`).
+        let form = if sora.drive.in_form { sora.drive.form } else { 0 };
+        let ctx = Ctx { form, battle: !self.list.is_empty(), mp: sora.mp, ..Default::default() };
+        for e in self.list.iter().filter(|e| !e.removed) {
+            let mut found = e.anim.triggers().map(|tg| offers_at(tg, e.anim.gframe())).unwrap_or_default();
+            if let Some(c) = self.fake_offer.filter(|_| e.alive()) {
+                found.push(Offer { cmd: c, pos: 0 });
+            }
+            for o in found {
+                let Some(c) = self.data.cmds.iter().find(|c| c.id == o.cmd) else { continue };
+                let d = (e.pos() - sora.motor.pos).with_y(0.0).length();
+                let status = status(&self.data.cmds, c, &Ctx { distance: d, ..ctx });
+                self.offer = Some(ReactionOffer { cmd: o.cmd, pos: o.pos, from: e.id, status, message: c.message_id as u32 });
+            }
+        }
+    }
+
+    /// kh2-rs `reaction_cmd::accept` (FUN_00177c20's generic path): refused unless available; bump
+    /// the use counter; the target must still exist; CmdAction 1 / 2 stop Sora; the command goes to
+    /// the target's script as event 11 on its next tick. Returns the command, or None when refused.
+    /// decided: limit commands (Execute 81) and Mickey's class handler are not taken (refused here).
+    pub fn accept(&mut self, sora: &mut Sora) -> Option<u16> {
+        let a = self.offer?;
+        if a.status != Status::Available {
+            return None;
+        }
+        let c = self.data.cmds.iter().find(|c| c.id == a.cmd)?;
+        if c.execute == kh2_game_core::reaction_cmd::EXECUTE_LIMIT {
+            return None;
+        }
+        if c.reaction_count != 0 {
+            let n = self.uses.entry(c.reaction_count).or_insert(0);
+            *n = (*n + 1).min(999);
+        }
+        if !self.list.iter().any(|e| e.id == a.from && !e.removed) {
+            return None;
+        }
+        if matches!(c.cmd_action, 1 | 2) {
+            sora.motor.vel = Vec3::ZERO;
+        }
+        self.reactions.push((a.from, a.cmd, a.pos));
+        Some(a.cmd)
     }
 
     /// The enemy nearest to `p` and alive (for lock-on and the host).

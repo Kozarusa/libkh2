@@ -800,3 +800,46 @@ fn donald_and_goofy_fight_an_enemy() {
     eprintln!("party hits {hits:?}; members at {:?}", fs.iter().map(|f| f.motor.pos).collect::<Vec<_>>());
     assert!(!hits.is_empty(), "the members hit the enemy");
 }
+
+#[test]
+fn a_reaction_command_is_offered_accepted_and_delivered() {
+    use kh2::enemy::{EnemyEvent, Enemies, Status};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let w = floor();
+    // The motions of the kinds the library spawns offer nothing (as kh2-rs's scan found).
+    let offering: usize = data.kinds.values().filter_map(|k| (0..k.rig.mset.slots.len()).filter_map(|s| k.rig.mset.get(s)).map(|s| s.triggers.ranges.iter().filter(|r| r.id == 20).count()).sum::<usize>().checked_sub(0)).sum();
+    eprintln!("{} cmd rows; trigger 20 ranges in the loaded kinds: {offering}", data.cmds.len());
+    // A generic reaction row (Execute equal to its id, a DistRange, a use counter).
+    for c in data.cmds.iter().filter(|c| c.reaction_count != 0).take(8) {
+        eprintln!("cmd {} execute {} flags {:#x} dist {} counter {} action {}", c.id, c.execute, c.flags, c.dist_range, c.reaction_count, c.cmd_action);
+    }
+    let row = data.cmds.iter().find(|c| c.id == c.execute && c.reaction_count != 0 && c.flags >> 16 & 1 == 0 && c.flags >> 5 & 1 == 0 && c.execute != 0x51 && c.execute != 0x7f && ![1, 2, 4, 5, 0x37, 0x48, 0x67, 0x68, 0x13c, 0x14a, 0x1c4].contains(&c.execute)).expect("a reaction row").clone();
+    let mut s = standing(&game, &w);
+    let mut en = Enemies::new(data.clone());
+    let id = en.spawn("M_EX990", Vec3::new(0.0, 0.0, 150.0), std::f32::consts::PI, &w).unwrap();
+    en.fake_offer = Some(row.id);
+    s.tick(&w, &Input::default());
+    en.tick(&mut s, &w, game.params.sstm.fall_max);
+    let o = en.offer.expect("offered");
+    eprintln!("row {} (execute {}, dist {}, counter {}): offer {o:?}", row.id, row.execute, row.dist_range, row.reaction_count);
+    assert_eq!((o.cmd, o.from, o.status), (row.id, id, Status::Available));
+    assert_eq!(en.accept(&mut s), Some(row.id));
+    assert_eq!(en.uses.get(&row.reaction_count), Some(&1));
+    s.tick(&w, &Input::default());
+    en.tick(&mut s, &w, game.params.sstm.fall_max);
+    let got: Vec<_> = en.events.drain(..).filter(|e| matches!(e, EnemyEvent::Reaction { .. })).collect();
+    eprintln!("delivered {got:?}");
+    assert!(matches!(got.as_slice(), [EnemyEvent::Reaction { id: i, cmd, .. }] if *i == id && *cmd == row.id));
+    // A row with a DistRange, offered from beyond it, is refused.
+    if let Some(far) = data.cmds.iter().find(|c| c.id == c.execute && c.dist_range > 0 && c.flags >> 5 & 1 == 0 && c.flags >> 16 & 1 == 0 && c.execute != 0x51) {
+        en.fake_offer = Some(far.id);
+        en.list[0].obj.motor.pos.z = far.dist_range as f32 + 400.0;
+        s.tick(&w, &Input::default());
+        en.tick(&mut s, &w, game.params.sstm.fall_max);
+        eprintln!("far row {}: {:?}", far.id, en.offer);
+        assert_eq!(en.offer.map(|o| o.status), Some(Status::TooFar));
+        assert_eq!(en.accept(&mut s), None);
+    }
+}

@@ -74,3 +74,13 @@ pub mod party_battle {
 pub mod rng {
     include!(concat!(env!("OUT_DIR"), "/rng.rs"));
 }
+
+/// kh2-rs `reaction_cmd`'s pure span (reaction command offers and their status), by `build.rs`.
+#[allow(dead_code, clippy::all)]
+pub mod reaction_cmd {
+    use kh2_anim::Triggers;
+    use kh2_tables::tables as t;
+    /// `shared::reaction::EXECUTE_EVENT` (an event row's Execute value).
+    pub const EXECUTE_EVENT: u16 = 0x7f;
+    include!(concat!(env!("OUT_DIR"), "/reaction_cmd.rs"));
+}

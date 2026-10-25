@@ -3,7 +3,7 @@
 1. [x] Enemies under their BDX scripts.
 2. [x] Spell flight.
 3. [x] Party attacks and AI (battle subset: style 0 target, action records, attack motions, damage; no scripts/limits/Cure).
-4. [ ] Limits / reaction command offers.
+4. [x] Reaction command offers (kh2-rs reaction_cmd: offer, status, generic accept, event 11 to the script; disc test). Limits: not done (kh2-rs limit.rs needs member scripts and the limit BAR task; the cmd rows with Execute 81 are refused by accept). Script-to-Sora PlayerReactionCmd not consumed.
 5. [ ] Level-up rewards, state save/load, replay with enemies.
 6. [ ] Viewer with enemies and party fighting.
 7. [ ] C API fuzz test, docs/API-REFERENCE.md.

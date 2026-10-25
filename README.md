@@ -197,3 +197,12 @@ CREDITS). The API boundary takes inspiration from libsm64 and from the third-par
 [kh2-combat-kit](https://github.com/steferro78-HIV/kh2-combat-kit) (no code or text used).
 
 Licence: MIT OR Apache-2.0, as kh2-rs.
+
+Reaction commands (`kh2_reaction_offer`, `kh2_reaction_accept`): kh2-rs `reaction_cmd`'s pure span
+(range trigger 20 offers of the enemies' motions, the `cmd` row status: flags, form mask, DistRange,
+MP) is compiled from its source; accept follows FUN_00177c20's generic path (use counter, target
+check, CmdAction stop) and hands the command to the target's BDX script as event 11 (disc test
+`a_reaction_command_is_offered_accepted_and_delivered`: a Dusk's script handles command 27).
+decided: limits (Execute 81), talk/save/shop rows and the script's commands back to Sora are not
+ported; no spawnable kind offers one from its motions, so `kh2_reaction_force_offer` (kh2-rs's
+harness offer) drives it.

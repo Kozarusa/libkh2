@@ -150,6 +150,12 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_enemy_state(int handle, int index, out EnemyState state);
     [DllImport(Lib)] public static extern int kh2_enemy_bones(int handle, int index, int space, [Out] float[] outMatrices, uint maxBones);
     [DllImport(Lib)] public static extern int kh2_poll_enemy_event(int handle, out EnemyEvent ev);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ReactionOffer { public int cmd, from, status; public uint message; }
+    [DllImport(Lib)] public static extern int kh2_reaction_offer(int handle, out ReactionOffer offer);
+    [DllImport(Lib)] public static extern int kh2_reaction_accept(int handle);
+    [DllImport(Lib)] public static extern int kh2_reaction_force_offer(int handle, int cmd);
     [DllImport(Lib)] public static extern int kh2_motion_tag(int handle, byte[] buf, uint len);
 
     public static string LastError()
