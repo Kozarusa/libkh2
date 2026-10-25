@@ -81,6 +81,21 @@ pub fn snapshot(s: &Sora) -> String {
     )
 }
 
+/// One tick's enemies and party members as a line: each enemy's id, HP, state, motion slot, frame,
+/// position and yaw; each member's position, yaw and motion slot.
+pub fn battle_snapshot(en: &crate::enemy::Enemies, party: &[crate::party::Follower]) -> String {
+    let mut t = String::new();
+    for e in &en.list {
+        let p = e.pos();
+        let _ = write!(t, "e{} {} {:?} {:?} {:.2} {:.2} {:.2} {:.2} {:.2};", e.id, e.hp, e.state, e.anim.slot, e.anim.frame, p.x, p.y, p.z, e.obj.motor.yaw);
+    }
+    for f in party {
+        let p = f.motor.pos;
+        let _ = write!(t, "m{} {:.2} {:.2} {:.2} {:.2} {:?};", f.member, p.x, p.y, p.z, f.motor.yaw, f.body.slot);
+    }
+    t
+}
+
 /// Per-tick digests of a scenario: one `tick digest` line per tick (digests only, so a golden file
 /// built on the disc carries no game values).
 pub fn digests(lines: &[String]) -> String {

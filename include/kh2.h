@@ -206,7 +206,8 @@ KH2_API int32_t kh2_set_mp(int32_t handle, int32_t mp, int32_t max_mp);
 #define KH2_EV_HEALED 7         /* amount, hp */
 #define KH2_EV_ITEM_USED 8      /* slot = item id, amount = HP change, hp = MP change, charge = drive change (1/100 points) */
 #define KH2_EV_EXPERIENCE 9     /* amount paid, hp = total */
-#define KH2_EV_LEVEL_UP 10      /* amount = the new level */
+#define KH2_EV_LEVEL_UP 10      /* amount = the new level; rises over the previous lvup row: atkp = strength,
+                                   stage = magic, slot = defense, charge = AP; sub_id = ability given (0 none) */
 typedef struct kh2_event {
     int32_t kind, slot, cast_kind, motion, voice, charge;
     int32_t stage, atkp, sub_id;  /* spell attack: stage and its atkp row (for kh2_damage) */
@@ -226,6 +227,16 @@ KH2_API int32_t kh2_use_item(int32_t handle, int32_t item);
 KH2_API int32_t kh2_report_defeat(int32_t handle, int32_t lvpm_experience, int32_t enmp_experience);
 /* Level 1..99: strength, magic, defense from the disc's lvup row plus the Kingdom Key. */
 KH2_API int32_t kh2_set_level(int32_t handle, int32_t level);
+/* The weapon chosen at the start (0 Sword, 1 Shield, 2 Staff): the lvup ability column level-ups give. */
+KH2_API int32_t kh2_set_weapon_set(int32_t handle, int32_t set);
+/* Abilities given by level-ups, oldest first: writes up to max, returns the count (equip: kh2_set_loadout). */
+KH2_API int32_t kh2_granted_abilities(int32_t handle, uint16_t *out, uint32_t max);
+/* Save record ("KH2S" v1): level, EXP, HP/MP, AP, spell levels, weapon set, given and equipped
+ * abilities, drive gauge/forms/levels, position and yaw. Not saved: motion, combo, cast, an active
+ * form, enemies, party. save writes when cap is enough and returns the size; load returns 0, or -1
+ * with nothing changed for a record that is not valid. */
+KH2_API int32_t kh2_state_save(int32_t handle, uint8_t *out, uint32_t cap);
+KH2_API int32_t kh2_state_load(int32_t handle, const uint8_t *bytes, uint32_t len);
 /* Takes the oldest event: 1 written, 0 none left. */
 KH2_API int32_t kh2_poll_event(int32_t handle, kh2_event *out);
 

@@ -206,3 +206,12 @@ check, CmdAction stop) and hands the command to the target's BDX script as event
 decided: limits (Execute 81), talk/save/shop rows and the script's commands back to Sora are not
 ported; no spawnable kind offers one from its motions, so `kh2_reaction_force_offer` (kh2-rs's
 harness offer) drives it.
+
+Level-ups (kh2-rs `Progress::raise_level`): `KH2_EV_LEVEL_UP` carries the strength/magic/defense/AP
+rises over the previous `lvup` row and the ability the row gives for the weapon set
+(`kh2_set_weapon_set`); given abilities are listed by `kh2_granted_abilities` (disc test
+`level_ups_give_the_lvup_rows_abilities_and_the_record_saves`). decided: HP/MP growth comes from
+the bonus levels (`bons`), which are not ported. Save record: `kh2_state_save` / `kh2_state_load`
+("KH2S" v1, the status and the place, not the moment; malformed records are refused unchanged).
+Replays: `battle_replays_the_same` runs Sora, Donald, Goofy and three enemies twice and compares
+every tick (and a golden digest file); the members' generator word is kept per party.

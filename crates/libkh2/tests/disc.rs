@@ -634,7 +634,7 @@ fn items_heal_through_the_use_motion_and_defeats_raise_the_level() {
     while s.level == 1 && paid < 100_000 {
         paid += s.report_defeat(100, 10);
     }
-    let up = s.events.iter().any(|e| matches!(e, Event::LevelUp { level: 2 }));
+    let up = s.events.iter().any(|e| matches!(e, Event::LevelUp { level: 2, .. }));
     eprintln!("level 2 after {paid} EXP (lvup row 1 needs {need}): strength {} magic {} defense {}", s.strength, s.magic, s.defense);
     assert!(up && paid >= need && s.level == 2);
 }
@@ -646,6 +646,7 @@ fn donald_and_goofy_follow_sora() {
     let party = d.party().expect("party data");
     let w = floor();
     let mut s = standing(&game, &w);
+    let mut rng = kh2::party::PartyRng::default();
     let mut f = vec![kh2::party::Follower::new(&party, 0, Vec3::new(-200.0, 0.0, -100.0)), kh2::party::Follower::new(&party, 1, Vec3::new(200.0, 0.0, -100.0))];
     for m in &party.members {
         eprintln!("{}: walk {} run {} turn {} radius {}", m.model, m.walk, m.run, m.turn, m.radius);
@@ -653,7 +654,7 @@ fn donald_and_goofy_follow_sora() {
     let run = Input { stick: [0.0, 1.0], cam_look: [0.0, 1.0], ..Default::default() };
     for t in 0..400 {
         s.tick(&w, &if t < 300 { run } else { Input::default() });
-        kh2::party::tick(&party, &mut f, s.motor.pos, s.motor.yaw, &w, game.params.sstm.fall_max, true);
+        kh2::party::tick(&party, &mut f, &mut rng, s.motor.pos, s.motor.yaw, &w, game.params.sstm.fall_max, true);
     }
     for x in &f {
         let dist = x.motor.pos.distance(s.motor.pos);
@@ -785,11 +786,12 @@ fn donald_and_goofy_fight_an_enemy() {
         e.rt = None;
         e.hp = 100000;
     }
+    let mut rng = kh2::party::PartyRng::default();
     let mut fs = vec![Follower::new(&party, 0, Vec3::new(-100.0, 0.0, -50.0)), Follower::new(&party, 1, Vec3::new(100.0, 0.0, -50.0))];
     let mut hits = Vec::new();
     for _ in 0..1200 {
         s.tick(&w, &Input::default());
-        tick_battle(&party, &mut fs, s.motor.pos, s.motor.yaw, &w, game.params.sstm.fall_max, true, Some((&mut en, &game.params)));
+        tick_battle(&party, &mut fs, &mut rng, s.motor.pos, s.motor.yaw, &w, game.params.sstm.fall_max, true, Some((&mut en, &game.params)));
         en.tick(&mut s, &w, game.params.sstm.fall_max);
         for ev in en.events.drain(..) {
             if let EnemyEvent::Hit { atkp, damage, .. } = ev {
@@ -841,5 +843,50 @@ fn a_reaction_command_is_offered_accepted_and_delivered() {
         eprintln!("far row {}: {:?}", far.id, en.offer);
         assert_eq!(en.offer.map(|o| o.status), Some(Status::TooFar));
         assert_eq!(en.accept(&mut s), None);
+    }
+}
+
+#[test]
+fn level_ups_give_the_lvup_rows_abilities_and_the_record_saves() {
+    use kh2::sora::Event;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    for set in 0..3u8 {
+        let mut s = standing(&game, &w);
+        s.weapon_set = set;
+        // Enough for many levels.
+        for _ in 0..40 {
+            s.report_defeat(1000, 1000);
+        }
+        let ups: Vec<_> = s.events.drain(..).filter_map(|e| if let Event::LevelUp { level, strength, magic, defense, ap, ability } = e { Some((level, strength, magic, defense, ap, ability)) } else { None }).collect();
+        eprintln!("set {set}: level {} exp {}, {} level-ups, abilities {:?}", s.level, s.exp, ups.len(), s.granted);
+        assert!(ups.len() >= 2);
+        assert_eq!(ups.last().unwrap().0, s.level);
+        let rows = &game.params.levels;
+        for &(level, _, _, _, _, ability) in &ups {
+            let r = &rows[level as usize - 1];
+            assert_eq!(ability, [r.sword_ability, r.shield_ability, r.staff_ability][set as usize]);
+        }
+        assert_eq!(s.granted, ups.iter().filter(|u| u.5 != 0).map(|u| u.5).collect::<Vec<_>>());
+        // The record round-trips.
+        s.hp = 7;
+        s.motor.pos = Vec3::new(10.0, 0.0, -20.0);
+        let rec = s.save();
+        let mut t = standing(&game, &w);
+        t.load(&rec).expect("loads");
+        assert_eq!((t.level, t.exp, t.hp, t.max_hp, t.weapon_set, t.strength, t.ap), (s.level, s.exp, s.hp, s.max_hp, s.weapon_set, s.strength, s.ap));
+        assert_eq!(t.granted, s.granted);
+        assert_eq!(t.motor.pos, s.motor.pos);
+        assert_eq!(t.save(), rec);
+        // Broken records change nothing.
+        let before = t.save();
+        for cut in [0, 3, 6, rec.len() - 1] {
+            assert!(t.load(&rec[..cut]).is_err());
+        }
+        let mut bad = rec.clone();
+        bad[6] = 200; // level 200
+        assert!(t.load(&bad).is_err());
+        assert_eq!(t.save(), before);
     }
 }

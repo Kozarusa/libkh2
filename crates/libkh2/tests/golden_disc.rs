@@ -155,3 +155,52 @@ fn scenarios() {
         input([0.0, 0.0], false, false, false)
     });
 }
+
+/// Sora, Donald and Goofy against a Shadow, a Soldier and a Dusk: every tick's Sora, enemy and member
+/// lines. Run twice in-process (the two runs must agree tick by tick: no hidden state, no hash
+/// order, no time) and checked against `local/golden/battle.txt`.
+#[test]
+fn battle_replays_the_same() {
+    let Some((mut d, g, w)) = setup() else { return };
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let party = d.party().expect("party data");
+    let run_once = || {
+        let mut s = sora(&g);
+        s.max_hp = 999;
+        s.hp = 999;
+        let mut en = kh2::enemy::Enemies::new(data.clone());
+        for (k, kind) in ["M_EX020", "M_EX010", "M_EX990"].iter().enumerate() {
+            en.spawn(kind, Vec3::new(-300.0 + 300.0 * k as f32, 0.0, 500.0), std::f32::consts::PI, &w);
+        }
+        let mut rng = kh2::party::PartyRng::default();
+        let mut fs = vec![kh2::party::Follower::new(&party, 0, Vec3::new(-100.0, 0.0, -80.0)), kh2::party::Follower::new(&party, 1, Vec3::new(100.0, 0.0, -80.0))];
+        let mut lines = Vec::new();
+        for t in 0..900 {
+            if let Some(e) = en.list.iter().find(|e| e.alive() && !e.removed) {
+                s.target = Some(kh2::sora::Target { pos: e.pos() + Vec3::Y * 80.0, radius: 40.0, half_height: 80.0 });
+            }
+            let to = s.target.map_or(Vec3::ZERO, |t| (t.pos - s.motor.pos).with_y(0.0));
+            let stick = if to.length() > 150.0 { [to.x / to.length(), to.z / to.length()] } else { [0.0, 0.0] };
+            s.tick(&w, &input(stick, t % 6 == 0, false, false));
+            kh2::party::tick_battle(&party, &mut fs, &mut rng, s.motor.pos, s.motor.yaw, &w, g.params.sstm.fall_max, true, Some((&mut en, &g.params)));
+            en.tick(&mut s, &w, g.params.sstm.fall_max);
+            let ev: Vec<String> = en.events.drain(..).map(|e| format!("{e:?}")).collect();
+            lines.push(format!("{} | {} | {}", snapshot(&s), kh2::replay::battle_snapshot(&en, &fs), ev.join(",")));
+        }
+        lines
+    };
+    let a = run_once();
+    let b = run_once();
+    if let Some(t) = a.iter().zip(&b).position(|(x, y)| x != y) {
+        panic!("the two runs differ at tick {t}:\n{}\n{}", a[t], b[t]);
+    }
+    let hits = a.iter().filter(|l| l.contains("Hit {")).count();
+    eprintln!("battle: {} ticks, {hits} ticks with hits", a.len());
+    assert!(hits > 0);
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/golden/battle.txt");
+    match check_golden(&path, &a) {
+        Ok(true) => {}
+        Ok(false) => eprintln!("battle: golden written"),
+        Err(e) => panic!("{e}"),
+    }
+}

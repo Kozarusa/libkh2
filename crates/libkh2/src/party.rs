@@ -206,15 +206,36 @@ fn relation(from: Vec3, to: Vec3) -> (f32, Vec3, f32) {
     (-(to.y - from.y), d.with_y(0.0).normalize_or_zero(), d.with_y(0.0).length())
 }
 
+/// The game's generator word the members' choices draw from (kh2-rs `rng`'s process-wide word, the
+/// boot seed at first). libkh2 keeps one per party so each Sora's battle replays the same whatever
+/// else runs in the process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PartyRng(pub u64);
+
+impl Default for PartyRng {
+    fn default() -> PartyRng {
+        PartyRng(kh2_game_core::rng::Lcg::boot().0)
+    }
+}
+
 /// One tick of the followers in the field (no enemies): kh2-rs `party.rs`'s follow path.
-pub fn tick(data: &PartyData, followers: &mut [Follower], player: Vec3, player_yaw: f32, world: &World, fall_max: f32, pose: bool) {
-    tick_battle(data, followers, player, player_yaw, world, fall_max, pose, None);
+#[allow(clippy::too_many_arguments)]
+pub fn tick(data: &PartyData, followers: &mut [Follower], rng: &mut PartyRng, player: Vec3, player_yaw: f32, world: &World, fall_max: f32, pose: bool) {
+    tick_battle(data, followers, rng, player, player_yaw, world, fall_max, pose, None);
 }
 
 /// One tick of the followers with the battle subset when `enemies` is given and one is within
 /// the class's battle distance of Sora.
 #[allow(clippy::too_many_arguments)]
-pub fn tick_battle(data: &PartyData, followers: &mut [Follower], player: Vec3, player_yaw: f32, world: &World, fall_max: f32, pose: bool, mut enemies: Option<(&mut crate::enemy::Enemies, &crate::data::Params)>) {
+pub fn tick_battle(data: &PartyData, followers: &mut [Follower], rng: &mut PartyRng, player: Vec3, player_yaw: f32, world: &World, fall_max: f32, pose: bool, enemies: Option<(&mut crate::enemy::Enemies, &crate::data::Params)>) {
+    let _stream = kh2_game_core::rng::stream(0);
+    kh2_game_core::rng::set_state(rng.0);
+    tick_inner(data, followers, player, player_yaw, world, fall_max, pose, enemies);
+    rng.0 = kh2_game_core::rng::state();
+}
+
+#[allow(clippy::too_many_arguments)]
+fn tick_inner(data: &PartyData, followers: &mut [Follower], player: Vec3, player_yaw: f32, world: &World, fall_max: f32, pose: bool, mut enemies: Option<(&mut crate::enemy::Enemies, &crate::data::Params)>) {
     let c = &data.consts;
     let mut inputs = [None; 2];
     for (i, f) in followers.iter().take(2).enumerate() {

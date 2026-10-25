@@ -300,6 +300,15 @@ pub struct Sora {
     /// Sora's level and status (kh2-rs `GameData::sora_stats`: `lvup` row plus the Kingdom Key).
     pub level: i32,
     pub exp: i32,
+    /// The weapon chosen at the start (record +0xe: 0 Sword, 1 Shield, 2 Staff): the `lvup` ability
+    /// column a level gives (kh2-rs `Progress::raise_level`).
+    pub weapon_set: u8,
+    /// AP from the `lvup` rows (the row's AP of the level).
+    pub ap: i32,
+    /// Abilities the level-ups gave (kh2-rs `give`); equipping them is the host's (`set_loadout`).
+    pub granted: Vec<u16>,
+    /// The ability ids of the last `set_loadout`, for the save record.
+    pub loadout_ids: Vec<u16>,
     pub strength: i32,
     pub magic: i32,
     pub defense: i32,
@@ -385,6 +394,10 @@ impl Sora {
             magic_levels: [1, 1, 1, 1, 0, 0],
             level: 1,
             exp: 0,
+            weapon_set: 0,
+            ap: 0,
+            granted: Vec::new(),
+            loadout_ids: Vec::new(),
             strength: 0,
             magic: 0,
             defense: 0,
@@ -1247,6 +1260,7 @@ impl Sora {
         self.strength = l.map_or(2, |l| l.strength as i32) + p.weapon_attack;
         self.magic = l.map_or(6, |l| l.magic as i32) + p.weapon_magic;
         self.defense = l.map_or(2, |l| l.defense as i32);
+        self.ap = l.map_or(0, |l| l.ap as i32);
     }
 
     /// The attack stages of a fired spell (kh2-rs `magic.rs` event 21 and the spell objects): the
@@ -1343,6 +1357,7 @@ impl Sora {
             l.set_form(Some(self.form_abilities()));
         }
         self.loadout = Some(l);
+        self.loadout_ids = ids.to_vec();
         self.sync_loadout();
         true
     }
@@ -1449,10 +1464,27 @@ impl Sora {
         }
         self.exp = (self.exp + amount).min(9_999_999);
         self.events.push(Event::Experience { amount, total: self.exp });
-        let last = p.levels.len().max(1);
-        while self.level < 99 && p.levels.get((self.level as usize - 1).min(last - 1)).is_some_and(|r| r.exp <= self.exp) {
+        // kh2-rs `Progress::raise_level` (FUN_001b52f8 / FUN_001b53d0): while the threshold of the
+        // level (row `level - 1`'s Exp) is reached and the next row exists, rise; the rises over the
+        // previous row are reported, the new row's ability column for the weapon set is given.
+        while self.level < 99 {
+            let (Some(old), Some(new)) = (p.levels.get(self.level as usize - 1), p.levels.get(self.level as usize)) else { break };
+            if old.exp > self.exp {
+                break;
+            }
+            let rise = |a: u8, b: u8| i32::from(a) - i32::from(b);
+            let ability = match self.weapon_set {
+                0 => new.sword_ability,
+                1 => new.shield_ability,
+                2 => new.staff_ability,
+                _ => 0,
+            };
+            let (strength, magic, defense, ap) = (rise(new.strength, old.strength), rise(new.magic, old.magic), rise(new.defense, old.defense), rise(new.ap, old.ap));
             self.set_level(self.level + 1);
-            self.events.push(Event::LevelUp { level: self.level });
+            if ability != 0 {
+                self.granted.push(ability);
+            }
+            self.events.push(Event::LevelUp { level: self.level, strength, magic, defense, ap, ability });
         }
         amount
     }
@@ -1665,7 +1697,8 @@ pub enum Event {
     ItemUsed { item: u16, hp: i32, mp: i32, drive: i32 },
     /// Experience paid for a defeat, and the level reached when it rose.
     Experience { amount: i32, total: i32 },
-    LevelUp { level: i32 },
+    /// A level reached: the rises over the previous row and the ability given (0 none).
+    LevelUp { level: i32, strength: i32, magic: i32, defense: i32, ap: i32, ability: u16 },
     /// The body changed: drive form `to` (0 = base Sora) replaced form `from`.
     FormChanged { from: u8, to: u8 },
 }

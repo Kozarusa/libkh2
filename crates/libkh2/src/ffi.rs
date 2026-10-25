@@ -86,6 +86,7 @@ struct Lib {
     cameras: Vec<Option<crate::camera::Camera>>,
     party: Option<Arc<crate::party::PartyData>>,
     followers: std::collections::HashMap<i32, Vec<crate::party::Follower>>,
+    party_rng: std::collections::HashMap<i32, crate::party::PartyRng>,
     enemy_data: Option<Arc<crate::enemy::EnemyData>>,
     enemies: std::collections::HashMap<i32, crate::enemy::Enemies>,
 }
@@ -171,7 +172,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), enemy_data: None, enemies: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), enemy_data: None, enemies: Default::default() });
     0
 }
 
@@ -840,7 +841,7 @@ pub unsafe extern "C" fn kh2_poll_event(handle: i32, out: *mut Kh2Event) -> i32 
             E::Healed { amount, hp } => Kh2Event { kind: 7, amount, hp, ..d },
             E::ItemUsed { item, hp, mp, drive } => Kh2Event { kind: 8, slot: item.into(), amount: hp, hp: mp, charge: drive, ..d },
             E::Experience { amount, total } => Kh2Event { kind: 9, amount, hp: total, ..d },
-            E::LevelUp { level } => Kh2Event { kind: 10, amount: level, ..d },
+            E::LevelUp { level, strength, magic, defense, ap, ability } => Kh2Event { kind: 10, amount: level, sub_id: ability.into(), atkp: strength, stage: magic, slot: defense, charge: ap, ..d },
         };
         unsafe { *out = v };
         1
@@ -1113,7 +1114,7 @@ pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
         if let Some(list) = l.followers.get_mut(&handle) {
             // With spawned enemies the members fight (the battle subset of `party.rs`).
             let en = l.enemies.get_mut(&handle).map(|e| (e, &params));
-            crate::party::tick_battle(&p, list, pos, yaw, &l.world, fall, pose, en);
+            crate::party::tick_battle(&p, list, l.party_rng.entry(handle).or_default(), pos, yaw, &l.world, fall, pose, en);
         }
         0
     })
@@ -1384,5 +1385,67 @@ pub extern "C" fn kh2_reaction_force_offer(handle: i32, cmd: i32) -> i32 {
         let Some(en) = l.enemies.get_mut(&handle) else { return -1 };
         en.fake_offer = u16::try_from(cmd).ok().filter(|&c| c != 0);
         0
+    })
+}
+
+/// The weapon chosen at the start (0 Sword, 1 Shield, 2 Staff): which `lvup` ability column the
+/// level-ups give. Default 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_set_weapon_set(handle: i32, set: i32) -> i32 {
+    sora_do(handle, -1, |s, _| match u8::try_from(set) {
+        Ok(v) if v <= 2 => {
+            s.weapon_set = v;
+            0
+        }
+        _ => set_error("weapon set is 0, 1 or 2"),
+    })
+}
+
+/// The abilities the level-ups gave (ability item ids, oldest first): writes up to `max`, returns
+/// the total count. Equip them with `kh2_set_loadout`.
+///
+/// # Safety
+/// `out` is NULL or points to `max` u16 values.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_granted_abilities(handle: i32, out: *mut u16, max: u32) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        if !out.is_null() {
+            for (k, &a) in s.granted.iter().take(max as usize).enumerate() {
+                unsafe { *out.add(k) = a };
+            }
+        }
+        s.granted.len() as i32
+    })
+}
+
+/// Sora's save record (level, EXP, HP/MP, AP, spells, weapon set, abilities, drive, place; not the
+/// motion or the enemies). Writes it when `cap` is large enough; returns its size in bytes.
+///
+/// # Safety
+/// `out` is NULL or points to `cap` writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_state_save(handle: i32, out: *mut u8, cap: u32) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        let b = s.save();
+        if !out.is_null() && b.len() <= cap as usize {
+            unsafe { std::ptr::copy_nonoverlapping(b.as_ptr(), out, b.len()) };
+        }
+        b.len() as i32
+    })
+}
+
+/// Applies a save record from `kh2_state_save`: 0, or -1 (nothing changed) when it is not a valid one.
+///
+/// # Safety
+/// `bytes` points to `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_state_load(handle: i32, bytes: *const u8, len: u32) -> i32 {
+    if bytes.is_null() || len > 1 << 20 {
+        return set_error("no save record");
+    }
+    let b = unsafe { std::slice::from_raw_parts(bytes, len as usize) }.to_vec();
+    sora_do(handle, -1, |s, _| match s.load(&b) {
+        Ok(()) => 0,
+        Err(e) => set_error(e),
     })
 }

@@ -90,6 +90,7 @@ fn main() {
     sora.motor.grounded = true;
     sora.drive.points = kh2_game_core::drive_rules::Points { whole: 9, fraction: 0, max: 9 };
     sora.drive.owned = [false, true, true, true, true, false];
+    let mut party_rng = kh2::party::PartyRng::default();
     let mut followers: Vec<kh2::party::Follower> = party.as_ref().map(|p| (0..2).map(|m| kh2::party::Follower::new(p, m, start + Vec3::new(if m == 0 { -150.0 } else { 150.0 }, 0.0, -150.0))).collect()).unwrap_or_default();
     let mut camera = Camera::new(0);
     let post = start + Vec3::new(-800.0, 0.0, 600.0);
@@ -161,7 +162,7 @@ fn main() {
             eprintln!("event: {e:?}");
         }
         if let Some(p) = party.as_ref() {
-            kh2::party::tick(p, &mut followers, sora.motor.pos, sora.motor.yaw, &world, game.params.sstm.fall_max, true);
+            kh2::party::tick(p, &mut followers, &mut party_rng, sora.motor.pos, sora.motor.yaw, &world, game.params.sstm.fall_max, true);
         }
         // The camera.
         let cam_in = CamInput { stick: [axis(Key::Right, Key::Left), axis(Key::Up, Key::Down)], auto: true, step: 1.0, ..Default::default() };
