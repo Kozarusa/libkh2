@@ -142,6 +142,11 @@ Second keyblade: Valor, Master and Final hold a second blade on the left hand (b
 form's own left-hand motion set (`W_EX010_BTLF_L` ...); bones `which = 2`, attack volumes included,
 `kh2_drive_set_second_keyblade` picks the item.
 
+Abilities (`kh2_set_loadout`): kh2-rs's ability block (compiled from its source by `build.rs`) from
+the host's list: Guard, Combo Plus, Air Combo Plus, Finishing Plus, Negative Combo, growth
+abilities, Berserk Charge, Second Chance / Once More, Leaf Bracer, the element and combo boosts in
+`kh2_damage`; a form adds its own list (disc test `the_loadout_sets_combo_lengths_growth_and_survival`).
+
 Not in v1: enemies, the spells' flight paths, summons, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits

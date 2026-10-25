@@ -140,6 +140,8 @@ pub struct Game {
     pub leaps: AttackLeaps,
     /// The drive tables (`None` when they could not be read).
     pub drive: Option<Arc<crate::drive::DriveData>>,
+    /// The ability rules (kh2-rs `shared::abilities::AbilityRules`); `None` when not readable.
+    pub ability_rules: Option<Arc<kh2_game_core::abilities::AbilityRules>>,
 }
 
 #[derive(Debug)]
@@ -252,6 +254,7 @@ impl Disc {
         let moves = Moveset::parse(&ptya, index).ok_or_else(|| LoadError(format!("ptya: no table {index}")))?;
         let leaps = AttackLeaps::parse(&ptya, index);
         let drive = crate::drive::DriveData::load(self).ok().map(Arc::new);
-        Ok(Game { params, sora, keyblade, moves: Arc::new(moves), leaps, drive })
+        let ability_rules = kh2_game_core::abilities::AbilityRules::load(&mut self.0).map(Arc::new);
+        Ok(Game { params, sora, keyblade, moves: Arc::new(moves), leaps, drive, ability_rules })
     }
 }

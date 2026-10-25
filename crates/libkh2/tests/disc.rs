@@ -549,3 +549,49 @@ fn valor_master_final_carry_a_second_keyblade_on_the_left_hand() {
         }
     }
 }
+
+#[test]
+fn the_loadout_sets_combo_lengths_growth_and_survival() {
+    use kh2_game_core::abilities::id;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let rules = game.ability_rules.clone().expect("ability tables");
+    let w = floor();
+    let block = |ids: &[u16]| {
+        let mut s = standing(&game, &w);
+        assert!(s.set_loadout(ids));
+        (s.abilities.max_ground, s.abilities.max_air, s.abilities.max_finishers, s.growth)
+    };
+    let base = block(&[id::GUARD]);
+    let plus = block(&[id::GUARD, id::COMBO_PLUS, id::AIR_COMBO_PLUS, id::FINISHING_PLUS]);
+    let neg = block(&[id::GUARD, id::NEGATIVE_COMBO]);
+    eprintln!("base {base:?}, plus {plus:?}, negative {neg:?}");
+    assert_eq!((plus.0, plus.1, plus.2), (base.0 + 1, base.1 + 1, base.2 + 1));
+    assert!(neg.0 < base.0);
+    // Growth abilities in the list set the growth levels (High Jump level 1 = the first growth ability).
+    let hj = rules.growth_ability(0, 1).expect("High Jump LV1 item");
+    let g = block(&[hj]).3;
+    eprintln!("High Jump item {hj}: growth {g:?}");
+    assert_eq!(g.high_jump, 1);
+    // Guard is needed for the guard.
+    let mut s = standing(&game, &w);
+    s.set_loadout(&[]);
+    s.tick(&w, &Input { guard: true, ..Default::default() });
+    assert_ne!(s.state, State::Guard, "no Guard ability: no guard");
+    // Second Chance keeps 1 HP on a lethal hit.
+    let sc = rules.id_of_bit(kh2_game_core::abilities::BIT_SECOND_CHANCE).expect("Second Chance item");
+    let mut s = standing(&game, &w);
+    s.set_loadout(&[id::GUARD, sc]);
+    let row = game.params.atkp.iter().find(|a| a.sub_id >> 8 == 0).unwrap().id as i16;
+    s.hit(row, 10_000, Vec3::new(0.0, 0.0, -1.0));
+    assert_eq!(s.hp, 1);
+    // Berserk Charge raises strength rows' damage while the MP charge runs.
+    let mut s = standing(&game, &w);
+    s.set_loadout(&[id::GUARD, id::BERSERK_CHARGE]);
+    let strength_row = game.params.atkp.iter().filter(|a| a.critical_adjust == 0 && a.r#type == 0).max_by_key(|a| a.power).unwrap();
+    let before = s.damage(strength_row.id, Some(strength_row.sub_id), 0, 100, 100, 100).unwrap();
+    s.charge = kh2_game_core::magic_rules::Charge { left: 100.0, total: 100.0 };
+    let during = s.damage(strength_row.id, Some(strength_row.sub_id), 0, 100, 100, 100).unwrap();
+    eprintln!("Berserk Charge: atkp {} damage {before} -> {during} while charging", strength_row.id);
+    assert!(during > before);
+}

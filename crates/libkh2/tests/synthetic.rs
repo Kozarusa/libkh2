@@ -61,7 +61,7 @@ fn game() -> Arc<Game> {
     let sstm = PrefSstm { fall_max: FALL_MAX, lock_on_range: 1000.0, ..zeroed() };
     let plyr: PrefPlyr = zeroed();
     let params = Params { prty, plyr, sstm, fmab: Vec::new(), swing: None, reaction: None, atkp: Vec::new(), max_hp: 20, max_mp: 100, camera: None, magc: Vec::new(), cmd: Vec::new(), magi: Vec::new(), levels: Vec::new(), weapon_attack: 0, weapon_magic: 0 };
-    Arc::new(Game { params, sora: Arc::new(Rig { model, mset: Mset { slots } }), keyblade: None, moves: Arc::new(moves), leaps: AttackLeaps::default(), drive: None })
+    Arc::new(Game { params, sora: Arc::new(Rig { model, mset: Mset { slots } }), keyblade: None, moves: Arc::new(moves), leaps: AttackLeaps::default(), drive: None, ability_rules: None })
 }
 
 fn quad(a: [f32; 3], b: [f32; 3], c: [f32; 3], d: [f32; 3], flags: u32) -> [Surface; 2] {

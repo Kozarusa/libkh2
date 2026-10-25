@@ -156,6 +156,13 @@ KH2_API int32_t kh2_revive(int32_t handle, int32_t automatic);
 
 /* Ability bits 0..127 (bit 1 = Guard) and combo lengths; defaults Guard, 3, 3, 1. */
 KH2_API int32_t kh2_set_abilities(int32_t handle, uint64_t lo, uint64_t hi, uint8_t max_ground, uint8_t max_air, uint8_t max_finishers);
+/* The equipped abilities (ability item ids, e.g. 82 Guard, 162 Combo Plus, 163 Air Combo Plus,
+ * 393 Finishing Plus, 394 Negative Combo, 395 Berserk Charge; growth abilities by their items).
+ * The block they give sets the attack table's bits, combo lengths and growth levels; Second
+ * Chance / Once More, Leaf Bracer and Berserk Charge apply. Replaces kh2_set_abilities/_growth. */
+KH2_API int32_t kh2_set_loadout(int32_t handle, const uint16_t *ids, uint32_t count);
+/* out[7]: ground combo, air combo, finishers, High Jump, Quick Run, Aerial Dodge, Glide. */
+KH2_API int32_t kh2_get_loadout_block(int32_t handle, int32_t out[7]);
 /* High Jump level 0..5. */
 KH2_API int32_t kh2_set_high_jump(int32_t handle, uint8_t level);
 /* Growth abilities 0..5 (fmab rows): High Jump, Quick Run (Square while moving), Aerial Dodge

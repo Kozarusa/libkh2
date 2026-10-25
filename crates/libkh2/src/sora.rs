@@ -312,6 +312,10 @@ pub struct Sora {
     pub weapon: Option<Anim>,
     /// A drive form's second keyblade.
     pub weapon2: Option<Anim>,
+    /// The equipped abilities (kh2-rs `shared::abilities::Abilities`), when the host set a list.
+    pub loadout: Option<kh2_game_core::abilities::Abilities>,
+    /// Leaf Bracer's untouchable ticks (kh2-rs `Sora::leaf_bracer`).
+    pub leaf_bracer: f32,
     /// The keyblade item a form's second hand takes (Kingdom Key by default).
     pub hand1_item: u16,
     /// The attack table and its leaps (the base body's, or a drive form's).
@@ -393,6 +397,8 @@ impl Sora {
             weapon,
             weapon2: None,
             hand1_item: 41,
+            loadout: None,
+            leaf_bracer: 0.0,
             pose: true,
             spawn: at,
             prev: Input::default(),
@@ -547,6 +553,9 @@ impl Sora {
         self.prev = *input;
         self.timer += 1.0;
         self.invuln = (self.invuln - 1.0).max(0.0);
+        if self.leaf_bracer > 0.0 {
+            self.leaf_bracer -= 1.0;
+        }
         let game = self.game.clone();
         let prty = &game.params.prty;
 
@@ -1104,6 +1113,10 @@ impl Sora {
         self.leaps = leaps;
         self.growth = growth;
         self.drive.in_form = false;
+        if let Some(l) = self.loadout.as_mut() {
+            l.set_form(None);
+        }
+        self.sync_loadout();
         self.drive.form = 0;
         self.drive.timer = Default::default();
         self.drive.files = None;
@@ -1148,6 +1161,13 @@ impl Sora {
                 self.growth = Growth { high_jump: if to == 1 { g } else { 0 }, quick_run: if to == 2 { g } else { 0 }, aerial_dodge: if to == 3 { g } else { 0 }, glide: if to == 4 { g } else { 0 } };
                 self.drive.timer = rules::FormTimer::start(&data.tuning, to, level);
                 self.drive.in_form = true;
+                if self.loadout.is_some() {
+                    let list = self.form_abilities();
+                    if let Some(l) = self.loadout.as_mut() {
+                        l.set_form(Some(list));
+                    }
+                    self.sync_loadout();
+                }
                 // FUN_001a04b0: HP raised to the maximum, MP set to its maximum (a charge ends).
                 self.hp = self.max_hp;
                 self.mp = self.max_mp;
@@ -1247,6 +1267,9 @@ impl Sora {
                     let before = self.hp;
                     self.hp = rules::healed(self.hp, self.max_hp, heal);
                     self.events.push(Event::Healed { amount: self.hp - before, hp: self.hp });
+                    if let Some(t) = kh2_game_core::abilities::leaf_bracer_frames(self.has_ability_bit(kh2_game_core::abilities::BIT_LEAF_BRACER), true) {
+                        self.leaf_bracer = t;
+                    }
                 }
             }
             _ => {}
@@ -1262,7 +1285,8 @@ impl Sora {
             Some(s) => p.atkp.iter().find(|r| r.id == atkp && r.sub_id == s),
             None => p.atkp(atkp as i16),
         }?;
-        let stat = if a.critical_adjust == 1 { self.magic } else { self.strength };
+        let berserk = self.loadout.as_ref().map_or(0, |l| kh2_game_core::abilities::berserk_for_row(l.block(), self.charge.active(), a.critical_adjust));
+        let stat = if a.critical_adjust == 1 { self.magic } else { self.strength + berserk };
         let power = a.power as i32;
         let dmg = match a.r#type {
             5 => (max_hp * stat * power + 9999) / 10000,
@@ -1273,7 +1297,56 @@ impl Sora {
                 ((base as i64 * power as i64 * weakness as i64 * general as i64 + 999_999) / 1_000_000) as i32
             }
         };
+        let dmg = match &self.loadout {
+            Some(l) => kh2_game_core::abilities::attacker_bonuses(l.block(), self.hits, a, dmg),
+            None => dmg,
+        };
         Some(dmg.max(0))
+    }
+
+    /// An ability bit of the loadout (bits 0..255); without a loadout only the default Guard bit.
+    pub fn has_ability_bit(&self, bit: u16) -> bool {
+        match &self.loadout {
+            Some(l) => l.has_bit(bit),
+            None => bit < 128 && self.abilities.bits >> bit & 1 != 0,
+        }
+    }
+
+    /// Sets the equipped ability list (item ids; the Kingdom Key stays equipped) and derives the
+    /// attack table's bits, the combo lengths and the growth levels from the block (kh2-rs
+    /// `Abilities::recompute`, `sync_controller`). False without the ability tables.
+    pub fn set_loadout(&mut self, ids: &[u16]) -> bool {
+        let Some(rules) = self.game.ability_rules.clone() else { return false };
+        let mut l = kh2_game_core::abilities::Abilities::new(rules);
+        for &id in ids {
+            l.equip_ability(id);
+        }
+        if self.drive.in_form {
+            l.set_form(Some(self.form_abilities()));
+        }
+        self.loadout = Some(l);
+        self.sync_loadout();
+        true
+    }
+
+    /// A form's ability list (kh2-rs `drive::form_ability_list`: the fmlv grants up to the level and
+    /// the growth ability of the form's chain at its display level).
+    fn form_abilities(&self) -> Vec<u16> {
+        let (Some(d), Some(r)) = (self.game.drive.as_ref(), self.game.ability_rules.as_ref()) else { return Vec::new() };
+        let form = self.drive.form;
+        let level = self.drive.level[form as usize];
+        let mut list = kh2_game_core::drive_rules::granted_abilities(&d.levels, form, level);
+        let g = kh2_game_core::drive_rules::growth_level(&d.levels, form, level);
+        if (1..=4).contains(&form) && let Some(id) = r.growth_ability(form as usize - 1, g) {
+            list.push(id);
+        }
+        list
+    }
+
+    fn sync_loadout(&mut self) {
+        let Some(l) = &self.loadout else { return };
+        self.abilities = Abilities { bits: l.bits(), max_ground: l.ground_combo(), max_air: l.air_combo(), max_finishers: l.finishers() };
+        self.growth = Growth { high_jump: l.growth(0), quick_run: l.growth(1), aerial_dodge: l.growth(2), glide: l.growth(3) };
     }
 
     /// The input of the last tick.
@@ -1296,7 +1369,7 @@ impl Sora {
     /// the attacker toward Sora). Guard from the front repels it; otherwise the victim reaction of
     /// the row (`reaction_rules::victim_outcome`) plays.
     pub fn hit(&mut self, atkp: i16, damage: i32, dir: Vec3) -> HitResult {
-        if self.invuln > 0.0 || self.state == State::Down {
+        if self.invuln > 0.0 || self.state == State::Down || self.leaf_bracer > 0.0 {
             return HitResult::Ignored;
         }
         let game = self.game.clone();
@@ -1312,7 +1385,15 @@ impl Sora {
         let (Some(atk), Some(reaction)) = (game.params.atkp(atkp), game.params.reaction.as_ref()) else { return HitResult::NoRow };
         use kh2_game_core::reaction_rules::{self as rules, Blow, Push, VictimAction, VictimCtx};
         let useless = rules::is_ineffective(100, 100);
-        self.hp = (self.hp - damage.max(0)).max(0);
+        // FUN_00185a68: a lethal hit asks Second Chance / Once More (kh2-rs `abilities`).
+        let dmg = damage.max(0);
+        let survives = {
+            use kh2_game_core::abilities as ab;
+            let damage_motion = if self.state == State::Hurt { self.motion_id() } else { None };
+            self.hp - dmg <= 0 && ab::survives_lethal_hit(self.has_ability_bit(ab::BIT_SECOND_CHANCE), self.has_ability_bit(ab::BIT_ONCE_MORE), self.hp, damage_motion)
+        };
+        let dmg = kh2_game_core::abilities::lethal_hit_damage(self.hp, 0, dmg, survives);
+        self.hp = (self.hp - dmg).max(0);
         let ctx = VictimCtx { status: 0, grounded: self.motor.grounded, attacker_flag_4000: false, from_front, hit_part_plain: true };
         let out = rules::victim_outcome(&rules::HitRow::from_atkp(atk), useless, &ctx, &reaction.patn, &reaction.defaults, &reaction.consts);
         let d = &reaction.defaults;

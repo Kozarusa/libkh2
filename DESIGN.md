@@ -152,6 +152,11 @@ decided: the spell objects' movement (Blizzard homing, Fire following, Thunder's
 pattern) and the script VM stay out; the host moves the volume by `life` and `speed`. `kh2_damage`
 transcribes `GameData::damage` with the target's caps replaced by a floor of 1.
 
+Round 3 step 3: `shared/abilities.rs` is compiled from kh2-rs's text with two edits made by
+`build.rs` (the `KINGDOM_KEY` import restated, the methods over `progress::Progress` removed with
+their doc comments). decided: no AP accounting (the host's list is equipped as given); Defender
+and MP Rage are not applied (the host computes incoming damage); Leaf Bracer starts on Cure.
+
 ## 4b. Regression and drift (step 7)
 
 Drift has two sources: (1) the files compiled in place change (caught by the build and the

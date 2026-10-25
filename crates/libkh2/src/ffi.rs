@@ -478,6 +478,38 @@ pub extern "C" fn kh2_set_abilities(handle: i32, lo: u64, hi: u64, max_ground: u
     })
 }
 
+/// The equipped abilities (ability item ids, `count` of them; the Kingdom Key stays equipped):
+/// the attack table's ability bits, the combo lengths (Combo Plus, Air Combo Plus, Finishing Plus,
+/// Negative Combo), the growth levels, Berserk Charge, Second Chance / Once More, Leaf Bracer.
+/// Replaces `kh2_set_abilities` / `kh2_set_growth`. -1 without the ability tables.
+///
+/// # Safety
+/// `ids` points to `count` u16 values.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_set_loadout(handle: i32, ids: *const u16, count: u32) -> i32 {
+    let v: Vec<u16> = if ids.is_null() || count == 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(ids, count.min(64) as usize) }.to_vec() };
+    sora_do(handle, -1, |s, _| if s.set_loadout(&v) { 0 } else { set_error("no ability tables") })
+}
+
+/// The block the loadout gives: out = [ground combo, air combo, finishers, high jump, quick run,
+/// aerial dodge, glide] levels/lengths.
+///
+/// # Safety
+/// `out` points to 7 ints.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_get_loadout_block(handle: i32, out: *mut i32) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    sora_do(handle, -1, |s, _| {
+        let a = s.abilities;
+        let g = s.growth;
+        let v = [a.max_ground, a.max_air, a.max_finishers, g.high_jump, g.quick_run, g.aerial_dodge, g.glide].map(i32::from);
+        unsafe { std::ptr::copy_nonoverlapping(v.as_ptr(), out, 7) };
+        0
+    })
+}
+
 /// The High Jump level (0 = not learned, 1..5; the `fmab` row of that level gives the height).
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_set_high_jump(handle: i32, level: u8) -> i32 {

@@ -38,3 +38,9 @@ pub mod drive_rules {
     pub const KINGDOM_KEY: u16 = 41;
     include!(concat!(env!("OUT_DIR"), "/drive_rules.rs"));
 }
+
+/// kh2-rs `shared::abilities` (the ability block and its rules), transformed by `build.rs`.
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod abilities {
+    include!(concat!(env!("OUT_DIR"), "/abilities.rs"));
+}
