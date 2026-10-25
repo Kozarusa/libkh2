@@ -5,7 +5,7 @@
 3. [x] Script-to-Sora commands (kh2-rs player_reaction consume: paired motion from the enemy's set via Anim::play_external, State::Reaction, velocity, queued motion, unhittable; serial / motion-done back to the scripts) and native offers from reaction parts (kh2-rs reaction_parts.rs + part_offer compiled): the Soldier offers 34 by itself, the accept reaches its script, which plays its paired motion on Sora (disc test `a_soldier_offers_its_reaction_command_and_its_script_moves_sora`: 83 ticks, 1230 cm). 27 kinds carry reaction parts. Not ported: Mickey's Charge command, clashes.
 4. [x] Bonus levels (kh2-rs give_bonus: Sora max HP/MP/drive + gauge_carry + items, members' rows; saved in the record v2), members' level-ups with the shared EXP (raise_level, Sword column), `kh2_form_abilities` (disc test `bonus_levels_member_levels_and_form_ability_lists`). Not ported: slot upgrades (no equipment), the level window, the stat-rise messages.
 5. [x] All 54 kh2-rs enemy kinds run under their scripts (docs/ENEMY-KINDS.md from `every_enemy_kind_runs`: 47 defeated in the run; M_EX850 / M_EX870 wait for an area set-up and are not running); 18 areas' collision load and Sora walks (`areas_load_and_sora_walks_on_them`).
-6. [ ] Packaging, Unity sample, Python ctypes example.
+6. [x] scripts/package.ps1 -> dist/libkh2 (18 files, no disc data, -Zip), unity/sample (Kh2Battle.cs + README), examples/python/kh2_run.py (run: Sora defeats a Soldier at tick 233, from the packaged DLL too).
 7. [ ] Performance report, docs pass.
 
 # TODO (round 4)

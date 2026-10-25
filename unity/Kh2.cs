@@ -213,6 +213,7 @@ public class Kh2Sora : MonoBehaviour
     public Camera Cam;
     int handle = -1;
     Kh2.State state;
+    public int Handle => handle;
 
     void Start()
     {

@@ -234,3 +234,10 @@ a watchdog on a hang, and a fresh Sora must still tick at the end (`KH2_FUZZ_STE
 and within 1e7 units (else -1); sticks are held to -1..1 (NaN 0); max HP/MP to 9999; damage to
 0..999,999. The full function list with the header's comments: `docs/API-REFERENCE.md`, generated
 by `python scripts/gen_api_ref.py` (`--check` tells whether it is up to date).
+
+Packaging: `powershell -ExecutionPolicy Bypass -File scripts/package.ps1 [-Zip]` builds the release
+library and lays out `dist/libkh2` (bin/kh2.dll and its import library, include/kh2.h, docs, the
+Unity bindings and sample folder, the C and Python examples); it refuses to package anything that
+looks like disc data. Quick experiments without a compiler: `python examples/python/kh2_run.py`
+(ctypes; Sora, Donald and Goofy against a Soldier, a line per second of game time). Unity:
+`unity/sample/README.md`.
