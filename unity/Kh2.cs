@@ -15,9 +15,14 @@
 //   swapped when triangles go to kh2, and Sora's Unity yaw is -yaw. Bone matrices convert as
 //   S * M * S with S = diag(-1, 1, 1) (and the translation scaled).
 
+// Outside Unity (examples/csharp, a plain .NET console host) define KH2_NO_UNITY: the bindings
+// compile without UnityEngine, the conversion helpers and the MonoBehaviour are left out.
+
 using System;
 using System.Runtime.InteropServices;
+#if !KH2_NO_UNITY
 using UnityEngine;
+#endif
 
 public static class Kh2
 {
@@ -126,6 +131,21 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_drive_objects(int handle, int[] outIds);
     [DllImport(Lib)] public static extern int kh2_motion_slot_count(int handle, int which);
     [DllImport(Lib)] public static extern int kh2_motion_slot(int handle, int which, int motionId, int variant);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MotionDesc
+    {
+        public float frameStart, frameEnd, frameReturn, fps;
+        public int hasRootMotion;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)] public byte[] tag;
+    }
+    [DllImport(Lib)] public static extern int kh2_motion_info(int handle, int which, int slot, out MotionDesc info);
+    [DllImport(Lib)] public static extern int kh2_get_state(int handle, out State state);
+    [DllImport(Lib)] public static extern int kh2_set_abilities(int handle, ulong lo, ulong hi, byte maxGround, byte maxAir, byte maxFinishers);
+    [DllImport(Lib)] public static extern int kh2_set_pose_enabled(int handle, int on);
+    [DllImport(Lib)] public static extern int kh2_get_rest_bones(int handle, int which, [Out] float[] outMatrices, uint maxBones);
+    [DllImport(Lib)] public static extern int kh2_bone_parents(int handle, int which, [Out] int[] outParents, uint maxBones);
+    [DllImport(Lib)] public static extern float kh2_jump_height(int handle);
+    [DllImport(Lib)] public static extern int kh2_drive_outgoing_damage(int handle, int atkType, int damage);
     [DllImport(Lib)] public static extern int kh2_sample_motion(int handle, int which, int slot, float frame, [Out] float[] outMatrices, uint maxBones, [Out] float[] root);
     [StructLayout(LayoutKind.Sequential)]
     public struct MemberState { public float posX, posY, posZ, yaw; public int member, motionSlot; public float frame; public int hp, maxHp, mp, maxMp, ko, level, style, strength, magic, defense; }
@@ -233,6 +253,7 @@ public static class Kh2
         return System.Text.Encoding.UTF8.GetString(b).TrimEnd('\0');
     }
 
+#if !KH2_NO_UNITY
     // Unity metres <-> kh2 centimetres, X mirrored.
     public static Vector3 ToUnity(float x, float y, float z) => new Vector3(-x, y, z) * 0.01f;
     public static Vector3 ToKh2(Vector3 u) => new Vector3(-u.x, u.y, u.z) * 100f;
@@ -248,8 +269,10 @@ public static class Kh2
         u.SetColumn(3, new Vector4(u.m03 * 0.01f, u.m13 * 0.01f, u.m23 * 0.01f, 1));
         return u;
     }
+#endif
 }
 
+#if !KH2_NO_UNITY
 public class Kh2Sora : MonoBehaviour
 {
     public string IsoPath = "";
@@ -303,3 +326,4 @@ public class Kh2Sora : MonoBehaviour
         Kh2.kh2_terminate();
     }
 }
+#endif

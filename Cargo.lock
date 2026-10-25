@@ -335,7 +335,7 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "libkh2"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "glam",
  "kh2-anim",
@@ -352,7 +352,7 @@ dependencies = [
 
 [[package]]
 name = "libkh2-bevy-shim"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "glam",
  "libkh2-bevy-shim-derive",
@@ -360,11 +360,11 @@ dependencies = [
 
 [[package]]
 name = "libkh2-bevy-shim-derive"
-version = "0.7.0"
+version = "0.8.0"
 
 [[package]]
 name = "libkh2-enemy-host"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "kh2-anim",
  "kh2-archive",
@@ -380,7 +380,7 @@ dependencies = [
 
 [[package]]
 name = "libkh2-pure"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "kh2-anim",
  "kh2-archive",
@@ -394,7 +394,7 @@ dependencies = [
 
 [[package]]
 name = "libkh2-viewer"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "glam",
  "libkh2",

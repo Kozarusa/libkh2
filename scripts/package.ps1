@@ -30,6 +30,8 @@ try {
     Copy-Item -Recurse unity\sample (Join-Path $dist "unity\sample")
     Copy-Item examples\min.c, examples\build_min.bat, examples\build_min.sh (Join-Path $dist "examples")
     Copy-Item -Recurse examples\python (Join-Path $dist "examples\python")
+New-Item -ItemType Directory -Force (Join-Path $dist "examples\csharp") | Out-Null
+Copy-Item examples\csharp\Program.cs, examples\csharp\Kh2Console.csproj, examples\csharp\README.md (Join-Path $dist "examples\csharp")
     # Guard: nothing from a disc may be in the package.
     $bad = Get-ChildItem -Recurse $dist | Where-Object { $_.Extension -in ".iso", ".bar", ".mdlx", ".mset", ".bin", ".map", ".a.us", ".bdx" }
     if ($bad) { throw "game data in the package: $($bad.FullName -join ', ')" }

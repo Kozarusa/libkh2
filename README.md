@@ -27,9 +27,9 @@ What there is: Sora's controller (movement, combos, guard, growth abilities, mag
 items, levels, bonus rewards, hit reactions, reaction commands with paired motions, limits),
 Donald and Goofy (follow, battle AI with styles and item use, HP, knock-out and revive, levels),
 every kh2-rs enemy kind under its own BDX script, a field camera helper, motion export and a save
-record. The C API is `include/kh2.h` (reference: `docs/API-REFERENCE.md`); what differs from the
+record, area battle programs with their waves and the Struggle's mission manager, talks. The C API is `include/kh2.h` (reference: `docs/API-REFERENCE.md`); what differs from the
 game is in `docs/DEVIATIONS.md`, speed and memory in `docs/PERFORMANCE.md`, the enemy kinds in
-`docs/ENEMY-KINDS.md`, the Struggle in `docs/STRUGGLE.md`, the C API's safety in `docs/SAFETY.md`, changes in `CHANGELOG.md`.
+`docs/ENEMY-KINDS.md`, the Struggle in `docs/STRUGGLE.md`, the C API's safety in `docs/SAFETY.md`, how close each function is to the original in `docs/FAITHFULNESS.md`, changes in `CHANGELOG.md`.
 
 ## Build
 
@@ -47,6 +47,13 @@ C example (`examples/min.c`, uses `include/kh2.h`):
 examples\build_min.bat                  # from a Developer Command Prompt for VS, repository root
 build\min.exe <disc image>
 sh examples/build_min.sh && build/min <disc image>     # Linux / macOS
+```
+
+C# console example (`examples/csharp`, .NET 9, the `unity/Kh2.cs` bindings without Unity) and the binding check:
+
+```
+dotnet run -c Release --project examples/csharp -- <disc image>
+python scripts/check_bindings.py        # the DLL's exports against kh2.h and Kh2.cs
 ```
 
 Pure-Rust example host: `cargo run --release -p libkh2 --example host -- <disc image>`.

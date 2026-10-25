@@ -2,6 +2,24 @@
 
 The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry names what a host sees.
 
+## 0.8.0 (round 7)
+
+- Areas: `kh2_area_run` runs an area's battle program as the game sets it up (kh2-rs `spawn_waves`
+  compiled from source: groups, kind-2 waves, kind-6 groups, counters, signals);
+  `kh2_area_raise_event`, `kh2_area_take_events`, `kh2_area_end`.
+- Enemies: host 1.0's created objects and the calls on other objects are served (M_EX870 acts).
+- Struggle: the mission manager (kh2-rs struggle.rs) starts with an area run whose program has a
+  mission command: counters, clock, layouts, the mission script, the orb pool, the result 159 / 160;
+  `kh2_mission_state`, `kh2_mission_orbs`, `kh2_mission_take_sounds`. tt04 programs 182 to 184
+  (184 Seifer).
+- Summons: Stitch's and Genie's own classes (blast, potion, follow); `kh2_summon_set_arrival_event`;
+  summon events 7 to 11.
+- Limits: the members are held for the whole limit.
+- Talks: `kh2_talk_begin` / `kh2_talk_end` (the talk camera from the target's record, Sora held);
+  `kh2_cam_view.mode` reports 2 for lock-on and 4 for talk.
+- `docs/FAITHFULNESS.md` (every function classed against kh2-rs's ledger), `examples/csharp` (a
+  .NET console host through `unity/Kh2.cs`, which now compiles outside Unity with `KH2_NO_UNITY`
+  and binds all 107 functions), `scripts/check_bindings.py`.
 ## 0.7.0 (round 6)
 
 - Members' own BDX scripts (kh2-rs `friend_host`): Donald's Cure heals, Specials (Goofy's blade,
