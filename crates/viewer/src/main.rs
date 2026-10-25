@@ -1,12 +1,16 @@
 //! libkh2 viewer: a window where Sora runs on a test room, drawn as his skeleton (lines between
-//! bone origins) with the keyblades, Donald and Goofy, through libkh2's field camera.
+//! bone origins) with the keyblades, Donald and Goofy, and enemies under their BDX scripts, through
+//! libkh2's field camera. Donald and Goofy fight the enemies with the battle subset; Sora's swings
+//! and spells hit them.
 //!
 //! `cargo run --release -p libkh2-viewer -- <disc image>` (or set KH2_ISO). Optional second
 //! argument: an area name (`tt00`) to walk on that area's collision instead of the test room.
 //!
 //! Keys: WASD move (Shift walks), Space jump, J attack, K guard / Quick Run / Glide, arrows camera,
 //! Q lock onto the post, 1-4 Fire / Blizzard / Thunder / Cure, P Potion, F Valor, M Master,
-//! R revert, H take a hit, G toggle the growth abilities, Esc quit.
+//! R revert, H take a hit, G toggle the growth abilities, E spawn a Shadow, a Soldier and a Dusk
+//! in front of Sora (lock-on with Q then takes the nearest enemy), T accept a reaction command,
+//! Esc quit.
 
 use std::sync::Arc;
 
@@ -83,6 +87,8 @@ fn main() {
         None => room(),
     };
     let party = disc.party().ok();
+    let enemy_data = disc.enemies().ok().map(Arc::new);
+    let mut enemies = enemy_data.clone().map(kh2::enemy::Enemies::new);
     let drive = game.drive.clone();
     let mut forms = std::collections::HashMap::new();
     let start = if area.is_some() { world.spawn_point() } else { Vec3::ZERO };
@@ -129,8 +135,29 @@ fn main() {
             let l = if sora.growth.high_jump == 0 { 3 } else { 0 };
             sora.growth = kh2::sora::Growth { high_jump: l, quick_run: l, aerial_dodge: l, glide: l };
         }
-        if pressed(Key::Q) {
-            sora.target = if sora.target.is_some() { None } else { Some(Target { pos: post + Vec3::Y * 100.0, radius: 40.0, half_height: 100.0 }) };
+        if (pressed(Key::E) || (scripted && frame == 1))
+            && let Some(en) = enemies.as_mut()
+        {
+            let fwd = sora.motor.forward();
+            let side = Vec3::new(fwd.z, 0.0, -fwd.x);
+            for (k, kind) in ["M_EX020", "M_EX010", "M_EX990"].iter().enumerate() {
+                let at = sora.motor.pos + fwd * 500.0 + side * (k as f32 - 1.0) * 250.0;
+                en.spawn(kind, at, (-fwd.x).atan2(-fwd.z), &world);
+            }
+        }
+        let nearest = enemies.as_ref().and_then(|en| en.list.iter().filter(|e| e.alive() && !e.removed).min_by(|a, b| a.pos().distance(sora.motor.pos).total_cmp(&b.pos().distance(sora.motor.pos))).map(|e| e.pos()));
+        if pressed(Key::Q) || (scripted && frame == 2) {
+            sora.target = if sora.target.is_some() { None } else { Some(Target { pos: nearest.unwrap_or(post) + Vec3::Y * 100.0, radius: 40.0, half_height: 100.0 }) };
+        } else if sora.target.is_some()
+            && let Some(p) = nearest
+        {
+            sora.target = Some(Target { pos: p + Vec3::Y * 100.0, radius: 40.0, half_height: 100.0 });
+        }
+        if pressed(Key::T)
+            && let Some(en) = enemies.as_mut()
+            && let Some(c) = en.accept(&mut sora)
+        {
+            eprintln!("reaction command {c} accepted");
         }
         if pressed(Key::H) {
             let row = game.params.atkp.iter().find(|a| kh2_game_core::reaction_rules::reaction_class(a.enemy_reaction) == 3).map_or(0, |a| a.id as i16);
@@ -162,7 +189,15 @@ fn main() {
             eprintln!("event: {e:?}");
         }
         if let Some(p) = party.as_ref() {
-            kh2::party::tick(p, &mut followers, &mut party_rng, sora.motor.pos, sora.motor.yaw, &world, game.params.sstm.fall_max, true);
+            let fighting = enemies.as_mut().filter(|e| !e.list.is_empty()).map(|e| (e, &game.params));
+            kh2::party::tick_battle(p, &mut followers, &mut party_rng, sora.motor.pos, sora.motor.yaw, &world, game.params.sstm.fall_max, true, fighting);
+        }
+        if let Some(en) = enemies.as_mut() {
+            en.tick(&mut sora, &world, game.params.sstm.fall_max);
+            for e in en.events.drain(..) {
+                eprintln!("enemy event: {e:?}");
+            }
+            en.list.retain(|e| !e.removed);
         }
         // The camera.
         let cam_in = CamInput { stick: [axis(Key::Right, Key::Left), axis(Key::Up, Key::Down)], auto: true, step: 1.0, ..Default::default() };
@@ -206,11 +241,25 @@ fn main() {
             canvas.line(v.a, v.b + Vec3::Y * v.r, 0xff3030);
         }
         for f in &followers {
-            let root = Mat4::from_rotation_translation(glam::Quat::from_rotation_y(f.motor.yaw), f.motor.pos);
             let color = if f.member == 0 { 0x60a0ff } else { 0x60ff90 };
-            canvas.skeleton(root, &f.body.pose, &parents(&f.body.rig), color);
+            canvas.skeleton(f.matrix(), &f.body.pose, &parents(&f.body.rig), if f.attack.is_some() { 0xc0e0ff } else { color });
+            if let (Some(w), Some(p)) = (&f.weapon, party.as_ref()) {
+                canvas.skeleton(f.weapon_matrix(p), &w.pose, &parents(&w.rig), 0xd0a040);
+            }
         }
-        window.set_title(&format!("libkh2 viewer  state {:?}  motion {}  HP {}/{}  MP {}/{}  form {}  combo {}", sora.state, sora.body.tag(), sora.hp, sora.max_hp, sora.mp, sora.max_mp, sora.drive.form, sora.hits));
+        let mut offer = String::new();
+        if let Some(en) = enemies.as_ref() {
+            for e in &en.list {
+                let hurt = e.obj.reacting;
+                let color = if !e.alive() { 0x603030 } else if hurt { 0xffa060 } else { 0xe04040 };
+                canvas.skeleton(e.matrix(), &e.anim.pose, &parents(&e.data.rig), color);
+            }
+            if let Some(o) = en.offer {
+                offer = format!("  reaction {} ({:?}, T)", o.cmd, o.status);
+            }
+        }
+        let foes = enemies.as_ref().map_or(0, |e| e.list.iter().filter(|e| e.alive()).count());
+        window.set_title(&format!("libkh2 viewer  state {:?}  motion {}  HP {}/{}  MP {}/{}  form {}  combo {}  LV {}  enemies {foes}{offer}", sora.state, sora.body.tag(), sora.hp, sora.max_hp, sora.mp, sora.max_mp, sora.drive.form, sora.hits, sora.level));
         window.update_with_buffer(&canvas.px, W, H).expect("draw");
     }
     if let Ok(path) = std::env::var("KH2_VIEWER_SHOT") {

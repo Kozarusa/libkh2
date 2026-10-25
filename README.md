@@ -33,8 +33,12 @@ sh examples/build_min.sh && build/min <disc image>     # Linux / macOS
 
 Pure-Rust example host: `cargo run --release -p libkh2 --example host -- <disc image>`.
 
-**Viewer** (a window; Sora, his keyblades, Donald and Goofy drawn as skeleton lines through the
-field camera; `crates/viewer`, depends on `minifb` only):
+**Viewer** (a window; Sora, his keyblades, Donald and Goofy with their weapons, and enemies drawn
+as skeleton lines through the field camera; `crates/viewer`, depends on `minifb` only). E spawns a
+Shadow, a Soldier and a Dusk in front of Sora: they run their BDX scripts, Donald and Goofy fight
+them, Q locks onto the nearest, J and 1-3 hit them, T accepts a reaction command; hits, defeats and
+drops print on stderr. `KH2_VIEWER_FRAMES=600` runs a scripted fight and quits
+(`KH2_VIEWER_SHOT=<file.ppm>` keeps the last frame).
 
 ```
 cargo run --release -p libkh2-viewer -- "<path to Kingdom Hearts II (USA).iso>"        # test room
