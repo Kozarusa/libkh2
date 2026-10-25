@@ -189,6 +189,15 @@ fn asserts() -> String {
     c += &format!("static_assert(offsetof(kh2_talk_request, look) == {}, \"kh2_talk_request.look\");\n", offset_of!(Kh2TalkRequest, look));
     c += &format!("static_assert(offsetof(kh2_talk_request, dist) == {}, \"kh2_talk_request.dist\");\n", offset_of!(Kh2TalkRequest, dist));
     c += &format!("static_assert(offsetof(kh2_talk_request, height) == {}, \"kh2_talk_request.height\");\n", offset_of!(Kh2TalkRequest, height));
+    c += &format!("static_assert(sizeof(kh2_cue) == {}, \"kh2_cue size\");\n", size_of::<Kh2Cue>());
+    c += &format!("static_assert(offsetof(kh2_cue, kind) == {}, \"kh2_cue.kind\");\n", offset_of!(Kh2Cue, kind));
+    c += &format!("static_assert(offsetof(kh2_cue, owner) == {}, \"kh2_cue.owner\");\n", offset_of!(Kh2Cue, owner));
+    c += &format!("static_assert(offsetof(kh2_cue, owner_id) == {}, \"kh2_cue.owner_id\");\n", offset_of!(Kh2Cue, owner_id));
+    c += &format!("static_assert(offsetof(kh2_cue, params) == {}, \"kh2_cue.params\");\n", offset_of!(Kh2Cue, params));
+    c += &format!("static_assert(offsetof(kh2_cue, frame) == {}, \"kh2_cue.frame\");\n", offset_of!(Kh2Cue, frame));
+    c += &format!("static_assert(offsetof(kh2_cue, _pad) == {}, \"kh2_cue._pad\");\n", offset_of!(Kh2Cue, _pad));
+    c += &format!("static_assert(offsetof(kh2_cue, pos) == {}, \"kh2_cue.pos\");\n", offset_of!(Kh2Cue, pos));
+    c += &format!("static_assert(offsetof(kh2_cue, model) == {}, \"kh2_cue.model\");\n", offset_of!(Kh2Cue, model));
     c += &format!("static_assert(sizeof(kh2_enemy_state_t) == {}, \"kh2_enemy_state_t size\");\n", size_of::<Kh2EnemyState>());
     c += &format!("static_assert(offsetof(kh2_enemy_state_t, id) == {}, \"kh2_enemy_state_t.id\");\n", offset_of!(Kh2EnemyState, id));
     c += &format!("static_assert(offsetof(kh2_enemy_state_t, pos) == {}, \"kh2_enemy_state_t.pos\");\n", offset_of!(Kh2EnemyState, pos));

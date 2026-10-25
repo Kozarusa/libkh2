@@ -1954,3 +1954,39 @@ fn limit_effect_files_carry_no_hit_programs() {
     eprintln!("{checked} limit effect files, no hit programs");
     assert!(checked > 10);
 }
+
+/// Sound and effect cues (round 9): Sora's run and combo motions carry footstep, sound and effect
+/// frame triggers, the enemies' motions theirs; each cue names its owner's model and place.
+#[test]
+fn motions_give_sound_and_effect_cues() {
+    use kh2::cue::{of_anim, Kind, Owner};
+    use kh2::enemy::Enemies;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let w = floor();
+    let mut s = standing(&game, &w);
+    let mut en = Enemies::new(data);
+    en.spawn("M_EX010", Vec3::new(0.0, 0.0, 250.0), 0.0, &w);
+    let mut kinds = std::collections::BTreeMap::new();
+    for t in 0..900 {
+        let attack = t > 300 && t % 8 == 0;
+        s.tick(&w, &Input { stick: if t < 200 { [0.0, 1.0] } else { [0.0, 0.0] }, cam_look: [0.0, 1.0], attack, ..Default::default() });
+        s.collect_cues();
+        s.hp = s.max_hp;
+        en.tick(&mut s, &w, game.params.sstm.fall_max);
+        for e in &en.list {
+            s.cues.extend(of_anim(&e.anim, Owner::Enemy(e.id), e.data.kind.model, e.pos()));
+        }
+        for c in s.cues.drain(..) {
+            assert!(!c.model.is_empty());
+            *kinds.entry((format!("{:?}", c.kind), format!("{:?}", c.owner).chars().take(5).collect::<String>())).or_insert(0) += 1;
+            if matches!(c.kind, Kind::Sound) && kinds.len() < 12 {
+                eprintln!("sound cue {c:?}");
+            }
+        }
+    }
+    eprintln!("cues by (kind, owner): {kinds:?}");
+    assert!(kinds.keys().any(|(k, o)| k == "Footstep" && o == "Sora"), "Sora's run has footsteps");
+    assert!(kinds.keys().any(|(_, o)| o == "Enemy"), "the enemy's motions have cues");
+}

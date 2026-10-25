@@ -374,6 +374,8 @@ pub struct Sora {
     pub reactions_taken: Vec<u8>,
     /// A talk holds the player's control (kh2-rs `talk_lock_pad`); `crate::talk` sets and clears it.
     pub control_locked: bool,
+    /// Sound and effect cues of every actor of this Sora (`crate::cue`), for `kh2_poll_cue`.
+    pub cues: Vec<crate::cue::Cue>,
     /// An item use: (item id, the wait after frame trigger 6 when started).
     pub item_use: Option<(u16, Option<f32>)>,
     /// The keyblade item a form's second hand takes (Kingdom Key by default).
@@ -470,6 +472,7 @@ impl Sora {
             leaf_bracer: 0.0,
             reactions_taken: Vec::new(),
             control_locked: false,
+            cues: Vec::new(),
             item_use: None,
             pose: true,
             spawn: at,
@@ -680,6 +683,21 @@ impl Sora {
             }
             self.reaction.active = false;
         }
+    }
+
+    /// The model whose effect file Sora's cues name: the form's body in a drive form, else P_EX100.
+    pub fn model_name(&self) -> String {
+        match (&self.drive.files, self.drive.in_form) {
+            (Some(f), true) => f.model.clone(),
+            _ => "P_EX100".to_string(),
+        }
+    }
+
+    /// Appends the cues of the body's last tick (`crate::cue::of_anim`).
+    pub fn collect_cues(&mut self) {
+        let model = self.model_name();
+        let c = crate::cue::of_anim(&self.body, crate::cue::Owner::Sora, &model, self.motor.pos);
+        self.cues.extend(c);
     }
 
     pub fn tick(&mut self, world: &World, input: &Input) {

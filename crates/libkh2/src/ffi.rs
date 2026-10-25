@@ -394,7 +394,9 @@ pub unsafe extern "C" fn kh2_tick(handle: i32, inputs: *const Kh2Inputs, state: 
     let input = if inputs.is_null() { Input::default() } else { input_of(unsafe { &*inputs }) };
     sora_do(handle, -1, |s, w| {
         cap(&mut s.events);
+        cap(&mut s.cues);
         s.tick(w, &input);
+        s.collect_cues();
         if !state.is_null() {
             unsafe { *state = state_of(s) };
         }
@@ -1176,11 +1178,28 @@ pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
         }
         // The limit task's countdown and script (after the party).
         if let Some(lim) = l.limits.get_mut(&handle) {
+            let had = lim.events.len();
             lim.tick(s);
+            for ev in &lim.events[had.min(lim.events.len())..] {
+                if let crate::limit::LimitEvent::Effect { who, id } = ev {
+                    s.cues.push(crate::cue::Cue { kind: crate::cue::Kind::ScriptEffect, owner: crate::cue::Owner::Sora, model: "limit".to_string(), params: [*id as i16, *who as u16 as i16, 0, 0], pos: s.motor.pos, frame: 0 });
+                }
+            }
             if let (Some(list), Some(p)) = (l.followers.get_mut(&handle), l.party.as_ref()) {
                 lim.play_motions(s, list, p);
             }
         }
+        // The members' and the summon's sound and effect cues (`crate::cue`).
+        if let (Some(list), Some(p)) = (l.followers.get(&handle), l.party.as_ref()) {
+            for (k, f) in list.iter().enumerate() {
+                let model = p.members.get(f.member).map_or("", |m| m.model.as_str());
+                s.cues.extend(crate::cue::of_anim(&f.body, crate::cue::Owner::Member(k as u32), model, f.motor.pos));
+            }
+        }
+        if let Some(o) = l.summons.get(&handle).and_then(|m| m.object.as_ref()) {
+            s.cues.extend(crate::cue::of_anim(&o.body, crate::cue::Owner::Summon(0), &o.model, o.pos));
+        }
+        cap(&mut s.cues);
         0
     })
 }
@@ -1302,10 +1321,28 @@ pub extern "C" fn kh2_enemies_tick(handle: i32) -> i32 {
         if let Some(en) = l.enemies.get_mut(&handle) {
             let before = en.events.len();
             en.tick(s, &l.world, fall);
+            // The enemies' sound and effect cues (`crate::cue`), their scripts' effect starts.
+            for e in en.list.iter().filter(|e| !e.removed) {
+                s.cues.extend(crate::cue::of_anim(&e.anim, crate::cue::Owner::Enemy(e.id), e.data.kind.model, e.pos()));
+            }
+            for ev in &en.events[before.min(en.events.len())..] {
+                if let crate::enemy::EnemyEvent::Effect { id, effect } = ev
+                    && let Some(e) = en.list.iter().find(|e| e.id == *id)
+                {
+                    s.cues.push(crate::cue::Cue { kind: crate::cue::Kind::ScriptEffect, owner: crate::cue::Owner::Enemy(*id), model: e.data.kind.model.to_string(), params: [*effect as i16, 0, 0, 0], pos: e.pos(), frame: 0 });
+                }
+            }
+            cap(&mut s.cues);
             // The area's own groups and waves (kh2-rs `spawn_waves`).
             if let Some((run, raised)) = l.area_runs.get_mut(&handle) {
                 // The mission manager a group started (kh2-rs struggle.rs: orbs, clock, script, end).
+                let had = run.mission.as_ref().map_or(0, |m| m.sounds.len());
                 run.tick_mission(s, en, &l.world);
+                if let Some(m) = run.mission.as_ref() {
+                    for (se, at) in m.sounds.iter().skip(had.min(m.sounds.len())) {
+                        s.cues.push(crate::cue::Cue { kind: crate::cue::Kind::SoundNumber, owner: crate::cue::Owner::Sora, model: String::new(), params: [*se as u16 as i16, (*se >> 16) as u16 as i16, 0, 0], pos: at.unwrap_or(s.motor.pos), frame: 0 });
+                    }
+                }
                 let r = std::mem::take(raised);
                 run.tick(en, &l.world, s.motor.pos, &r);
             }
@@ -2665,4 +2702,48 @@ fn cap_queues(l: &mut Lib, handle: i32) {
         cap(&mut run.raised);
         cap(raised);
     }
+}
+/// A sound or effect cue (`crate::cue`; docs/SOUND-AND-EFFECTS.md).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2Cue {
+    /// KH2_CUE_SOUND 1 (trigger 8: params bank, index), KH2_CUE_VOICE 2 (13 / 14: line, priority),
+    /// KH2_CUE_EFFECT 3 (trigger 1: element), KH2_CUE_FOOTSTEP 4 (2: kind), KH2_CUE_DUST 5 (19:
+    /// kind), KH2_CUE_SCRIPT_EFFECT 6 (a script's effect start: element), KH2_CUE_SOUND_NUMBER 7
+    /// (a numbered sound: params 0 / 1 the low / high 16 bits).
+    pub kind: i32,
+    /// 0 Sora, 1 a member (owner_id = follower slot), 2 an enemy (its id), 3 the summon.
+    pub owner: i32,
+    pub owner_id: i32,
+    pub params: [i16; 4],
+    pub frame: i16,
+    pub _pad: i16,
+    pub pos: [f32; 3],
+    /// The owner's model, NUL-terminated (its effect file: obj/<model>.apdx); "limit" for a limit's.
+    pub model: [u8; 16],
+}
+
+/// Takes the oldest sound / effect cue of Sora `handle` and his party, enemies and summon into
+/// `out`: 1 when one was taken, 0 when none is waiting (at most 1024 wait).
+///
+/// # Safety
+/// `out` points to a `kh2_cue`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_poll_cue(handle: i32, out: *mut Kh2Cue) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    sora_do(handle, -1, |s, _| {
+        if s.cues.is_empty() {
+            return 0;
+        }
+        let c = s.cues.remove(0);
+        let (owner, owner_id) = c.owner.code();
+        let mut model = [0u8; 16];
+        for (d, b) in model.iter_mut().zip(c.model.bytes().take(15)) {
+            *d = b;
+        }
+        unsafe { *out = Kh2Cue { kind: c.kind as i32, owner, owner_id, params: c.params, frame: c.frame, _pad: 0, pos: c.pos.to_array(), model } };
+        1
+    })
 }

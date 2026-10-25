@@ -207,6 +207,17 @@ public static class Kh2
     public struct TalkRequest { public uint talkId; public int examine; public float targetYaw, soraYaw; public int targetMotion, camera; public float lookX, lookY, lookZ, dist, height; }
     [DllImport(Lib)] public static extern int kh2_talk_begin(int handle, string model, ref TalkTarget target, float[] bones, uint boneCount, out TalkRequest request);
     [DllImport(Lib)] public static extern int kh2_talk_end(int handle);
+    public const int CueSound = 1, CueVoice = 2, CueEffect = 3, CueFootstep = 4, CueDust = 5, CueScriptEffect = 6, CueSoundNumber = 7;
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Cue
+    {
+        public int kind, owner, ownerId;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)] public short[] parameters;
+        public short frame, pad;
+        public float posX, posY, posZ;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)] public byte[] model;
+    }
+    [DllImport(Lib)] public static extern int kh2_poll_cue(int handle, out Cue cue);
     public const int CamModeFollow = 0, CamModeLook = 1, CamModeLockOn = 2, CamModeTalk = 4, CamModeOverhead = 5, CamModeBehind = 8;
     [DllImport(Lib)] public static extern int kh2_area_spawn(int handle, string area, int program, int withDisabled);
     [DllImport(Lib)] public static extern int kh2_enemy_count(int handle);

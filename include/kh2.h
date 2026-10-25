@@ -495,6 +495,30 @@ typedef struct kh2_talk_request {
 } kh2_talk_request;
 KH2_API int32_t kh2_talk_begin(int32_t handle, const char *model, const kh2_talk_target *target, const float *bones, uint32_t bone_count, kh2_talk_request *out);
 KH2_API int32_t kh2_talk_end(int32_t handle);
+
+/* Sound and effect cues (docs/SOUND-AND-EFFECTS.md): what the original plays or starts, from the
+ * motions' frame triggers of Sora, the members, the enemies and the summon, the scripts' effect
+ * starts and the mission's numbered sounds. The library plays nothing; the host does. Collected by
+ * kh2_tick, kh2_party_tick and kh2_enemies_tick; at most 1024 wait. */
+#define KH2_CUE_SOUND 1         /* trigger 8: params[0] bank, [1] index (sound bank * 1000 + index; bank 500: the owner's own) */
+#define KH2_CUE_VOICE 2         /* triggers 13 / 14: params[0] voice / line, [1] priority (enemies) */
+#define KH2_CUE_EFFECT 3        /* trigger 1: params[0] element of the owner's effect file, bound to the owner */
+#define KH2_CUE_FOOTSTEP 4      /* trigger 2: params[0] footstep kind (the floor material picks the sample) */
+#define KH2_CUE_DUST 5          /* trigger 19: params[0] dust kind */
+#define KH2_CUE_SCRIPT_EFFECT 6 /* a script started element params[0] (enemies; model "limit": the limit's own) */
+#define KH2_CUE_SOUND_NUMBER 7  /* a numbered sound: params[0] | params[1] << 16 (mission start / end / fail, orbs) */
+typedef struct kh2_cue {
+    int32_t kind;          /* KH2_CUE_* */
+    int32_t owner;         /* 0 Sora, 1 member (owner_id = follower slot), 2 enemy (its id), 3 summon */
+    int32_t owner_id;
+    int16_t params[4];
+    int16_t frame;         /* the motion frame of the trigger */
+    int16_t _pad;
+    float pos[3];          /* the owner's position (cm) */
+    char model[16];        /* the owner's model: its effect / sound file is obj/<model>.apdx */
+} kh2_cue;
+/* Takes the oldest cue: 1 when one was taken, 0 when none waits. */
+KH2_API int32_t kh2_poll_cue(int32_t handle, kh2_cue *out);
 /* kh2_cam_view.mode: 0 follow, 1 look-around, 2 lock-on (a kh2_set_target point), 4 talk,
  * 5 overhead, 8 always-behind. */
 /* Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load

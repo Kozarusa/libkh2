@@ -366,6 +366,8 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 if r.chance(4) {
                     kh2_talk_end(h);
                 }
+                let mut cue = Kh2Cue::default();
+                kh2_poll_cue(h, if r.chance(4) { std::ptr::null_mut() } else { &mut cue });
             }
             55 => {
                 let ids = [41u16, 499, r.next() as u16, 0, 526];
