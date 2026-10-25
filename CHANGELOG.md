@@ -2,6 +2,25 @@
 
 The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry names what a host sees.
 
+## 1.0.0 (round 9)
+
+- Sound and effect cues: `kh2_poll_cue` (`kh2_cue`, `KH2_CUE_*`): the motions' frame triggers 1, 2,
+  8, 13 / 14 and 19 of Sora, the members, the enemies and the summon, the scripts' effect starts,
+  the mission's numbered sounds, the collision group switches; `docs/SOUND-AND-EFFECTS.md` maps the
+  numbers to the PAX elements and to kh2-extras' WAV files.
+- Areas for hosts: `kh2_area_setup` / `kh2_area_get_object` (kh2-rs `run_area`, oracle-tested
+  there): every object of the loaded spawn groups (townspeople, field objects, save points, the
+  player's start) with talk id and command, the collision mask, camera type and music; the scripts'
+  collision group switches (hosts 1.36 / 1.37, 1.46 / 1.47) are applied.
+- Damage: checked against the original FUN_001a0610 in kh2-ee (`tests/oracle.rs`); two fixes (rows
+  with +5 byte 2 or more use no stat; the attacker's maximum dealt caps even at 0). The attacker
+  boosts and Defender's gate are oracle-checked too. `docs/FAITHFULNESS.md`: class a 7 of 110.
+- Limits: the damage dead end documented with evidence (`limit_effect_files_carry_no_hit_programs`).
+- Round 8 (0.9.0, tagged): release check from the zip (paths remapped out of the DLL,
+  `tests/package.rs`), Seifer's bat hits Sora, members' and summons' hits knock orbs out, the soak
+  test (`tests/soak.rs`), event queues capped at 1024, `docs/FOR-HOST-AUTHORS.md`.
+- Disc tests run serialised (process-wide script tables).
+
 ## 0.8.0 (round 7)
 
 - Areas: `kh2_area_run` runs an area's battle program as the game sets it up (kh2-rs `spawn_waves`

@@ -39,8 +39,8 @@ libkh2: Sora's controller from Kingdom Hearts II as an embeddable library (libsm
 
 The version this header describes; kh2_version() returns the library's (same packing).
 
-- `KH2_VERSION_MAJOR` = `0`
-- `KH2_VERSION_MINOR` = `8`
+- `KH2_VERSION_MAJOR` = `1`
+- `KH2_VERSION_MINOR` = `0`
 - `KH2_VERSION_PATCH` = `0`
 - `KH2_VERSION` = `((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)`
 

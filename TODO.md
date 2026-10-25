@@ -1,19 +1,32 @@
-# Remaining (v0.9.0)
+# Remaining (v1.0.0)
 
-What is still open, honestly; everything else listed below as done is tested.
+What is still open, honestly; everything listed below as done is tested.
 
-1. Limit damage: the damage of the limits is in their PAX effect elements (`limit/us/*.bar` type 18),
-   which kh2-rs does not decode; needs kh2-rs to port the PAX hit data first (docs/DEVIATIONS.md).
-2. Not run here: the Unity sample (`unity/`, `docs/UNITY.md`) and the Linux / macOS builds
-   (`examples/build_min.sh`, `nm` path of `scripts/check_bindings.py`). Only Windows + MSVC + .NET 9 ran.
-3. Struggle: the result menu (record 0x1a) and the game over are reported, not run; the layout
-   events' pictures are not drawn; an object's centre is feet + 80 cm.
-4. Talks: the dialogue (libretto programs, windows) and the townspeople are the host's; a talk
-   camera record on a bone uses the host's bones or the rest pose.
-5. Not ported at all: sound / effect playback (numbers only), moving platforms, cutscenes, menus,
-   shops, save points, story flags across areas, the story's choice of an area's battle program.
-6. Of the 107 functions, 4 rest on oracle-tested kh2-rs rules, 48 on kh2-rs rules read from the
-   original but not oracle-tested, 55 are glue (docs/FAITHFULNESS.md); more oracle tests belong in kh2-rs.
+1. Limit damage: not in the data (no hit programs in the 19 limit effect files, no object or attack
+   calls in the limit scripts, no limit mode in the members' scripts); it is the executable's limit
+   task code, which kh2-rs has not ported (docs/DEVIATIONS.md, `limit_effect_files_carry_no_hit_programs`).
+2. Not run here: the Unity sample (`unity/`, `docs/UNITY.md`), the Linux / macOS builds
+   (`examples/build_min.sh`, the `nm` path of `scripts/check_bindings.py`), unzipping the package on
+   Linux (Windows PowerShell writes backslash paths into the zip). Only Windows + MSVC + .NET 9 ran.
+3. Sounds and effects are cues only: the host plays them; hit sparks / hit sounds, menus, music and
+   ambience are not cued; Sora's voice ids need the game's voice table (not exported).
+4. Townspeople and field objects are data for the host (`kh2_area_setup`); their scripts, dialogue
+   (libretto programs, windows), save points, chests, doors and area jumps are the host's; no moving
+   collision beyond the scripts' group switches.
+5. Struggle: the result menu and the game over are reported, not run; an object's centre is feet + 80 cm.
+6. Faithfulness: 7 of 110 functions rest on oracle-tested rules, 46 on kh2-rs rules read from the
+   original but not oracle-tested, 57 are glue (docs/FAITHFULNESS.md). Next cheap oracle targets:
+   none left that need no actor layout; the attack-table choice and the controller states need the
+   whole actor object laid out in kh2-ee.
+
+# TODO (round 9)
+
+1. [~] Limit damage: dead end with evidence (item 1 above).
+2. [x] Sound and effect cues (`kh2_poll_cue`), docs/SOUND-AND-EFFECTS.md with the kh2-extras mapping.
+3. [x] Area set-up for hosts (`kh2_area_setup`, `kh2_area_get_object`), collision group switches.
+4. [x] Oracle tests in libkh2 (`tests/oracle.rs`): damage (two fixes), attacker bonuses, hp_is_low.
+5. [x] Soak 5 min release (1,278,165 ticks, heap 34.6 -> 41.1 MiB, same replay), fuzz 40,000 calls,
+   package from a fresh folder (C, Python, C#), version 1.0.0, tag v1.0.0.
 
 # TODO (round 8)
 
