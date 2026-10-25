@@ -15,9 +15,14 @@
 //! * `data.rs`: `GameData::enemy_stats` and `GameData::damage`;
 //! * `combat.rs`: the attack and hurt volumes and their overlap test.
 //!
-//! decided: no paired motions on the player (the Dancer's grab), no clashes, no reaction commands,
-//! no spawn groups from the area scripts (the host spawns), no camera (every enemy is on screen),
-//! prize drops reported as counts (no prize objects).
+//! Reaction commands (round 4/5): kh2-rs `reaction_cmd.rs`'s offer from the motions' range trigger
+//! 20 and from the objects' reaction parts (`reaction_parts.rs` + `part_offer`, FUN_0019cb70: the
+//! Soldier's five parts offer command 34), the accept, event 11 to the script, and what the script
+//! then asks of Sora (`PlayerReactionCmd`: the paired motion from the enemy's set, the velocity,
+//! the queued motion, the unhittable bit) handed to `Sora::reaction`.
+//!
+//! decided: no clashes, no spawn groups from the area scripts (the host spawns), no camera (every
+//! enemy is on screen), prize drops reported as counts (no prize objects).
 
 pub use kh2_game_core::reaction_cmd::Status;
 use kh2_game_core::reaction_cmd::{offers_at, status, CmdRow, Ctx, Offer};
@@ -55,6 +60,20 @@ pub struct KindData {
     pub prog: Option<Program>,
     pub flags124: bool,
     pub object_id: u32,
+    /// The paired player motions of the kind's motion set (kh2-rs `player_reaction::paired_entries`).
+    pub paired: HashMap<usize, Vec<kh2_enemy_host::player_reaction::Paired>>,
+    /// The reaction parts of the kind's object file (kh2-rs `reaction_parts::Table`).
+    pub parts: Option<kh2_game_core::reaction_parts::Table>,
+}
+
+impl KindData {
+    /// Host 1.29's view of the paired entries: (sub-motion name, length in 60 Hz ticks).
+    fn paired_ticks(&self) -> HashMap<usize, Vec<(String, f32)>> {
+        self.paired
+            .iter()
+            .map(|(k, v)| (*k, v.iter().map(|(n, s)| (n.clone(), s.motion.as_ref().map_or(0.0, |m| (m.frame_end - m.frame_start).max(0.0) * crate::anim::LOGIC_HZ / m.fps.max(1.0)))).collect()))
+            .collect()
+    }
 }
 
 /// The enemy tables (kh2-rs `AiPrograms` plus `GameData`'s enemy rows).
@@ -68,6 +87,8 @@ pub struct EnemyData {
     pub player_model: u8,
     /// The `cmd` rows a reaction offer reads (kh2-rs `ReactionRules`).
     pub cmds: Vec<CmdRow>,
+    /// Sora's own collision records (P_EX100): his type 1 body volume touches the reaction parts.
+    pub player_parts: Option<kh2_game_core::reaction_parts::Table>,
 }
 
 impl EnemyData {
@@ -136,14 +157,18 @@ impl Disc {
             let row = objs.iter().find(|r| r.model_name == kind.model);
             let mset = kh2_enemy_host::shared::enemy::mset_name(row.map(|r| r.animation_name.as_str()), kind.model);
             let Ok(rig) = self.rig_named(kind.model, &mset) else { continue };
-            let prog = self.read(&format!("obj/{}.mdlx", kind.model)).ok().and_then(|f| kh2_bar::parse(&f).ok().and_then(|b| b.into_iter().find(|e| e.kind == 3).map(|e| e.data.to_vec()))).and_then(|e| Program::parse(&e).ok());
-            let kd = Arc::new(KindData { kind, rig: Arc::new(rig), prog, flags124: row.is_some_and(|r| r.flags & 8 != 0), object_id: row.map_or(0, |r| r.object_id) });
+            let mdlx = self.read(&format!("obj/{}.mdlx", kind.model)).ok();
+            let prog = mdlx.as_deref().and_then(|f| kh2_bar::parse(f).ok().and_then(|b| b.into_iter().find(|e| e.kind == 3).map(|e| e.data.to_vec()))).and_then(|e| Program::parse(&e).ok());
+            let parts = mdlx.as_deref().and_then(kh2_game_core::reaction_parts::Table::from_mdlx);
+            let paired = self.read(&format!("obj/{mset}.mset")).map(|m| kh2_enemy_host::player_reaction::paired_entries(&m)).unwrap_or_default();
+            let kd = Arc::new(KindData { kind, rig: Arc::new(rig), prog, flags124: row.is_some_and(|r| r.flags & 8 != 0), object_id: row.map_or(0, |r| r.object_id), paired, parts });
             // By the kind's name (`Shadow`, `Soldier`, ...) and by its model (`M_EX020`).
             kinds.insert(kind.model, kd.clone());
             kinds.insert(kind.name, kd);
         }
         let cmds = kh2_tables::load::<t::Cmd>(&mut self.0, &t::CMD).map(|t| t.rows.iter().map(CmdRow::from).collect()).unwrap_or_default();
-        Ok(EnemyData { kinds, table, prizes, enmp, lvpm, player_model, cmds })
+        let player_parts = self.read("obj/P_EX100.mdlx").ok().and_then(|f| kh2_game_core::reaction_parts::Table::from_mdlx(&f));
+        Ok(EnemyData { kinds, table, prizes, enmp, lvpm, player_model, cmds, player_parts })
     }
 }
 
@@ -395,6 +420,7 @@ impl Enemies {
         let player = sora.motor.pos;
         let player_yaw = sora.motor.yaw;
         let reaction = sora.game.params.reaction.clone();
+        let (player_serial, player_motion_done) = (sora.reaction.serial, sora.reaction.paired_done);
         for e in self.list.iter_mut().filter(|e| !e.removed) {
             Self::think(e, reaction.as_ref(), world, fall_max);
             let rig = e.data.rig.clone();
@@ -422,7 +448,7 @@ impl Enemies {
             obj.hp_max = e.stats.max_hp;
             obj.hp_min = e.min_hp;
             obj.others = others.clone();
-            let paired = HashMap::new();
+            let paired = e.data.paired_ticks();
             let env = Env {
                 player,
                 player_yaw,
@@ -430,8 +456,8 @@ impl Enemies {
                 rig: &rig,
                 flags124: e.data.flags124,
                 enmp: e.enmp,
-                player_serial: 0,
-                player_motion_done: true,
+                player_serial,
+                player_motion_done,
                 paired: &paired,
                 player_model: self.data.player_model,
                 mission_counters: None,
@@ -501,8 +527,21 @@ impl Enemies {
             if obj.hp_add != 0 {
                 e.hp = (e.hp + std::mem::take(&mut obj.hp_add)).max(e.min_hp).min(e.stats.max_hp);
             }
-            obj.player_cmds.clear();
-            obj.player_serial = None;
+            // What the script asked of the player (kh2-rs `player_reaction::consume`, one tick later).
+            for c in obj.player_cmds.drain(..) {
+                use kh2_enemy_host::shared::reaction::PlayerReactionCmd as P;
+                let name = kh2_enemy_host::player_reaction::sub_name(self.data.player_model);
+                sora.reaction.pending.push(match c {
+                    P::PairedMotion { slot, blend, serial, .. } => crate::sora::ReactionCmd::Paired { motion: e.data.paired.get(&slot).and_then(|l| l.iter().find(|(n, _)| *n == name)).map(|(_, m)| m.clone()), blend, serial },
+                    P::Unhittable(on) => crate::sora::ReactionCmd::Unhittable(on),
+                    P::Velocity { dir, speed } => crate::sora::ReactionCmd::Velocity(dir * speed),
+                    P::QueueMotion { slot, blend } => crate::sora::ReactionCmd::Queue(slot, blend),
+                    P::Charge { .. } => continue,
+                });
+            }
+            if let Some(s) = obj.player_serial.take() {
+                sora.reaction.serial = s;
+            }
             obj.creates.clear();
             obj.remote.clear();
             // ---- carry out the requests
@@ -688,7 +727,9 @@ impl Enemies {
         let sora_hurt = if sora.pose { hurt_volumes(&sora.body.rig, &sora.body.pose, sora.body_matrix()) } else { Vec::new() };
         let sora_hurt = if sora_hurt.is_empty() { vec![Volume { a: sora.motor.pos + Vec3::Y * 35.0, b: sora.motor.pos + Vec3::Y * 115.0, r: 35.0 }] } else { sora_hurt };
         let to = Stats { level: sora.level, max_hp: sora.max_hp, strength: sora.strength, magic: sora.magic, defense: sora.defense, max_taken: i32::MAX, min_taken: 1, max_dealt: i32::MAX, min_dealt: 0, weakness: [100; 7], ..Default::default() };
-        for e in self.list.iter_mut().filter(|e| e.alive() && !e.removed) {
+        // Bit 3 of the player's flags (host 1.70 / 1.71): no hit reaches him (FUN_0019a4f0).
+        let unhittable = sora.reaction.unhittable;
+        for e in self.list.iter_mut().filter(|e| e.alive() && !e.removed && !unhittable) {
             let slot = e.anim.slot;
             e.landed.retain(|k| k.0 == slot);
             for (atkp, start, v) in live_attacks(&e.anim, e.matrix()) {
@@ -817,7 +858,34 @@ impl Enemies {
         // decided: the form field is the drive form while one is on (kh2-rs `DriveState::object_form`).
         let form = if sora.drive.in_form { sora.drive.form } else { 0 };
         let ctx = Ctx { form, battle: !self.list.is_empty(), mp: sora.mp, ..Default::default() };
+        // The native offers (FUN_0019cad0 -> FUN_0019cb70): the parts touching Sora's body volume,
+        // best by priority then distance; the player's window is range trigger 26 of his motion.
+        let rules = kh2_game_core::reaction_cmd::ReactionRules { cmds: self.data.cmds.clone() };
+        let window = sora.body.triggers().and_then(|tg| kh2_game_core::reaction_cmd::window_at(tg, sora.body.gframe()));
+        let player_shape = self.data.player_parts.as_ref().and_then(|t| t.first(kh2_game_core::reaction_parts::TYPE_BODY)).and_then(|r| kh2_game_core::reaction_parts::shape_of(r, sora.motor.pos, sora.motor.yaw));
+        let mut best: Option<(u8, f32)> = None;
         for e in self.list.iter().filter(|e| !e.removed) {
+            if let (Some(table), Some(player)) = (e.data.parts.as_ref(), player_shape.as_ref())
+                && e.alive()
+            {
+                let (mut on, mut off) = (Vec::new(), Vec::new());
+                if let Some(tg) = e.anim.triggers() {
+                    for r in tg.active(e.anim.gframe()) {
+                        match (r.id, r.params.first()) {
+                            (4, Some(&p)) => on.push(p),
+                            (5, Some(&p)) => off.push(p),
+                            _ => {}
+                        }
+                    }
+                }
+                if let Some(o) = kh2_game_core::reaction_cmd::part_offer(&rules, table, u16::MAX, (&on, &off), (e.pos(), e.obj.motor.yaw), player, (sora.motor.pos, sora.motor.yaw), (&ctx, window))
+                    && !best.is_some_and(|(p, d)| o.priority < p || (o.priority == p && d <= o.dist))
+                {
+                    best = Some((o.priority, o.dist));
+                    let message = rules.cmd(o.cmd).map_or(0, |c| c.message_id as u32);
+                    self.offer = Some(ReactionOffer { cmd: o.cmd, pos: o.part as i16, from: e.id, status: o.status, message });
+                }
+            }
             let mut found = e.anim.triggers().map(|tg| offers_at(tg, e.anim.gframe())).unwrap_or_default();
             if let Some(c) = self.fake_offer.filter(|_| e.alive()) {
                 found.push(Offer { cmd: c, pos: 0 });

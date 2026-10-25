@@ -147,6 +147,18 @@ pub mod enemy_host;
 
 include!(concat!(env!("OUT_DIR"), "/kinds.rs"));
 
+/// kh2-rs `kh2-player/src/player_reaction.rs`'s paired motion reader (span by `build.rs`).
+#[allow(dead_code, clippy::all)]
+pub mod player_reaction {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use kh2_anim::{Slot, Triggers};
+    include!(concat!(env!("OUT_DIR"), "/player_reaction.rs"));
+    /// `RELEASE_AFTER` for the library.
+    pub const RELEASE_TICKS: u32 = RELEASE_AFTER;
+}
+
 /// kh2-rs `kh2-party/src/limit.rs`'s rules (spans by `build.rs`).
 #[allow(dead_code, unused_imports, clippy::all)]
 pub mod limit {

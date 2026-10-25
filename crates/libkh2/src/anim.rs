@@ -38,6 +38,9 @@ pub struct Anim {
     /// Root movement over the last tick: model-space translation and yaw.
     pub root_delta: (Vec3, f32),
     rig_state: kh2_anim::rig::RigState,
+    /// A motion from outside the rig's set (kh2-rs `Animator::play_external`: a paired motion of an
+    /// enemy's set played on Sora); `slot` is None while it plays.
+    pub external: Option<Arc<kh2_anim::Slot>>,
 }
 
 struct Meta {
@@ -70,13 +73,24 @@ impl Anim {
             root: Default::default(),
             root_delta: (Vec3::ZERO, 0.0),
             rig_state: Default::default(),
+            external: None,
             rig,
         }
     }
 
+    /// Plays a motion that is not in the rig's set, once (kh2-rs `play_external`).
+    pub fn play_external(&mut self, m: Arc<kh2_anim::Slot>, blend: f32) {
+        self.restart(None, false, blend);
+        self.external = Some(m);
+        let start = self.motion().map_or(0.0, |m| m.frame_start);
+        self.frame = start;
+        self.prev_frame = start;
+        self.root = self.root_at(start);
+    }
+
     /// Starts a motion slot unless it already plays. `blend` is the cross-fade length in ticks.
     pub fn play(&mut self, slot: Option<usize>, looping: bool, blend: f32) {
-        if slot == self.slot && !self.finished && looping == self.looping {
+        if self.external.is_none() && slot == self.slot && !self.finished && looping == self.looping {
             return;
         }
         self.restart(slot, looping, blend);
@@ -85,6 +99,7 @@ impl Anim {
     /// Always restarts (the same attack twice).
     pub fn restart(&mut self, slot: Option<usize>, looping: bool, blend: f32) {
         self.blend.start(self.posed.then_some(self.pose.as_slice()), blend);
+        self.external = None;
         self.slot = slot;
         self.looping = looping;
         self.finished = false;
@@ -153,7 +168,8 @@ impl Anim {
             return;
         }
         let rig = self.rig.clone();
-        let Some(motion) = self.slot.and_then(|s| rig.mset.get(s)).and_then(|s| s.motion.as_ref()) else { return };
+        let ext = self.external.clone();
+        let Some(motion) = ext.as_deref().or_else(|| self.slot.and_then(|s| rig.mset.get(s))).and_then(|s| s.motion.as_ref()) else { return };
         let mut p = motion.pose_with(&rig.model.bones, self.frame, &mut self.rig_state);
         if self.root != Default::default() {
             let undo = (Mat4::from_translation(self.root.translation) * Mat4::from_rotation_y(self.root.yaw)).inverse();
@@ -167,10 +183,16 @@ impl Anim {
     }
 
     pub fn motion(&self) -> Option<&kh2_anim::Motion> {
+        if let Some(e) = &self.external {
+            return e.motion.as_ref();
+        }
         self.rig.mset.get(self.slot?)?.motion.as_ref()
     }
 
     pub fn triggers(&self) -> Option<&Triggers> {
+        if let Some(e) = &self.external {
+            return Some(&e.triggers);
+        }
         Some(&self.rig.mset.get(self.slot?)?.triggers)
     }
 
@@ -185,6 +207,9 @@ impl Anim {
     }
 
     pub fn tag(&self) -> &str {
+        if let Some(e) = &self.external {
+            return e.tag.as_str();
+        }
         self.slot.and_then(|s| self.rig.mset.get(s)).map_or("-", |s| s.tag.as_str())
     }
 

@@ -91,7 +91,24 @@ fn limits() {
     std::fs::write(Path::new(&dir).join("limit_script.rs"), script).unwrap();
 }
 
+/// kh2-rs `kh2-player/src/player_reaction.rs`'s pure span: the paired motions of a motion set
+/// (`Paired`, `paired_entries`, `sub_name`, `RELEASE_AFTER`).
+fn player_reaction() {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-player/src/player_reaction.rs");
+    println!("cargo:rerun-if-changed={}", p.display());
+    let s = std::fs::read_to_string(&p).expect("player_reaction.rs");
+    let mut out = span(&s, "/// Ticks Sora holds the last frame of a paired motion", "const RELEASE_AFTER");
+    out.push_str("\n\n");
+    out.push_str(&span(&s, "/// One paired sub-motion", "pub type Paired"));
+    out.push_str("\n\n");
+    out.push_str(&span(&s, "/// The paired player motions of a motion set", "pub fn paired_entries"));
+    out.push_str("\n\n");
+    out.push_str(&span(&s, "/// The sub-motion name for a player model byte", "pub fn sub_name"));
+    std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("player_reaction.rs"), out).unwrap();
+}
+
 fn main() {
+    player_reaction();
     limits();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-enemy/src/kinds");
     println!("cargo:rerun-if-changed={}", dir.display());

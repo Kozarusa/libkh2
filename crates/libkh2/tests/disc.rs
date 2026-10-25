@@ -1037,3 +1037,56 @@ fn a_limit_with_donald_runs_its_script_and_counts_down() {
     assert!(events.iter().any(|e| matches!(e, LimitEvent::Ended { .. })));
     assert!(motions + effects > 0, "the limit's script asks for motions or effects");
 }
+
+#[test]
+fn a_soldier_offers_its_reaction_command_and_its_script_moves_sora() {
+    use kh2::enemy::{EnemyEvent, Enemies, Status};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let w = floor();
+    let with_parts: Vec<&str> = data.kinds.values().filter(|k| k.parts.as_ref().is_some_and(|t| t.reaction_parts().next().is_some())).map(|k| k.kind.model).collect();
+    let with_paired: Vec<&str> = data.kinds.values().filter(|k| !k.paired.is_empty()).map(|k| k.kind.model).collect();
+    eprintln!("kinds with reaction parts {with_parts:?}; with paired motions {with_paired:?}; Sora's body part {}", data.player_parts.is_some());
+    let mut s = standing(&game, &w);
+    s.max_hp = 999;
+    s.hp = 999;
+    let mut en = Enemies::new(data.clone());
+    let id = en.spawn("M_EX010", Vec3::new(0.0, 0.0, 120.0), std::f32::consts::PI, &w).unwrap();
+    let (mut offered, mut accepted, mut delivered, mut reaction_ticks, mut moved) = (None, false, None, 0, 0.0f32);
+    for t in 0..3000 {
+        // Keep facing the Soldier, attack now and then so it gets stunned.
+        let e = en.list.iter().find(|e| e.id == id).map(|e| e.pos());
+        if let Some(p) = e {
+            s.target = Some(kh2::sora::Target { pos: p + Vec3::Y * 80.0, radius: 40.0, half_height: 80.0 });
+        }
+        let before = s.motor.pos;
+        let accept_now = en.offer.is_some_and(|o| o.status == Status::Available) && !accepted;
+        if accept_now {
+            accepted = en.accept(&mut s).is_some();
+        }
+        s.tick(&w, &Input { attack: !accepted && t % 8 == 0, cam_look: [0.0, 1.0], ..Default::default() });
+        en.tick(&mut s, &w, game.params.sstm.fall_max);
+        if s.state == kh2::sora::State::Reaction {
+            reaction_ticks += 1;
+            moved += (s.motor.pos - before).length();
+        }
+        if offered.is_none()
+            && let Some(o) = en.offer
+        {
+            offered = Some((t, o));
+        }
+        for ev in en.events.drain(..) {
+            if let EnemyEvent::Reaction { cmd, handled, .. } = ev {
+                delivered = Some((cmd, handled));
+            }
+        }
+        if accepted && reaction_ticks > 0 && s.state != kh2::sora::State::Reaction {
+            break;
+        }
+    }
+    eprintln!("first offer {offered:?}; accepted {accepted}; delivered {delivered:?}; Sora in the paired motion {reaction_ticks} ticks, moved {moved:.0}");
+    assert!(offered.is_some_and(|(_, o)| o.cmd == 34 && o.from == id), "the Soldier's parts offer command 34");
+    assert!(accepted && delivered.is_some_and(|(c, h)| c == 34 && h));
+    assert!(reaction_ticks > 0, "the script's paired motion plays on Sora");
+}

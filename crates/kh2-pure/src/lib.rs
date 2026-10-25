@@ -75,9 +75,16 @@ pub mod rng {
     include!(concat!(env!("OUT_DIR"), "/rng.rs"));
 }
 
+/// The native source of reaction commands: an object file's reaction parts (`reaction_parts.rs`, pure).
+#[path = "../../../../kh2-rs/crates/kh2-game-core/src/reaction_parts.rs"]
+#[allow(dead_code)]
+pub mod reaction_parts;
+
 /// kh2-rs `reaction_cmd`'s pure span (reaction command offers and their status), by `build.rs`.
 #[allow(dead_code, clippy::all)]
 pub mod reaction_cmd {
+    use bevy::math::Vec3;
+    use bevy::prelude::*;
     use kh2_anim::Triggers;
     use kh2_tables::tables as t;
     /// `shared::reaction::EXECUTE_EVENT` (an event row's Execute value).

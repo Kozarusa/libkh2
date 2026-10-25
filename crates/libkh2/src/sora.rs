@@ -85,6 +85,9 @@ pub enum State {
     Magic,
     /// A drive form change plays (the change motions): no input.
     FormChange,
+    /// A reaction command's paired motion plays (kh2-rs `State::Reaction`): no input, the script's
+    /// velocity moves him.
+    Reaction,
 }
 
 impl State {
@@ -104,8 +107,38 @@ impl State {
             State::Counter => 10,
             State::Magic => 11,
             State::FormChange => 12,
+            State::Reaction => 13,
         }
     }
+}
+
+/// What an enemy's script asked of Sora after a reaction command (kh2-rs `PlayerReactionCmd`,
+/// resolved: the paired motion is the sub-motion of Sora's model, None when the entry has none).
+#[derive(Clone)]
+pub enum ReactionCmd {
+    Paired { motion: Option<Arc<kh2_anim::Slot>>, blend: f32, serial: i32 },
+    Unhittable(bool),
+    /// The secondary velocity of this tick (cm per tick).
+    Velocity(Vec3),
+    Queue(usize, f32),
+}
+
+/// The player side of a running reaction command (kh2-rs `player_reaction::Run` and
+/// `PlayerReaction`).
+#[derive(Clone, Default)]
+pub struct ReactionRun {
+    pub active: bool,
+    pub ticks: u32,
+    pub queued: Option<(usize, f32)>,
+    /// Bit 3 of the player's flags: no hit reaches him.
+    pub unhittable: bool,
+    pub ended: u32,
+    pub interrupted: bool,
+    /// +0x158: the serial of the last paired motion; bit 1 of +0x160: it has ended.
+    pub serial: i32,
+    pub paired_done: bool,
+    /// The requests of the last enemy tick.
+    pub pending: Vec<ReactionCmd>,
 }
 
 /// One tick of host input.
@@ -300,6 +333,8 @@ pub struct Sora {
     /// Sora's level and status (kh2-rs `GameData::sora_stats`: `lvup` row plus the Kingdom Key).
     pub level: i32,
     pub exp: i32,
+    /// A reaction command's player side.
+    pub reaction: ReactionRun,
     /// The weapon chosen at the start (record +0xe: 0 Sword, 1 Shield, 2 Staff): the `lvup` ability
     /// column a level gives (kh2-rs `Progress::raise_level`).
     pub weapon_set: u8,
@@ -394,6 +429,7 @@ impl Sora {
             magic_levels: [1, 1, 1, 1, 0, 0],
             level: 1,
             exp: 0,
+            reaction: ReactionRun::default(),
             weapon_set: 0,
             ap: 0,
             granted: Vec::new(),
@@ -565,7 +601,72 @@ impl Sora {
     /// One 60 Hz tick.
     // The empty branches keep kh2-rs's order of tries (a started action ends the chain of `else if`).
     #[allow(clippy::if_same_then_else)]
+    /// kh2-rs `player_reaction::consume`: the script's requests of the last tick, then the end of the
+    /// paired motion. Runs before the controller.
+    fn consume_reaction(&mut self) {
+        let mut velocity: Option<Vec3> = None;
+        for c in std::mem::take(&mut self.reaction.pending) {
+            match c {
+                ReactionCmd::Paired { motion, blend, serial } => match motion {
+                    Some(m) => {
+                        // FUN_0017f160: the queue is cleared, then the sub-motion starts.
+                        self.body.play_external(m, blend);
+                        self.state = State::Reaction;
+                        self.timer = 0.0;
+                        let unhittable = self.reaction.unhittable;
+                        self.reaction = ReactionRun { active: true, unhittable, serial, ..Default::default() };
+                    }
+                    // Nothing to play: the script reads the motion as ended at once [inferred].
+                    None => self.reaction.paired_done = true,
+                },
+                ReactionCmd::Unhittable(on) => self.reaction.unhittable = on,
+                // set_velocity overwrites the vector: the last request of the tick holds.
+                ReactionCmd::Velocity(v) => velocity = Some(v),
+                ReactionCmd::Queue(slot, blend) => self.reaction.queued = Some((slot, blend)),
+            }
+        }
+        // The secondary velocity moves Sora for this tick only (FUN_00181e00 clears +0x880).
+        if self.state == State::Reaction {
+            self.motor.vel = velocity.unwrap_or(Vec3::ZERO);
+        }
+        if !self.reaction.active {
+            return;
+        }
+        self.reaction.ticks += 1;
+        self.reaction.paired_done = self.body.finished;
+        if self.state != State::Reaction {
+            if !self.reaction.interrupted {
+                self.reaction.interrupted = true;
+                self.reaction.queued = None;
+            }
+            if self.body.finished {
+                self.reaction.active = false;
+            }
+            return;
+        }
+        if !self.body.finished {
+            return;
+        }
+        let pstate = if self.battle_ticks > 0.0 { PlayerState::BattleWeapon } else { PlayerState::FieldNoWeapon };
+        if let Some((id, blend)) = self.reaction.queued.take() {
+            let slot = self.body.rig.mset.slot(id, pstate);
+            self.body.restart(slot, true, blend);
+            self.state = if self.motor.grounded { State::Ground } else { State::Air };
+            self.reaction.active = false;
+            return;
+        }
+        self.reaction.ended += 1;
+        if self.reaction.ended > kh2_enemy_host::player_reaction::RELEASE_TICKS {
+            self.state = if self.motor.grounded { State::Ground } else { State::Air };
+            if self.state == State::Air {
+                self.motor.start_fall();
+            }
+            self.reaction.active = false;
+        }
+    }
+
     pub fn tick(&mut self, world: &World, input: &Input) {
+        self.consume_reaction();
         let attack = input.attack && !self.prev.attack;
         let jump = input.jump && !self.prev.jump;
         let square = input.guard && !self.prev.guard;
@@ -753,6 +854,7 @@ impl Sora {
                 }
                 let air_now = !self.motor.grounded || self.body.trigger(range::NO_GRAVITY);
                 let windows = Windows { free: idle, combo: combo_window };
+                #[allow(clippy::if_same_then_else)]
                 if square && self.square_explicit(air_now, windows, finisher_window, &c, &mut keep_out) {
                 } else if self.queued_attack && (windows.free || windows.combo || finisher_window) && self.request(world, air_now, windows, finisher_window, &c, &mut keep_out) {
                 } else if jump && window && self.motor.grounded {
@@ -809,6 +911,12 @@ impl Sora {
             }
             // Handled after this match (no input reaches them).
             State::Hurt | State::Blown | State::Down => {}
+            State::Reaction => {
+                // No input; the script's velocity (set by `consume_reaction`) and gravity move him.
+                if !self.motor.grounded {
+                    airborne_dy = Some(self.motor.jump_dy(fall_max));
+                }
+            }
             State::FormChange => {
                 // kh2-rs: no input, the drive code ends the state; gravity goes on.
                 self.motor.vel = Vec3::ZERO;

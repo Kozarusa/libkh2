@@ -373,6 +373,7 @@ dependencies = [
  "kh2-anim",
  "kh2-archive",
  "kh2-ard",
+ "kh2-bar",
  "kh2-map",
  "kh2-model",
  "kh2-tables",

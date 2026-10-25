@@ -73,6 +73,7 @@ typedef struct kh2_inputs {
 #define KH2_STATE_COUNTER 10  /* the guard repelled a hit */
 #define KH2_STATE_MAGIC 11    /* a cast motion plays */
 #define KH2_STATE_FORM_CHANGE 12 /* a drive change motion plays */
+#define KH2_STATE_REACTION 13    /* a reaction command's paired motion plays (no input) */
 
 typedef struct kh2_state {
     float pos[3];
@@ -376,11 +377,13 @@ typedef struct kh2_enemy_event {
 } kh2_enemy_event;
 KH2_API int32_t kh2_poll_enemy_event(int32_t handle, kh2_enemy_event *out);
 
-/* ---- Reaction commands (kh2-rs reaction_cmd: range trigger 20 offers, cmd row status, generic accept) ----
+/* ---- Reaction commands (kh2-rs reaction_cmd + reaction_parts: the objects' reaction parts touching
+ * Sora's body volume (the Soldier's command 34) and range trigger 20 offers, cmd row status, generic accept)
  * The library fills slot 1 each kh2_enemies_tick; the host shows the prompt and calls accept on its
- * button. The target script gets event 11 on the next tick (KH2_EN_REACTION). What the script then asks
- * of Sora (PlayerReactionCmd), limits (Execute 81) and talk/save/shop rows are not ported. No enemy kind
- * the library spawns offers one from its motions; kh2_reaction_force_offer is kh2-rs's harness offer. */
+ * button. The target script gets event 11 on the next tick (KH2_EN_REACTION); what it then asks of Sora
+ * (the paired motion from the enemy's set, KH2_STATE_REACTION, its velocity, a queued motion, the
+ * unhittable bit) runs on Sora's next ticks. Not ported: limits through this slot (Auto Limit),
+ * talk/save/shop rows. kh2_reaction_force_offer is kh2-rs's harness offer. */
 #define KH2_REACT_AVAILABLE 0
 #define KH2_REACT_BLOCKED 1
 #define KH2_REACT_TOO_FAR 2

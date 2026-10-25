@@ -16,7 +16,6 @@ Generated from `include/kh2.h` by `scripts/gen_api_ref.py`; do not edit by hand.
  * the limit count. Not ported: the participants' own threads (the members' scripts play the attacks),
  * summon limits, the HUD; the limit's motions are reported, not played.](#limits-kh2-rs-limitrs-rules--limitscriptrs-soras-limit-commands-with-donald-and-goofy--the-party-is-sora-plus-the-members-who-follow-and-stand-kh2limitstart-spends-the-mp-starts-the--countdown-the-commands-time-times-combination-boost-and-the-limit-files-own-script-whose--requests-come-back-as-limit-events-the-countdown-and-script-run-in-kh2partytick-enemy-hits-during--the-limit-count-not-ported-the-participants-own-threads-the-members-scripts-play-the-attacks--summon-limits-the-hud-the-limits-motions-are-reported-not-played)
 - [Enemies](#enemies)
-- [Reaction commands](#reaction-commands)
 - [Field camera helper](#field-camera-helper)
 
 ## Core
@@ -77,6 +76,7 @@ kh2_state.state
 - `KH2_STATE_COUNTER` = `10` — the guard repelled a hit
 - `KH2_STATE_MAGIC` = `11` — a cast motion plays
 - `KH2_STATE_FORM_CHANGE` = `12` — a drive change motion plays
+- `KH2_STATE_REACTION` = `13` — a reaction command's paired motion plays (no input)
 
 ### `kh2_state`
 
@@ -839,11 +839,7 @@ typedef struct kh2_enemy_event {
 int32_t kh2_poll_enemy_event(int32_t handle, kh2_enemy_event *out);
 ```
 
-## Reaction commands
-
-kh2-rs reaction_cmd: range trigger 20 offers, cmd row status, generic accept
-
-The library fills slot 1 each kh2_enemies_tick; the host shows the prompt and calls accept on its button. The target script gets event 11 on the next tick (KH2_EN_REACTION). What the script then asks of Sora (PlayerReactionCmd), limits (Execute 81) and talk/save/shop rows are not ported. No enemy kind the library spawns offers one from its motions; kh2_reaction_force_offer is kh2-rs's harness offer.
+---- Reaction commands (kh2-rs reaction_cmd + reaction_parts: the objects' reaction parts touching Sora's body volume (the Soldier's command 34) and range trigger 20 offers, cmd row status, generic accept) The library fills slot 1 each kh2_enemies_tick; the host shows the prompt and calls accept on its button. The target script gets event 11 on the next tick (KH2_EN_REACTION); what it then asks of Sora (the paired motion from the enemy's set, KH2_STATE_REACTION, its velocity, a queued motion, the unhittable bit) runs on Sora's next ticks. Not ported: limits through this slot (Auto Limit), talk/save/shop rows. kh2_reaction_force_offer is kh2-rs's harness offer.
 
 - `KH2_REACT_AVAILABLE` = `0`
 - `KH2_REACT_BLOCKED` = `1`

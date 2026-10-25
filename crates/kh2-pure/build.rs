@@ -140,7 +140,14 @@ fn reaction_cmd() {
     out.replace_range(scan..end, "");
     let name = "crate::shared::reaction::EXECUTE_EVENT";
     assert!(out.contains(name), "reaction_cmd.rs changed its EXECUTE_EVENT use");
-    let out = out.replace(name, "EXECUTE_EVENT");
+    let mut out = out.replace(name, "EXECUTE_EVENT");
+    // The rules record, and the native offer of an object's reaction parts (FUN_0019cb70).
+    out.push_str("\n\n");
+    out.push_str(&span(&text, "/// The commands and message ids the offer needs", "pub struct ReactionRules"));
+    out.push_str("\n\n");
+    out.push_str(&span(&text, "impl ReactionRules {", "pub fn cmd"));
+    out.push_str("\n}\n\n");
+    out.push_str(&span(&text, "/// A reaction part with this id offers", "pub fn part_offer"));
     std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("reaction_cmd.rs"), out).unwrap();
 }
 
