@@ -517,8 +517,45 @@ typedef struct kh2_cue {
     float pos[3];          /* the owner's position (cm) */
     char model[16];        /* the owner's model: its effect / sound file is obj/<model>.apdx */
 } kh2_cue;
+#define KH2_CUE_COLLISION_GROUP 8 /* a script switched collision group params[0] on (params[1] 1) or off: show / hide that mesh group */
 /* Takes the oldest cue: 1 when one was taken, 0 when none waits. */
 KH2_API int32_t kh2_poll_cue(int32_t handle, kh2_cue *out);
+
+/* An area's set-up for the host (kh2-rs kh2_ard run_area, orig 0x181148: the map, btl and evt
+ * programs, then the entrance test): every object its spawn groups create (townspeople, field
+ * objects, save points, chests, enemies, the player's start 0x236) with model, place, talk id and
+ * the command its reaction part offers; the collision mask the objects' scripts switch (hosts
+ * 1.46 / 1.47: the library applies the switches its scripts make and cues them as
+ * KH2_CUE_COLLISION_GROUP); camera type; music. The host spawns and draws the townspeople and
+ * field objects itself and starts talks with kh2_talk_begin (talk_id, part_command 0x1f talk). */
+typedef struct kh2_area_info {
+    uint32_t object_count;
+    uint32_t group_count;
+    uint64_t collision_mask;
+    uint32_t camera_type;
+    uint16_t music[2];     /* field, battle; 0xffff none */
+    int32_t has_player;
+    float player_pos[3];
+    float player_yaw;
+} kh2_area_info;
+typedef struct kh2_area_object {
+    uint32_t object;       /* 00objentry id */
+    int32_t object_type;   /* 4 enemy, 5 townsperson, ... */
+    char model[32];
+    int32_t script;        /* 0 map, 1 btl, 2 evt */
+    int32_t program;
+    char group[8];         /* spawn group tag */
+    float pos[3];
+    float yaw;
+    uint32_t talk_id;
+    uint32_t part_command;
+    int32_t spawn_kind;
+    uint32_t serial;
+} kh2_area_object;
+/* Returns the object count (fills out when not NULL). */
+KH2_API int32_t kh2_area_setup(const char *area, int32_t map, int32_t btl, int32_t evt, int32_t entrance, kh2_area_info *out);
+/* Object index of the last kh2_area_setup; -1 out of range. */
+KH2_API int32_t kh2_area_get_object(int32_t index, kh2_area_object *out);
 /* kh2_cam_view.mode: 0 follow, 1 look-around, 2 lock-on (a kh2_set_target point), 4 talk,
  * 5 overhead, 8 always-behind. */
 /* Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load

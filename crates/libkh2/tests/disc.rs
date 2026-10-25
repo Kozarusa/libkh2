@@ -1990,3 +1990,32 @@ fn motions_give_sound_and_effect_cues() {
     assert!(kinds.keys().any(|(k, o)| k == "Footstep" && o == "Sora"), "Sora's run has footsteps");
     assert!(kinds.keys().any(|(_, o)| o == "Enemy"), "the enemy's motions have cues");
 }
+
+/// An area's set-up for the host (round 9, kh2-rs `run_area`): tt02's map programs place its
+/// field objects with talk ids and examine commands, its evt programs the townspeople who offer
+/// talk (0x1f), and the player's start.
+#[test]
+fn an_area_setup_lists_townspeople_with_their_talks() {
+    let Some(mut d) = disc() else { return };
+    let mut best = None;
+    for map in 0u8..12 {
+        let s = d.area_setup("tt02", [map, 0, 0], 0);
+        let people = s.objects.iter().filter(|o| o.talk_id != 0).count();
+        eprintln!("tt02 map {map}: {} groups, {} objects, {people} townspeople, mask {:#x}, camera {}, music {:?}, player {:?}", s.groups.len(), s.objects.len(), s.collision_mask, s.camera_type, s.music, s.player);
+        if people > 0 && best.is_none() {
+            best = Some(s);
+        }
+    }
+    let s = best.expect("a tt02 map program with talk objects");
+    let talkers: Vec<_> = s.objects.iter().filter(|o| o.talk_id != 0).collect();
+    for o in talkers.iter().take(4) {
+        eprintln!("  {} ({:#x}) in {} at {:?} talk {:#x} command {:#x}", o.model, o.object, o.group, o.at, o.talk_id, o.part_command);
+    }
+    assert!(!talkers.is_empty(), "objects with talk ids");
+    assert!(talkers.iter().any(|o| o.part_command == 0x1e || o.part_command == 0x1f), "an examine / talk command");
+    // The townspeople come with the evt programs (kh2-rs npc test: groups a72_ / b72_ / c72_ / b50_).
+    let people: usize = (0u8..64).map(|e| d.area_setup("tt02", [0, 0, e], 0).objects.iter().filter(|o| o.part_command == 0x1f).count()).sum();
+    eprintln!("tt02 evt programs 0..63: {people} objects offering talk (0x1f)");
+    assert!(people > 0, "townspeople offering talk");
+    assert!(s.player.is_some(), "the player's start");
+}

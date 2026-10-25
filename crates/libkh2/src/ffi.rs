@@ -96,6 +96,7 @@ struct Lib {
     auto_shown: std::collections::HashMap<i32, u16>,
     summon_data: Option<Arc<crate::summon::SummonData>>,
     area_runs: std::collections::HashMap<i32, (crate::area::AreaRun, Vec<(i32, i32)>)>,
+    area_objects: Vec<crate::area::AreaObject>,
     summons: std::collections::HashMap<i32, crate::summon::Summons>,
     limits: std::collections::HashMap<i32, crate::limit::Limits>,
     enemy_data: Option<Arc<crate::enemy::EnemyData>>,
@@ -183,7 +184,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, area_runs: Default::default(), summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, area_runs: Default::default(), area_objects: Vec::new(), summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
     0
 }
 
@@ -1321,6 +1322,12 @@ pub extern "C" fn kh2_enemies_tick(handle: i32) -> i32 {
         if let Some(en) = l.enemies.get_mut(&handle) {
             let before = en.events.len();
             en.tick(s, &l.world, fall);
+            // Collision groups the objects' scripts switched (hosts 1.36 / 1.37, 1.46 / 1.47 with the area mask).
+            let edits = std::mem::take(&mut *kh2_enemy_host::shared::enemy::GROUP_EDITS.lock().unwrap_or_else(|e| e.into_inner()));
+            for (g, on) in edits {
+                l.world.set_group(g as u32, on);
+                s.cues.push(crate::cue::Cue { kind: crate::cue::Kind::CollisionGroup, owner: crate::cue::Owner::Sora, model: String::new(), params: [g as i16, on as i16, 0, 0], pos: s.motor.pos, frame: 0 });
+            }
             // The enemies' sound and effect cues (`crate::cue`), their scripts' effect starts.
             for e in en.list.iter().filter(|e| !e.removed) {
                 s.cues.extend(crate::cue::of_anim(&e.anim, crate::cue::Owner::Enemy(e.id), e.data.kind.model, e.pos()));
@@ -2745,5 +2752,123 @@ pub unsafe extern "C" fn kh2_poll_cue(handle: i32, out: *mut Kh2Cue) -> i32 {
         }
         unsafe { *out = Kh2Cue { kind: c.kind as i32, owner, owner_id, params: c.params, frame: c.frame, _pad: 0, pos: c.pos.to_array(), model } };
         1
+    })
+}
+
+/// An area's set-up (`kh2_area_setup`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2AreaInfo {
+    /// Objects the loaded groups create for the entrance (read them with `kh2_area_get_object`).
+    pub object_count: u32,
+    pub group_count: u32,
+    /// `DAT_0035cd18` (area opcode 0xb): the collision groups hosts 1.46 / 1.47 switch.
+    pub collision_mask: u64,
+    pub camera_type: u32,
+    /// The (field, battle) music pair, 0xffff each when the scripts set none.
+    pub music: [u16; 2],
+    pub has_player: i32,
+    pub player_pos: [f32; 3],
+    pub player_yaw: f32,
+}
+
+/// One object of the last `kh2_area_setup`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2AreaObject {
+    /// `00objentry` id and type (4 enemy, 5 townsperson, ...), NUL-terminated model name.
+    pub object: u32,
+    pub object_type: i32,
+    pub model: [u8; 32],
+    /// 0 map, 1 btl, 2 evt; the program; the spawn group's tag.
+    pub script: i32,
+    pub program: i32,
+    pub group: [u8; 8],
+    pub pos: [f32; 3],
+    pub yaw: f32,
+    /// Spawn record +0x28 the talk id, +0x2c the command its reaction part 0x83 offers, +0x1c the
+    /// spawn kind, +0x1e the serial.
+    pub talk_id: u32,
+    pub part_command: u32,
+    pub spawn_kind: i32,
+    pub serial: u32,
+}
+
+fn fill<const N: usize>(s: &str) -> [u8; N] {
+    let mut b = [0u8; N];
+    for (d, c) in b.iter_mut().zip(s.bytes().take(N - 1)) {
+        *d = c;
+    }
+    b
+}
+
+/// Sets area `area` up as the game does (kh2-rs `kh2_ard::run::run_area`, orig 0x181148: the map,
+/// btl and evt programs, then FUN_001981a0's entrance test): the objects of its spawn groups
+/// (townspeople, field objects, save points, chests, enemies, the player's start) for the host to
+/// place, the collision mask the objects' hosts 1.46 / 1.47 switch (the library's enemy and member
+/// scripts use it), the camera type, the music. Fills `out`; returns the object count.
+///
+/// # Safety
+/// `area` is NUL-terminated; `out` is NULL or points to a `kh2_area_info`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_area_setup(area: *const c_char, map: i32, btl: i32, evt: i32, entrance: i32, out: *mut Kh2AreaInfo) -> i32 {
+    if area.is_null() {
+        return set_error("no area name");
+    }
+    let Ok(area) = unsafe { CStr::from_ptr(area) }.to_str().map(str::to_string) else { return set_error("area name is not UTF-8") };
+    let byte = |v: i32| v.clamp(0, 255) as u8;
+    with(-1, |l| {
+        let s = l.disc.area_setup(&area, [byte(map), byte(btl), byte(evt)], byte(entrance));
+        kh2_enemy_host::shared::enemy::set_area_mask(s.collision_mask);
+        let info = Kh2AreaInfo {
+            object_count: s.objects.len() as u32,
+            group_count: s.groups.len() as u32,
+            collision_mask: s.collision_mask,
+            camera_type: s.camera_type,
+            music: s.music.unwrap_or([0xffff; 2]),
+            has_player: s.player.is_some().into(),
+            player_pos: s.player.map_or([0.0; 3], |p| p.0.to_array()),
+            player_yaw: s.player.map_or(0.0, |p| p.1),
+        };
+        if !out.is_null() {
+            unsafe { *out = info };
+        }
+        let n = s.objects.len() as i32;
+        l.area_objects = s.objects;
+        n
+    })
+}
+
+/// Object `index` of the last `kh2_area_setup` into `out`: 0, or -1 for an index out of range.
+///
+/// # Safety
+/// `out` points to a `kh2_area_object`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_area_get_object(index: i32, out: *mut Kh2AreaObject) -> i32 {
+    if out.is_null() {
+        return set_error("no object record");
+    }
+    with(-1, |l| {
+        let Some(o) = usize::try_from(index).ok().and_then(|k| l.area_objects.get(k)) else { return set_error("no such object") };
+        let r = Kh2AreaObject {
+            object: o.object,
+            object_type: o.object_type.into(),
+            model: fill(&o.model),
+            script: match o.script.as_str() {
+                "map" => 0,
+                "btl" => 1,
+                _ => 2,
+            },
+            program: o.program.into(),
+            group: fill(&o.group),
+            pos: o.at.to_array(),
+            yaw: o.yaw,
+            talk_id: o.talk_id.into(),
+            part_command: o.part_command.into(),
+            spawn_kind: o.spawn_kind.into(),
+            serial: o.serial.into(),
+        };
+        unsafe { *out = r };
+        0
     })
 }

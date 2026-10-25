@@ -367,6 +367,12 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                     kh2_talk_end(h);
                 }
                 let mut cue = Kh2Cue::default();
+                if r.chance(10) {
+                    let mut info = Kh2AreaInfo::default();
+                    kh2_area_setup(if r.chance(4) { std::ptr::null() } else { a.as_ptr() }, r.int(), r.int(), r.int(), r.int(), if r.chance(3) { std::ptr::null_mut() } else { &mut info });
+                }
+                let mut ao = Kh2AreaObject::default();
+                kh2_area_get_object(r.int(), if r.chance(4) { std::ptr::null_mut() } else { &mut ao });
                 kh2_poll_cue(h, if r.chance(4) { std::ptr::null_mut() } else { &mut cue });
             }
             55 => {

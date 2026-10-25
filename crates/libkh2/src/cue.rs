@@ -52,6 +52,9 @@ pub enum Kind {
     /// An interface or object sound by its number (`params[0..2]` = number low / high 16 bits): the
     /// mission's start / end / failure sounds and the orbs' bounce and pickup.
     SoundNumber = 7,
+    /// A script switched collision group `params[0]` on (`params[1]` 1) or off (0): the library's
+    /// collision follows; the host shows or hides that mesh group.
+    CollisionGroup = 8,
 }
 
 /// One cue.

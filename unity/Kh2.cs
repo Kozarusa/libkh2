@@ -218,6 +218,32 @@ public static class Kh2
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)] public byte[] model;
     }
     [DllImport(Lib)] public static extern int kh2_poll_cue(int handle, out Cue cue);
+    public const int CueCollisionGroup = 8;
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AreaInfo
+    {
+        public uint objectCount, groupCount;
+        public ulong collisionMask;
+        public uint cameraType;
+        public ushort musicField, musicBattle;
+        public int hasPlayer;
+        public float playerX, playerY, playerZ, playerYaw;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AreaObject
+    {
+        public uint obj;
+        public int objectType;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)] public byte[] model;
+        public int script, program;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)] public byte[] group;
+        public float posX, posY, posZ, yaw;
+        public uint talkId, partCommand;
+        public int spawnKind;
+        public uint serial;
+    }
+    [DllImport(Lib)] public static extern int kh2_area_setup(string area, int map, int btl, int evt, int entrance, out AreaInfo info);
+    [DllImport(Lib)] public static extern int kh2_area_get_object(int index, out AreaObject obj);
     public const int CamModeFollow = 0, CamModeLook = 1, CamModeLockOn = 2, CamModeTalk = 4, CamModeOverhead = 5, CamModeBehind = 8;
     [DllImport(Lib)] public static extern int kh2_area_spawn(int handle, string area, int program, int withDisabled);
     [DllImport(Lib)] public static extern int kh2_enemy_count(int handle);

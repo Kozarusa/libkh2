@@ -100,3 +100,24 @@ int main(void) {
 - Threads: every call locks one library state; tick all Sora instances from one thread.
 - Errors: a call that fails returns -1 (or 0 / NULL where documented); `kh2_last_error` says why.
   No call panics across the ABI.
+
+## Areas: townspeople, field objects, platforms
+
+`kh2_area_setup(area, map, btl, evt, entrance, &info)` runs the area's three set-up programs the
+game's way (kh2-rs `run_area`) and lists every object the loaded spawn groups create
+(`kh2_area_get_object`): model, `00objentry` id and type, place, talk id, the command its reaction
+part offers (0x1f talk, 0x1e examine), plus the player's start, the camera type and the music. The
+program numbers are the story's choice (the host picks them; townspeople usually come with the evt
+programs, field objects and save points with map).
+
+What the host does with them:
+- Enemies: run them in the library (`kh2_area_run` with the btl program, or `kh2_enemy_spawn`).
+- Townspeople and field objects: spawn and draw them yourself (models are not exported). When Sora
+  interacts with one (your interact button near it), call `kh2_talk_begin` with its place, yaw,
+  talk id and part; play your dialogue for the talk id; `kh2_talk_end` when it closes.
+- Save points, chests, doors and exits: yours (no menus, prizes from chests, or area jumps here).
+- Moving platforms: the library has no moving collision. What it has is the game's collision
+  groups: scripts switch them (hosts 1.36 / 1.37 by group, 1.46 / 1.47 by the area's
+  `collision_mask`); the library applies those switches and sends `KH2_CUE_COLLISION_GROUP` so the
+  host shows or hides the matching mesh group. A host with its own platforms switches groups
+  with `kh2_set_collision` or reloads triangles with `kh2_surfaces_load`.

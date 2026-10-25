@@ -287,3 +287,88 @@ fn spawn_member(en: &mut crate::enemy::Enemies, world: &kh2_game_core::world::Wo
     }
     Some(id)
 }
+
+/// One object an area's scripts place (round 9, for the host): townspeople, field objects, save
+/// points, chests, the player's spawn point (object 0x236) and the enemies, from the spawn records
+/// (`ard/<area>.ard`, kh2-rs `kh2_ard::Area::spawned`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct AreaObject {
+    /// The script (`map`, `btl`, `evt`) and its program that load the group.
+    pub script: String,
+    pub program: u16,
+    /// The spawn group's tag.
+    pub group: String,
+    /// `00objentry`: id, model, object type (4 enemy, 5 townsperson ...).
+    pub object: u32,
+    pub model: String,
+    pub object_type: u8,
+    /// Library space (cm, Y up) and yaw.
+    pub at: Vec3,
+    pub yaw: f32,
+    /// Spawn record +0x28 the talk id (`kh2_talk_target.talk_id`), +0x2c the command its reaction part 0x83
+    /// offers (talk 0x1f / examine ...), +0x1c the spawn kind, +0x1e the serial.
+    pub talk_id: u16,
+    pub part_command: u16,
+    pub spawn_kind: u8,
+    pub serial: u16,
+}
+
+/// What an area's set-up gives the host (kh2-rs `kh2_ard::run::run_area`, orig 0x181148: the map,
+/// btl and evt programs run in order): the spawn groups loaded, their objects created for the
+/// entrance (FUN_001981a0), the collision group mask the objects' hosts 1.46 / 1.47 switch
+/// (`DAT_0035cd18`), the camera type, the music pair and the player's start.
+#[derive(Clone, Debug, Default)]
+pub struct AreaSetup {
+    pub groups: Vec<String>,
+    pub objects: Vec<AreaObject>,
+    pub collision_mask: u64,
+    pub camera_type: u32,
+    pub music: Option<[u16; 2]>,
+    pub player: Option<(Vec3, f32)>,
+}
+
+impl Disc {
+    /// Area `area` set up with programs `[map, btl, evt]` at `entrance`.
+    pub fn area_setup(&mut self, area: &str, programs: [u8; 3], entrance: u8) -> AreaSetup {
+        use kh2_tables::tables as t;
+        if let Some(world) = area.get(0..2) {
+            let _ = self.0.apply_names([format!("000{world}.idx").as_str()]);
+        }
+        let Ok(file) = self.read(&format!("ard/{area}.ard")) else { return AreaSetup::default() };
+        let Some((ard, _)) = kh2_ard::Area::parse(&file) else { return AreaSetup::default() };
+        let rows = kh2_tables::load::<t::Objentry>(&mut self.0, &t::OBJENTRY).map(|d| d.rows).unwrap_or_default();
+        let run = kh2_ard::run::run_area(&ard, programs, entrance);
+        let to_lib = |e: &kh2_ard::Entity| (Vec3::new(e.position[0], -e.position[1], -e.position[2]), std::f32::consts::PI - e.rotation[1]);
+        let mut out = AreaSetup {
+            groups: run.groups.iter().map(|g| g.tag.clone()).collect(),
+            collision_mask: run.word_35cd18,
+            camera_type: run.camera_type,
+            music: run.music,
+            player: kh2_ard::run::player_start(&ard, &run, entrance).map(|(_, e)| to_lib(e)),
+            objects: Vec::new(),
+        };
+        for g in &run.groups {
+            for grp in ard.spawns.get(&g.tag).into_iter().flatten() {
+                for e in grp.entities.iter().filter(|e| kh2_ard::run::entity_for_entrance(e, entrance)) {
+                    let row = rows.iter().find(|r| r.object_id == e.object);
+                    let (at, yaw) = to_lib(e);
+                    out.objects.push(AreaObject {
+                        script: g.script.to_string(),
+                        program: g.program,
+                        group: g.tag.clone(),
+                        object: e.object,
+                        model: row.map_or(String::new(), |r| r.model_name.clone()),
+                        object_type: row.map_or(0, |r| r.object_type),
+                        at,
+                        yaw,
+                        talk_id: e.talk_id(),
+                        part_command: e.part_command(),
+                        spawn_kind: e.spawn_kind,
+                        serial: e.serial,
+                    });
+                }
+            }
+        }
+        out
+    }
+}
