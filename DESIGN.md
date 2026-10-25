@@ -213,3 +213,27 @@ release profile therefore unwinds instead of aborting (+225 KB). The header carr
 * Next: Quick Run / Glide / Aerial Dodge (the kh2-rs code exists, ~150 lines of glue), hurt and
   blow reactions with `reaction_rules` (larger: needs the reaction tables), the field camera rules
   (`camera::rules`, oracle-tested, also Bevy-free in content), magic (large).
+
+## Round 5 (C API 0.5)
+
+Compiled from kh2-rs's source (spans cut by the build scripts, listed in `scripts/drift_check.sh`):
+`shared/party.rs`'s `hp_change`, `reaction_parts.rs`, `reaction_cmd.rs`'s `ReactionRules` and
+`part_offer`, `player_reaction.rs`'s paired motion reader, `limit.rs`'s rules, `limit_visual.rs`'s
+request records, `limit_script.rs`'s script thread, `progress.rs`'s `gauge_carry`. Transcribed:
+the members' hit receive, KO / revive and item handlers (`party.rs`), `player_reaction::consume`
+(`Sora::consume_reaction`), `try_limit` / `run_limit_script` (`limit.rs`), `Progress::give_bonus`
+and `raise_level` for the members.
+
+decided:
+- Members: HP/MP from the new game's `plrp` rows; status = `lvup` row + `plrp` bytes (no
+  equipment); weapon set byte 0; Specials and Cure never feasible (no member scripts); items act
+  when chosen.
+- The party's random word is per party (`PartyRng`), so battles replay.
+- Limits: the party the rules see is Sora plus the standing followers; limit ability items count as
+  learned; the world id is the host's (`kh2_limit_set_world`, 0 by default); the limit script's
+  requests are events, not played on the bodies.
+- Reaction commands: the Soldier's reaction parts offer by themselves; the paired motion plays on
+  Sora through `Anim::play_external`; `State::Reaction` takes no input.
+- Bonus rewards are given by id by the host (no story to trigger them); saved in the record (v2).
+- The library's tick order for a host: `kh2_tick`, `kh2_party_tick` (members, their levels, the
+  limit), `kh2_enemies_tick`.

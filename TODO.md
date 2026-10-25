@@ -6,7 +6,7 @@
 4. [x] Bonus levels (kh2-rs give_bonus: Sora max HP/MP/drive + gauge_carry + items, members' rows; saved in the record v2), members' level-ups with the shared EXP (raise_level, Sword column), `kh2_form_abilities` (disc test `bonus_levels_member_levels_and_form_ability_lists`). Not ported: slot upgrades (no equipment), the level window, the stat-rise messages.
 5. [x] All 54 kh2-rs enemy kinds run under their scripts (docs/ENEMY-KINDS.md from `every_enemy_kind_runs`: 47 defeated in the run; M_EX850 / M_EX870 wait for an area set-up and are not running); 18 areas' collision load and Sora walks (`areas_load_and_sora_walks_on_them`).
 6. [x] scripts/package.ps1 -> dist/libkh2 (18 files, no disc data, -Zip), unity/sample (Kh2Battle.cs + README), examples/python/kh2_run.py (run: Sora defeats a Soldier at tick 233, from the packaged DLL too).
-7. [ ] Performance report, docs pass.
+7. [x] docs/PERFORMANCE.md (bench example: 20k ticks/s alone, 2.2k with 50 enemies; 122 MiB heap), README quick start, DESIGN round 5 decisions, docs/DEVIATIONS.md, API-REFERENCE regenerated.
 
 # TODO (round 4)
 

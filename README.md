@@ -13,6 +13,24 @@ the original executable there; libkh2 compiles kh2-rs's pure modules in place wi
 a plain-struct controller, a C ABI and examples. `DESIGN.md` says exactly what is reused, what is
 new glue, and what v1 does not cover.
 
+## Quick start
+
+```
+cargo build --release -p libkh2                                   # target/release/kh2.dll
+set KH2_ISO=<path to your Kingdom Hearts II (USA) disc image>     # PowerShell: $env:KH2_ISO="..."
+python examples/python/kh2_run.py                                 # Sora, Donald and Goofy vs a Soldier
+cargo run --release -p libkh2-viewer                              # a window: E spawns enemies, J attacks
+powershell -ExecutionPolicy Bypass -File scripts/package.ps1      # dist/libkh2 for a host engine
+```
+
+What there is: Sora's controller (movement, combos, guard, growth abilities, magic, drive forms,
+items, levels, bonus rewards, hit reactions, reaction commands with paired motions, limits),
+Donald and Goofy (follow, battle AI with styles and item use, HP, knock-out and revive, levels),
+every kh2-rs enemy kind under its own BDX script, a field camera helper, motion export and a save
+record. The C API is `include/kh2.h` (reference: `docs/API-REFERENCE.md`); what differs from the
+game is in `docs/DEVIATIONS.md`, speed and memory in `docs/PERFORMANCE.md`, the enemy kinds in
+`docs/ENEMY-KINDS.md`.
+
 ## Build
 
 Needs Rust 1.88+ and the kh2-rs source tree next to this folder (`../kh2-rs`, read-only).
