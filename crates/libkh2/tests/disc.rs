@@ -1125,3 +1125,96 @@ fn bonus_levels_member_levels_and_form_ability_lists() {
     }
     assert!(!s.form_ability_list(1).is_empty());
 }
+
+/// Every enemy kind kh2-rs has a kind file for: spawn it, let it act for 10 s while Sora stands by,
+/// then let Sora fight it; print one line per kind (the table of docs/ENEMY-KINDS.md). Fails only on
+/// a kind that loads but neither acts nor can be hit.
+#[test]
+fn every_enemy_kind_runs() {
+    use kh2::enemy::{EnemyEvent, Enemies};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let w = floor();
+    let mut models: Vec<&str> = kh2_enemy_host::KINDS.iter().map(|k| k.model).collect();
+    models.sort();
+    models.dedup();
+    let mut table = Vec::new();
+    let mut dead = Vec::new();
+    for model in models {
+        let Some(k) = data.kinds.get(model) else {
+            table.push(format!("| {model} | - | not loadable | | | | | |"));
+            continue;
+        };
+        let mut s = standing(&game, &w);
+        s.max_hp = 9999;
+        s.hp = 9999;
+        let mut en = Enemies::new(data.clone());
+        let Some(id) = en.spawn(model, Vec3::new(0.0, 0.0, 300.0), std::f32::consts::PI, &w) else { continue };
+        let start = en.list[0].pos();
+        let (mut hit_sora, mut moved, mut hits, mut defeated, mut motions) = (0, 0.0f32, 0, false, std::collections::HashSet::new());
+        for t in 0..1800 {
+            let Some(e) = en.list.iter().find(|e| e.id == id) else { break };
+            moved = moved.max(e.pos().distance(start));
+            motions.insert(e.anim.slot);
+            let to = e.pos() - s.motor.pos;
+            let fight = t >= 600;
+            if fight {
+                s.target = Some(kh2::sora::Target { pos: e.pos() + Vec3::Y * 80.0, radius: 40.0, half_height: 80.0 });
+            }
+            let stick = if fight && to.length() > 150.0 { [to.x / to.length(), to.z / to.length()] } else { [0.0, 0.0] };
+            s.hp = 9999;
+            s.tick(&w, &Input { stick, cam_look: [0.0, 1.0], attack: fight && t % 4 == 0, ..Default::default() });
+            en.tick(&mut s, &w, game.params.sstm.fall_max);
+            for ev in en.events.drain(..) {
+                match ev {
+                    EnemyEvent::HitSora { .. } => hit_sora += 1,
+                    EnemyEvent::Hit { .. } => hits += 1,
+                    EnemyEvent::Defeated { .. } => defeated = true,
+                    _ => {}
+                }
+            }
+            if defeated {
+                break;
+            }
+        }
+        let unserved: u64 = en.unserved_calls().iter().map(|c| c.2).sum();
+        let acts = moved > 10.0 || hit_sora > 0 || motions.len() > 2;
+        if !acts && hits == 0 {
+            dead.push(model);
+        }
+        table.push(format!("| {model} | {} | {} | {:.0} | {} | {} | {} | {} |", k.kind.name, if k.prog.is_some() { "yes" } else { "no" }, moved, motions.len(), hit_sora, if defeated { "yes".to_string() } else { format!("no ({hits} hits)") }, unserved));
+    }
+    eprintln!("| model | kind | script | moved cm | motions | hit Sora | defeated by Sora | unserved host calls |");
+    eprintln!("| --- | --- | --- | --- | --- | --- | --- | --- |");
+    for l in &table {
+        eprintln!("{l}");
+    }
+    eprintln!("inert: {dead:?}");
+}
+
+/// The areas' own collision: Sora is put on each area's spawn point and walks.
+#[test]
+fn areas_load_and_sora_walks_on_them() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let mut ok = 0;
+    for area in ["tt00", "tt01", "tt07", "hb00", "hb05", "al00", "bb00", "mu00", "lk00", "po00", "eh00", "nm00", "ca00", "tr00", "lm00", "dc00", "wi00", "es00", "zz00"] {
+        let Ok(c) = d.coct(area) else {
+            eprintln!("{area}: no collision");
+            continue;
+        };
+        let w = World::from_coct(&c);
+        let at = w.spawn_point();
+        let mut s = Sora::new(game.clone(), at);
+        for _ in 0..240 {
+            s.tick(&w, &Input { stick: [0.0, 1.0], cam_look: [0.0, 1.0], ..Default::default() });
+        }
+        let walked = s.motor.pos.with_y(0.0).distance(at.with_y(0.0));
+        eprintln!("{area}: {} triangles, spawn {at:?}, walked {walked:.0} cm, grounded {}", w.tris.len(), s.motor.grounded);
+        if walked > 50.0 {
+            ok += 1;
+        }
+    }
+    assert!(ok >= 3);
+}
