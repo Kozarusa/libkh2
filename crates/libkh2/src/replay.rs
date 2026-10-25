@@ -56,3 +56,52 @@ pub fn run(sora: &mut Sora, world: &World, steps: &[Step]) -> String {
 pub fn digest(trace: &str) -> u64 {
     trace.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3))
 }
+
+/// One tick's state as a line (everything the controller decides: state, motion, frame,
+/// position, velocity, yaw, combo, HP, MP, form, drive points, invincibility).
+pub fn snapshot(s: &Sora) -> String {
+    let (p, v) = (s.motor.pos, s.motor.vel);
+    format!(
+        "{} {} {:.2} {:.2} {:.2} {:.2} {:.2} {:.2} {:.2} {} {} {} {} {} {}",
+        s.state.code(),
+        s.body.tag(),
+        s.body.frame,
+        p.x,
+        p.y,
+        p.z,
+        v.x,
+        v.z,
+        s.motor.yaw,
+        s.hits,
+        s.hp,
+        s.mp,
+        s.drive.form,
+        s.drive.points.whole,
+        (s.invuln > 0.0) as u8
+    )
+}
+
+/// Per-tick digests of a scenario: one `tick digest` line per tick (digests only, so a golden file
+/// built on the disc carries no game values).
+pub fn digests(lines: &[String]) -> String {
+    lines.iter().enumerate().map(|(i, l)| format!("{i} {:016x}\n", digest(l))).collect()
+}
+
+/// Compares per-tick digests with a golden file: `Ok(true)` equal, `Ok(false)` written (missing or
+/// `KH2_BLESS` set), `Err` the first tick that differs and its snapshot.
+pub fn check_golden(path: &std::path::Path, lines: &[String]) -> Result<bool, String> {
+    let now = digests(lines);
+    if std::env::var_os("KH2_BLESS").is_some() || !path.exists() {
+        if let Some(d) = path.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        std::fs::write(path, &now).map_err(|e| e.to_string())?;
+        return Ok(false);
+    }
+    let old = std::fs::read_to_string(path).map_err(|e| e.to_string())?.replace(['\r'], "");
+    match old.lines().zip(now.lines()).position(|(a, b)| a != b) {
+        None if old.lines().count() == now.lines().count() => Ok(true),
+        None => Err(format!("{}: length {} -> {}", path.display(), old.lines().count(), now.lines().count())),
+        Some(t) => Err(format!("{}: first difference at tick {t}: now {:?}", path.display(), lines[t])),
+    }
+}

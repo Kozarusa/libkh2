@@ -77,6 +77,10 @@ kh2_delete(h); kh2_terminate();
   The synthetic replay is compared with the committed `crates/libkh2/tests/golden/synthetic_basic.trace`
   (`KH2_BLESS=1` rewrites it); the disc replay with a digest in `local/golden_disc.txt` (not in git).
   `cargo run --release -p libkh2 --example replay -- <disc> tests/scripts/basic.txt` prints a trace.
+* `tests/golden_disc.rs` runs the main scenarios (movement, combos, growth, hurt, magic, drive,
+  items) on the disc and compares every tick's state digest with `local/golden/*.txt` (written on
+  the first run; `KH2_BLESS=1` rewrites); the synthetic ones are committed in `tests/golden/`.
+  `docs/PORTING-BACK.md` is the plan for moving the ported layer into kh2-rs.
 * `KH2RS_COMMIT` is the kh2-rs commit libkh2 was checked against. `sh scripts/drift_check.sh`
   (Git Bash on Windows) lists changes in the kh2-rs files compiled in place, the transcribed ones
   and the path dependencies since then, and exits 1 on drift.

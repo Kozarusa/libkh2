@@ -5,7 +5,7 @@
 3. [x] Ability system (Loadout set by the host).
 4. [x] Items, HP/MP/drive state, level and EXP.
 5. [x] Party members: field following (attacks: plan in DESIGN.md).
-6. [ ] Golden-trace suite, docs/PORTING-BACK.md.
+6. [x] Golden-trace suite, docs/PORTING-BACK.md.
 7. [ ] Windowed sample host.
 
 Later: spell flight paths, the ability system's full block, summons, enemies.

@@ -306,3 +306,34 @@ fn the_scripted_replay_matches_the_golden_trace() {
         panic!("trace differs from the golden file at line {first:?}");
     }
 }
+
+/// Per-tick golden digests of synthetic scenarios (committed: made-up numbers only), and the check
+/// itself noticing a change.
+#[test]
+fn synthetic_golden_scenarios() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let scenario = |name: &str, wall: Option<f32>, f: &dyn Fn(usize) -> Input, ticks: usize| {
+        let w = room(wall);
+        let mut s = sora(&w);
+        let mut lines = Vec::new();
+        for t in 0..ticks {
+            s.tick(&w, &f(t));
+            lines.push(kh2::replay::snapshot(&s));
+        }
+        let r = kh2::replay::check_golden(&dir.join(format!("{name}.digests")), &lines);
+        assert!(r.is_ok(), "{r:?}");
+        lines
+    };
+    scenario("synthetic_wall", Some(400.0), &|_| run_x(), 120);
+    scenario("synthetic_jump", None, &|t| Input { jump: t < 40, ..Default::default() }, 120);
+    let lines = scenario("synthetic_combo", None, &|t| Input { attack: t % 3 == 0, ..Default::default() }, 150);
+    // A changed tick is reported.
+    let mut changed = lines.clone();
+    changed[77].push('x');
+    let tmp = std::env::temp_dir().join("libkh2_golden_check.digests");
+    let _ = std::fs::remove_file(&tmp);
+    kh2::replay::check_golden(&tmp, &lines).unwrap();
+    let e = kh2::replay::check_golden(&tmp, &changed).unwrap_err();
+    assert!(e.contains("tick 77"), "{e}");
+    let _ = std::fs::remove_file(&tmp);
+}
