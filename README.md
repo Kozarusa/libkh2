@@ -94,7 +94,11 @@ Hit reactions (`kh2_hit_taken`): the disc's `atkp` row through kh2-rs's `reactio
 (compiled in place): flinch, push, blow and landing, knock-out (`kh2_revive`), guard and counter,
 invulnerability ticks (disc test `hits_flinch_blow_knock_out_and_guard`).
 
-Not in v1: enemies, magic, drive forms, summons, the camera, sounds and effects, moving platforms. See `DESIGN.md`.
+Field camera (`kh2_camera_tick`): kh2-rs's oracle-tested `camera_rules` (follow, right-stick yaw
+and zoom, auto-camera, lock-on, look-around, wall collision, springs) with the executable's camera
+table; `kh2_lock_on_pick` is the lock-on choice (disc test `the_field_camera_follows_collides_and_locks_on`).
+
+Not in v1: enemies, magic, drive forms, summons, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits
 

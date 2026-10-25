@@ -84,6 +84,15 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_bone_count(int handle, int which);
     [DllImport(Lib)] public static extern int kh2_get_bones(int handle, int which, int space, [Out] float[] outMatrices, uint maxBones);
     [DllImport(Lib)] public static extern int kh2_get_attack_volumes(int handle, [Out] Volume[] outVolumes, uint max);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CamInput { public float stickX, stickY, zoom; public uint buttons; public float step; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CamView { public float posX, posY, posZ, lookX, lookY, lookZ, fov, roll, yaw; public int mode; }
+
+    [DllImport(Lib)] public static extern int kh2_camera_tick(int handle, ref CamInput input, out CamView view);
+    [DllImport(Lib)] public static extern int kh2_camera_reset(int handle, int row);
+    [DllImport(Lib)] public static extern int kh2_lock_on_pick(int handle, float[] points, uint count);
     [DllImport(Lib)] public static extern int kh2_motion_tag(int handle, byte[] buf, uint len);
 
     public static string LastError()

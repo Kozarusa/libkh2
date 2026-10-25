@@ -53,6 +53,8 @@ pub struct Params {
     pub max_hp: i32,
     /// Sora's maximum MP (`plrp` MP).
     pub max_mp: i32,
+    /// The field camera's numbers from the executable (`camera_rules::Params::from_exe`).
+    pub camera: Option<kh2_game_core::camera_rules::Params>,
 }
 
 /// kh2-rs `combat::ReactionData`: the executable's constants, the `sstm` defaults, the `patn` table.
@@ -197,7 +199,8 @@ impl Disc {
         let plrp = self.table::<t::Plrp>(&t::PLRP)?;
         let sora = plrp.iter().find(|p| p.character == 1);
         let (max_hp, max_mp) = (sora.map_or(20, |p| p.hp as i32), sora.map_or(100, |p| p.mp as i32));
-        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp })
+        let camera = exe.as_deref().and_then(kh2_game_core::camera_rules::Params::from_exe);
+        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera })
     }
 
     /// Everything Sora needs.

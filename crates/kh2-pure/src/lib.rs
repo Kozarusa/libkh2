@@ -16,3 +16,8 @@ pub mod world;
 /// Hit, push, blow and clash rules (`reaction_rules.rs`, pure; `motor.rs` takes `exe_f32` from it).
 #[path = "../../../../kh2-rs/crates/kh2-game-core/src/reaction_rules.rs"]
 pub mod reaction_rules;
+
+/// The field camera's rules (`camera_rules.rs`: follow, lock-on, look-around, collision, springs;
+/// oracle-tested in kh2-rs, `tests/orig_l2_p2.rs`).
+#[path = "../../../../kh2-rs/crates/kh2-game-core/src/camera_rules.rs"]
+pub mod camera_rules;

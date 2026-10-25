@@ -842,6 +842,11 @@ impl Sora {
         }
     }
 
+    /// The input of the last tick.
+    pub fn last_input(&self) -> Input {
+        self.prev
+    }
+
     /// Stands up from the knock-out with full HP (kh2-rs `State::Down` stand-up: 120 invincible
     /// ticks, motion 40 with blend 6).
     pub fn revive(&mut self) {

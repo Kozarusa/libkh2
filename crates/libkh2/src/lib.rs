@@ -6,6 +6,7 @@
 //! what is reused from kh2-rs and what is new. The C ABI is in [`ffi`] and `include/kh2.h`.
 
 pub mod anim;
+pub mod camera;
 pub mod data;
 pub mod ffi;
 pub mod sora;

@@ -285,3 +285,52 @@ fn hits_flinch_blow_knock_out_and_guard() {
     assert_eq!(s.hit(blow, 1, back), HitResult::Guarded);
     assert_eq!(s.state, State::Counter);
 }
+
+#[test]
+fn the_field_camera_follows_collides_and_locks_on() {
+    use kh2::camera::{CamInput, Camera};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let p = game.params.camera.clone().expect("camera constants from the executable");
+    let row = p.rows[0];
+    eprintln!("camera row 0: fov {} radius {} min {} max {}", row.fov, row.radius, row.min_radius, row.max_radius);
+    // A floor and a wall 150 behind Sora (he faces +z; the wall faces +z, toward him).
+    let s2 = 20000.0;
+    let t = |v, flags| Surface { v, flags, ..Default::default() };
+    let w = world_from_surfaces(&[
+        t([[-s2, 0.0, -s2], [-s2, 0.0, s2], [s2, 0.0, s2]], 1),
+        t([[-s2, 0.0, -s2], [s2, 0.0, s2], [s2, 0.0, -s2]], 1),
+        t([[-s2, -100.0, -150.0], [s2, -100.0, -150.0], [s2, 3000.0, -150.0]], 0x10),
+        t([[-s2, -100.0, -150.0], [s2, 3000.0, -150.0], [-s2, 3000.0, -150.0]], 0x10),
+    ]);
+    let mut s = standing(&game, &w);
+    let mut cam = Camera::new(0);
+    let inp = CamInput { auto: true, step: 1.0, ..Default::default() };
+    let v = cam.tick(&p, &mut s, &w, &inp);
+    eprintln!("first view: pos {:?} look {:?}", v.pos, v.look);
+    assert!((v.look.y - kh2_game_core::camera_rules::LOOK_HEIGHT).abs() < 1.0);
+    assert!(v.pos.z > -150.0, "kept in front of the wall behind Sora: {:?}", v.pos);
+    assert!(v.pos.z < 0.0, "behind Sora");
+    assert!((v.fov - row.fov).abs() < 1e-5);
+    // Run forward: the camera follows within its radius range.
+    for _ in 0..200 {
+        s.tick(&w, &Input { stick: [0.0, 1.0], cam_look: [0.0, 1.0], ..Default::default() });
+        cam.tick(&p, &mut s, &w, &inp);
+    }
+    let v = cam.tick(&p, &mut s, &w, &inp);
+    let flat = (v.pos - s.motor.pos).with_y(0.0).length();
+    eprintln!("after the run: horizontal distance {flat}");
+    assert!(flat > row.min_radius * 0.5 && flat < row.max_radius * 1.5);
+    // Lock-on to a point at Sora's right: the camera's view turns toward it.
+    let target = s.motor.pos + Vec3::new(-600.0, 100.0, 0.0);
+    assert_eq!(kh2::camera::lock_on_pick(&s, &[target + Vec3::new(0.0, 0.0, 1e6), target]), Some(1));
+    s.target = Some(kh2::sora::Target { pos: target, radius: 30.0, half_height: 50.0 });
+    let yaw0 = v.yaw;
+    let mut v = v;
+    for _ in 0..120 {
+        s.tick(&w, &Input::default());
+        v = cam.tick(&p, &mut s, &w, &inp);
+    }
+    eprintln!("lock-on: yaw {yaw0} -> {}", v.yaw);
+    assert!(kh2_game_core::camera_rules::wrap(v.yaw - yaw0).abs() > 0.3);
+}

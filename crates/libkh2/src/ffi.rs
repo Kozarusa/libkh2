@@ -67,6 +67,7 @@ struct Lib {
     disc: Disc,
     world: World,
     soras: Vec<Option<Sora>>,
+    cameras: Vec<Option<crate::camera::Camera>>,
 }
 
 static LIB: Mutex<Option<Lib>> = Mutex::new(None);
@@ -120,7 +121,7 @@ pub unsafe extern "C" fn kh2_init(iso_path: *const c_char) -> i32 {
     };
     match LIB.lock() {
         Ok(mut g) => {
-            *g = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new() });
+            *g = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new() });
             0
         }
         Err(e) => set_error(e),
@@ -579,4 +580,82 @@ pub unsafe extern "C" fn kh2_motion_tag(handle: i32, buf: *mut c_char, len: u32)
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_jump_height(handle: i32) -> f32 {
     sora_do(handle, -1.0, |s, _| s.jump_height())
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2CamInput {
+    pub stick_x: f32,
+    pub stick_y: f32,
+    pub zoom: f32,
+    /// KH2_CAM_RESET (R3), KH2_CAM_SELECT (look-around), KH2_CAM_MANUAL (no auto-camera).
+    pub buttons: u32,
+    /// 1 per 60 Hz tick (0 means 1), 2 per 30 Hz field frame.
+    pub step: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2CamView {
+    pub pos: [f32; 3],
+    pub look: [f32; 3],
+    pub fov: f32,
+    pub roll: f32,
+    pub yaw: f32,
+    pub mode: i32,
+}
+
+/// One field-camera tick for Sora `handle` (call after `kh2_tick`). The camera follows him, turns
+/// with the right stick, locks onto `kh2_set_target`'s point and collides with the static
+/// collision. Feed `view.look - view.pos` back as the next `kh2_inputs` camera look direction.
+///
+/// # Safety
+/// `input` is NULL or points to a `kh2_cam_input`; `view` points to a writable `kh2_cam_view`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_camera_tick(handle: i32, input: *const Kh2CamInput, view: *mut Kh2CamView) -> i32 {
+    if view.is_null() {
+        return set_error("no view record");
+    }
+    let i = if input.is_null() { Kh2CamInput::default() } else { unsafe { *input } };
+    let ci = crate::camera::CamInput { stick: [i.stick_x, i.stick_y], reset: i.buttons & 1 != 0, select: i.buttons & 2 != 0, zoom: i.zoom, auto: i.buttons & 4 == 0, step: i.step };
+    with(-1, |l| {
+        let Some(p) = l.game.params.camera.as_ref() else { return set_error("the camera constants could not be read from the executable") };
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return set_error(format!("no Sora with handle {handle}")) };
+        let k = handle as usize;
+        if l.cameras.len() <= k {
+            l.cameras.resize_with(k + 1, || None);
+        }
+        let cam = l.cameras[k].get_or_insert_with(|| crate::camera::Camera::new(0));
+        let v = cam.tick(p, s, &l.world, &ci);
+        unsafe { *view = Kh2CamView { pos: v.pos.to_array(), look: v.look.to_array(), fov: v.fov, roll: v.roll, yaw: v.yaw, mode: v.mode } };
+        0
+    })
+}
+
+/// The camera table row (0 default, 1 indoor, 2, 3: the area camera types of the game) and a reset
+/// of the camera behind Sora on the next tick.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_camera_reset(handle: i32, row: i32) -> i32 {
+    with(-1, |l| {
+        let Ok(k) = usize::try_from(handle) else { return -1 };
+        if l.cameras.len() <= k {
+            l.cameras.resize_with(k + 1, || None);
+        }
+        l.cameras[k] = Some(crate::camera::Camera::new(row.clamp(0, 3) as usize));
+        0
+    })
+}
+
+/// The lock-on helper: the index of the nearest of `count` points (x, y, z each) within the disc's
+/// lock-on range of Sora, or -1. Pass the chosen point to `kh2_set_target`.
+///
+/// # Safety
+/// `points` points to `3 * count` floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_lock_on_pick(handle: i32, points: *const f32, count: u32) -> i32 {
+    if points.is_null() {
+        return -1;
+    }
+    let pts: Vec<Vec3> = unsafe { std::slice::from_raw_parts(points, 3 * count as usize) }.chunks(3).map(|c| Vec3::new(c[0], c[1], c[2])).collect();
+    sora_do(handle, -1, |s, _| crate::camera::lock_on_pick(s, &pts).map_or(-1, |i| i as i32))
 }

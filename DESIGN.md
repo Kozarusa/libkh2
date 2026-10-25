@@ -118,9 +118,13 @@ stats); Sora's resistances are taken as 100 (no equipment); Second Chance / Once
 and Aerial Recovery / Retaliating Slash are not ported; knock-out waits for `kh2_revive` unless
 auto-revive is set (kh2-rs stands up after 180 ticks).
 
+Step 3: `camera_rules.rs` (pure, oracle-tested in kh2-rs `orig_l2_p2.rs`) is compiled in place;
+`camera.rs` transcribes `camera::tick`'s field path and `cast_world`. decided: no dynamic blockers,
+no talk/event/overhead cameras; the lock-on point is the host's target point (kh2-rs uses the
+enemy position + 100); the camera ray tests the static collision (kh2-rs can use render meshes).
+
 Not covered: enemies, magic, drive forms, summons, items,
-the dodge roll, reaction commands, the camera (only the look
-direction comes in; no lock-on camera), the auto-target, sounds and effects (frame triggers are
+the dodge roll, reaction commands, the auto-target, sounds and effects (frame triggers are
 reported, not played), the game's exact COCT walker (`Oct`, unwired in kh2-rs too), weapon
 switching, moving platforms.
 

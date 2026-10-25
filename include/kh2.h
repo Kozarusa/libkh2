@@ -164,6 +164,33 @@ KH2_API int32_t kh2_motion_tag(int32_t handle, char *buf, uint32_t len);
 /* Sora's jump height read from the disc (prty JumpHeight, or the High Jump row). */
 KH2_API float kh2_jump_height(int32_t handle);
 
+/* ---- Field camera helper (kh2-rs camera_rules, oracle-tested there) ---- */
+#define KH2_CAM_RESET 1u   /* R3: behind Sora */
+#define KH2_CAM_SELECT 2u  /* look-around */
+#define KH2_CAM_MANUAL 4u  /* no auto-camera (R2 held) */
+
+typedef struct kh2_cam_input {
+    float stick_x, stick_y; /* right stick, x right, y up */
+    float zoom;             /* units added to the radius (mouse wheel) */
+    uint32_t buttons;       /* KH2_CAM_* pressed this tick */
+    float step;             /* 1 per 60 Hz tick (0 = 1), 2 per 30 Hz frame */
+} kh2_cam_input;
+
+typedef struct kh2_cam_view {
+    float pos[3], look[3];
+    float fov;              /* horizontal, radians, for a 4:3 picture */
+    float roll, yaw;
+    int32_t mode;           /* 0 follow, 1 look-around */
+} kh2_cam_view;
+
+/* One camera tick after kh2_tick: follows Sora, locks onto kh2_set_target's point, collides with
+ * the static collision. Use look - pos as the next kh2_inputs camera look direction. */
+KH2_API int32_t kh2_camera_tick(int32_t handle, const kh2_cam_input *input, kh2_cam_view *view);
+/* New camera behind Sora with table row 0..3 (0 field, 1 indoor). */
+KH2_API int32_t kh2_camera_reset(int32_t handle, int32_t row);
+/* Index of the nearest of `count` xyz points within the lock-on range, or -1. */
+KH2_API int32_t kh2_lock_on_pick(int32_t handle, const float *points, uint32_t count);
+
 #ifdef __cplusplus
 }
 #endif
