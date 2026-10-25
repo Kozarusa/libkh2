@@ -91,6 +91,10 @@ pub struct EnemyData {
     pub cmds: Vec<CmdRow>,
     /// Sora's own collision records (P_EX100): his type 1 body volume touches the reaction parts.
     pub player_parts: Option<kh2_game_core::reaction_parts::Table>,
+    /// The `00objentry` ids of the kinds the library has (host 1.0 makes objects of them, kh2-rs
+    /// `ObjTable::kinds` / `creatable`).
+    pub creatable: Arc<HashSet<u32>>,
+    pub by_object: HashMap<u32, &'static str>,
 }
 
 impl EnemyData {
@@ -190,7 +194,9 @@ impl Disc {
         let loader = self.reopen().ok();
         let cmds = kh2_tables::load::<t::Cmd>(&mut self.0, &t::CMD).map(|t| t.rows.iter().map(CmdRow::from).collect()).unwrap_or_default();
         let player_parts = self.read("obj/P_EX100.mdlx").ok().and_then(|f| kh2_game_core::reaction_parts::Table::from_mdlx(&f));
-        Ok(EnemyData { kinds: Default::default(), loader: std::sync::Mutex::new(loader), objs, table, prizes, enmp, lvpm, player_model, cmds, player_parts })
+        let by_object: HashMap<u32, &'static str> = kh2_enemy_host::KINDS.iter().filter_map(|k| Some((objs.iter().find(|r| r.model_name == k.model)?.object_id, k.model))).collect();
+        let creatable = Arc::new(by_object.keys().copied().collect());
+        Ok(EnemyData { creatable, by_object, kinds: Default::default(), loader: std::sync::Mutex::new(loader), objs, table, prizes, enmp, lvpm, player_model, cmds, player_parts })
     }
 }
 
@@ -369,6 +375,10 @@ pub struct Enemies {
     pub reactions: Vec<(u32, u16, i16)>,
     /// Use counters by `ReactionCount` slot (kh2-rs `ReactionUses`, capped at 999).
     pub uses: HashMap<u16, u16>,
+    /// Objects host 1.0 asked for (handle, `00objentry` id) and the calls on other objects waiting for
+    /// their owners (kh2-rs `ObjTable::creates` / `remote`).
+    pub creates: Vec<(u32, u32)>,
+    pub remote: Vec<(u32, kh2_enemy_host::enemy_obj::Remote, u8)>,
     /// The mission manager's counters the scripts read (host 4.29; kh2-rs `struggle::Mission`: slot 0
     /// the player's orbs, slot 1 the opponent's), None without a mission. The host keeps them.
     pub mission: Option<[i32; 3]>,
@@ -388,7 +398,62 @@ pub struct ReactionOffer {
 
 impl Enemies {
     pub fn new(data: Arc<EnemyData>) -> Enemies {
-        Enemies { data, list: Vec::new(), serial: 0, next_id: 1, trace: AiTrace::default(), mail: Vec::new(), seed: 1, events: Vec::new(), sora_landed: HashSet::new(), world_level: 1, spells: Default::default(), offer: None, fake_offer: None, reactions: Vec::new(), uses: HashMap::new(), mission: None, event_active: false }
+        Enemies { data, list: Vec::new(), serial: 0, next_id: 1, trace: AiTrace::default(), mail: Vec::new(), seed: 1, events: Vec::new(), sora_landed: HashSet::new(), world_level: 1, spells: Default::default(), offer: None, fake_offer: None, reactions: Vec::new(), uses: HashMap::new(), mission: None, event_active: false, creates: Vec::new(), remote: Vec::new() }
+    }
+
+    /// kh2-rs `enemy::spawn_created`: the objects host 1.0 asked for, made with the handle the call
+    /// gave, at the point a `set_position` of the same tick gave (else the origin), facing PI.
+    fn spawn_created(&mut self, world: &World) {
+        use kh2_enemy_host::enemy_obj::Remote;
+        for (handle, object) in std::mem::take(&mut self.creates) {
+            let Some(&model) = self.data.by_object.get(&object) else { continue };
+            let mut at = Vec3::ZERO;
+            self.remote.retain(|(h, op, _)| match op {
+                Remote::Position(p) if *h == handle => {
+                    at = *p;
+                    false
+                }
+                _ => true,
+            });
+            let serial = self.serial;
+            if let Some(id) = self.spawn_with(model, at, std::f32::consts::PI, world, -1, None) {
+                self.serial = serial;
+                if let Some(e) = self.list.iter_mut().find(|e| e.id == id) {
+                    let pos = e.obj.motor.pos;
+                    e.obj = Obj::new(handle);
+                    e.obj.motor.pos = pos;
+                    e.obj.motor.yaw = std::f32::consts::PI;
+                    e.obj.motor.grounded = true;
+                }
+            }
+        }
+    }
+
+    /// kh2-rs `enemy_ai::ai_remote`: the calls on other objects, on their owners; a call on an object
+    /// not there yet waits a few ticks.
+    fn apply_remote(&mut self) {
+        use kh2_enemy_host::enemy_obj::{Remote, REMOTE_PATIENCE};
+        for (handle, op, age) in std::mem::take(&mut self.remote) {
+            let Some(e) = self.list.iter_mut().find(|e| e.obj.handle == handle) else {
+                if age + 1 < REMOTE_PATIENCE {
+                    self.remote.push((handle, op, age + 1));
+                }
+                continue;
+            };
+            let o = &mut e.obj;
+            match op {
+                Remote::Position(p) => o.motor.pos = p,
+                Remote::Mode(m) => o.modes_asked.push(m),
+                Remote::Hide => {
+                    o.hidden = true;
+                    o.alpha = 0.0;
+                    o.fade = None;
+                }
+                Remote::SetFlag(bit) if (0..64).contains(&bit) => o.flags |= 1 << bit,
+                Remote::ClearFlag(bit) if (0..64).contains(&bit) => o.flags &= !(1 << bit),
+                Remote::SetFlag(_) | Remote::ClearFlag(_) => {}
+            }
+        }
     }
 
     /// Drops the enemies that are gone (`removed`) and frees the kinds no enemy uses any more.
@@ -466,6 +531,8 @@ impl Enemies {
     /// `receive_hits`), against Sora: his attacks hit them, theirs hit him.
     pub fn tick(&mut self, sora: &mut Sora, world: &World, fall_max: f32) {
         self.trace.tick += 1;
+        self.spawn_created(world);
+        self.apply_remote();
         self.offer(sora);
         self.combat(sora);
         self.spells_tick(sora, world);
@@ -527,6 +594,8 @@ impl Enemies {
                 event_active: self.event_active,
             };
             let handle = obj.handle;
+            obj.creatable = self.data.creatable.clone();
+            obj.next_serial = self.serial;
             if let Some(rt) = e.rt.as_mut() {
                 let mut host = BevyHost { obj, env: &env, trace: &mut self.trace, tag: e.tag.as_str() };
                 if !e.started {
@@ -605,8 +674,10 @@ impl Enemies {
             if let Some(s) = obj.player_serial.take() {
                 sora.reaction.serial = s;
             }
-            obj.creates.clear();
-            obj.remote.clear();
+            // Host 1.0's objects and the calls on other objects (kh2-rs `ai_update` fills `ObjTable`).
+            self.serial = self.serial.max(obj.next_serial);
+            self.creates.append(&mut obj.creates);
+            self.remote.extend(obj.remote.drain(..).map(|(h, r)| (h, r, 0)));
             // ---- carry out the requests
             if !matches!(e.state, EState::Hurt | EState::Blown) {
                 e.state = EState::Idle;

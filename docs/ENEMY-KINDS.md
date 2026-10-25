@@ -11,9 +11,10 @@ Reading the table:
 - Every kind loads and runs its own script; 47 of 54 are defeated by Sora's combo in the run.
 - M_EX590, M_EX760, M_EX900 move and act but were not hit in the run (they fly or keep away; a
   host that brings Sora to them can hit them).
-- M_EX850 and M_EX870 stay in one motion on a flat floor: their scripts wait for an area set-up
-  (spawn groups / an event) the library does not run; M_EX870 also makes 2 host calls that are
-  not served. They are listed as not running.
+- M_EX870 acts since 0.8 (host 1.0 created objects and the calls on other objects are served):
+  on a flat floor it moved 674 cm, played 3 motions, hit Sora 16 times and was defeated.
+- M_EX850 stays in one motion on a flat floor: its script waits for an area set-up the scan does
+  not run. It is listed as not running.
 - N_EX500_BTL and N_EX600_BTL are story battles whose scripts hold a minimum HP (they end by the
   story, not by HP).
 
@@ -59,7 +60,7 @@ Reading the table:
 | M_EX770 | M_EX770 | yes | 609 | 6 | 0 | yes | 0 |
 | M_EX780 | M_EX780 | yes | 477 | 6 | 0 | yes | 0 |
 | M_EX850 | M_EX850 | yes | 0 | 1 | 0 | no (0 hits) | 0 |
-| M_EX870 | M_EX870 | yes | 0 | 1 | 0 | no (0 hits) | 2 |
+| M_EX870 | M_EX870 | yes | 674 | 3 | 16 | yes | 0 |
 | M_EX880 | M_EX880 | yes | 606 | 8 | 2 | yes | 0 |
 | M_EX890 | M_EX890 | yes | 542 | 9 | 1 | yes | 0 |
 | M_EX900 | M_EX900 | yes | 598 | 4 | 1 | no (0 hits) | 0 |

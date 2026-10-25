@@ -1437,7 +1437,8 @@ fn area_battle_groups_spawn_and_fight() {
             s.tick(&w, &Input::default());
             en.tick(&mut s, &w, game.params.sstm.fall_max);
             en.events.clear();
-            for (k, e) in en.list.iter().enumerate() {
+            // Host 1.0's created objects join the list after the first ones.
+            for (k, e) in en.list.iter().enumerate().take(starts.len()) {
                 moved[k] = moved[k].max(e.pos().distance(starts[k].1));
                 slots[k].insert(e.anim.slot);
             }
