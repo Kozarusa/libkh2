@@ -486,3 +486,38 @@ fn the_scripted_replay_is_stable_on_the_disc() {
         }
     }
 }
+
+#[test]
+fn spells_report_attack_stages_with_disc_rows_and_damage() {
+    use kh2::sora::Event;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    for slot in 0..4u8 {
+        let mut s = standing(&game, &w);
+        s.hp = 5;
+        eprintln!("level 1: strength {} magic {} defense {}", s.strength, s.magic, s.defense);
+        s.cast_request = Some((slot, 30));
+        let mut stages = Vec::new();
+        let mut healed = None;
+        for _ in 0..200 {
+            s.tick(&w, &Input::default());
+            for e in s.events.drain(..) {
+                match e {
+                    Event::SpellAttack { stage, atkp, sub_id, radius, height, life, .. } => stages.push((stage, atkp, sub_id, radius, height, life)),
+                    Event::Healed { amount, hp } => healed = Some((amount, hp)),
+                    _ => {}
+                }
+            }
+        }
+        let dmg: Vec<i32> = stages.iter().filter_map(|&(_, a, sub, ..)| s.damage(a, Some(sub), 1, 100, 100, 100)).collect();
+        eprintln!("slot {slot}: stages {stages:?}, damage vs defense 1 {dmg:?}, healed {healed:?}");
+        assert!(!stages.is_empty() && stages.iter().all(|x| x.3 > 0.0), "every stage has a size from magi");
+        if slot == 3 {
+            let (amount, hp) = healed.expect("Cure heals");
+            assert!(amount > 0 && hp == (5 + amount).min(s.max_hp));
+        } else {
+            assert!(dmg.iter().all(|&x| x > 0));
+        }
+    }
+}

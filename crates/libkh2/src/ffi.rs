@@ -755,7 +755,8 @@ pub extern "C" fn kh2_set_mp(handle: i32, mp: i32, max_mp: i32) -> i32 {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Kh2Event {
-    /// KH2_EV_*: 1 cast started, 2 spell fired, 3 cast cancelled, 4 MP restored.
+    /// KH2_EV_*: 1 cast started, 2 spell fired, 3 cast cancelled, 4 MP restored, 5 form changed,
+    /// 6 spell attack, 7 healed.
     pub kind: i32,
     pub slot: i32,
     /// The cast kind (atkp sub-row key / magi row).
@@ -763,6 +764,19 @@ pub struct Kh2Event {
     pub motion: i32,
     pub voice: i32,
     pub charge: i32,
+    /// Spell attack: stage, atkp id and sub id, size, life (ticks), speed, start and direction.
+    pub stage: i32,
+    pub atkp: i32,
+    pub sub_id: i32,
+    pub radius: f32,
+    pub height: f32,
+    pub life: f32,
+    pub speed: f32,
+    pub pos: [f32; 3],
+    pub dir: [f32; 3],
+    /// Healed: the amount and the HP after it.
+    pub amount: i32,
+    pub hp: i32,
 }
 
 /// Takes the oldest pending event; returns 1 when one was written, 0 when none is left.
@@ -780,12 +794,17 @@ pub unsafe extern "C" fn kh2_poll_event(handle: i32, out: *mut Kh2Event) -> i32 
         }
         let e = s.events.remove(0);
         use crate::sora::Event as E;
+        let d = Kh2Event { motion: -1, voice: -1, cast_kind: -1, slot: -1, stage: -1, atkp: -1, sub_id: -1, ..Default::default() };
         let v = match e {
-            E::CastStarted { slot, kind, motion, voice } => Kh2Event { kind: 1, slot: slot.into(), cast_kind: kind as i32, motion: motion.into(), voice: voice.into(), charge: 0 },
-            E::SpellFired { slot, kind, charge } => Kh2Event { kind: 2, slot: slot.into(), cast_kind: kind as i32, motion: -1, voice: -1, charge: charge as i32 },
-            E::CastCancelled { slot } => Kh2Event { kind: 3, slot: slot.into(), cast_kind: -1, motion: -1, voice: -1, charge: 0 },
-            E::MpRestored => Kh2Event { kind: 4, slot: -1, cast_kind: -1, motion: -1, voice: -1, charge: 0 },
-            E::FormChanged { from, to } => Kh2Event { kind: 5, slot: to.into(), cast_kind: from.into(), motion: -1, voice: -1, charge: 0 },
+            E::CastStarted { slot, kind, motion, voice } => Kh2Event { kind: 1, slot: slot.into(), cast_kind: kind as i32, motion: motion.into(), voice: voice.into(), ..d },
+            E::SpellFired { slot, kind, charge } => Kh2Event { kind: 2, slot: slot.into(), cast_kind: kind as i32, charge: charge as i32, ..d },
+            E::CastCancelled { slot } => Kh2Event { kind: 3, slot: slot.into(), ..d },
+            E::MpRestored => Kh2Event { kind: 4, ..d },
+            E::FormChanged { from, to } => Kh2Event { kind: 5, slot: to.into(), cast_kind: from.into(), ..d },
+            E::SpellAttack { slot, stage, atkp, sub_id, radius, height, life, speed, pos, dir } => {
+                Kh2Event { kind: 6, slot: slot.into(), stage: stage.into(), atkp: atkp.into(), sub_id: sub_id.into(), radius, height, life, speed, pos: pos.to_array(), dir: dir.to_array(), ..d }
+            }
+            E::Healed { amount, hp } => Kh2Event { kind: 7, amount, hp, ..d },
         };
         unsafe { *out = v };
         1
@@ -976,5 +995,22 @@ pub unsafe extern "C" fn kh2_sample_motion(handle: i32, which: i32, slot: i32, f
             unsafe { std::ptr::copy_nonoverlapping(v.as_ptr(), root, 4) };
         }
         unsafe { write_mats(pose.into_iter(), out, max) }
+    })
+}
+
+/// The damage of one of Sora's attack rows (`sub_id` -1: the row's first variant) against a target
+/// with `defense`, `max_hp` (type 5 rows) and the percents for the row's element and in general
+/// (100 = neutral). kh2-rs `GameData::damage`. Returns -1 for an unknown row.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_damage(handle: i32, atkp: i32, sub_id: i32, defense: i32, max_hp: i32, weakness: i32, general: i32) -> i32 {
+    sora_do(handle, -1, |s, _| s.damage(atkp as u16, (sub_id >= 0).then_some(sub_id as u16), defense, max_hp, weakness, general).unwrap_or(-1))
+}
+
+/// Sora's level (1..99): rebuilds strength, magic and defense from the disc's `lvup` row.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_set_level(handle: i32, level: i32) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        s.set_level(level);
+        0
     })
 }

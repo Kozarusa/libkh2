@@ -58,6 +58,13 @@ pub struct Params {
     /// The spell rows (`magc` of `00battle.bin`) and the commands (`cmd` of `03system.bin`).
     pub magc: Vec<Magc>,
     pub cmd: Vec<Cmd>,
+    /// The spells' size rows (`magi` of the `pref` entry of `03system.bin`).
+    pub magi: Vec<kh2_game_core::magic_rules::MagiRow>,
+    /// Sora's level rows (`lvup`, character 0), and the Kingdom Key's attack and magic
+    /// (`item_stat`; kh2-rs `GameData::weapon_attack` / `weapon_magic`).
+    pub levels: Vec<t::Lvup>,
+    pub weapon_attack: i32,
+    pub weapon_magic: i32,
 }
 
 /// kh2-rs `combat::ReactionData`: the executable's constants, the `sstm` defaults, the `patn` table.
@@ -212,7 +219,21 @@ impl Disc {
         let camera = exe.as_deref().and_then(kh2_game_core::camera_rules::Params::from_exe);
         let magc = self.table::<Magc>(&t::MAGC).unwrap_or_default();
         let cmd = self.table::<Cmd>(&t::CMD).unwrap_or_default();
-        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera, magc, cmd })
+        let magi = self
+            .read("03system.bin")
+            .ok()
+            .and_then(|f| {
+                let top = kh2_bar::parse(&f).ok()?;
+                let inner = kh2_bar::parse(kh2_bar::find(&top, "pref")?.data).ok()?;
+                Some(kh2_game_core::magic_rules::parse_magi(kh2_bar::find(&inner, "magi")?.data))
+            })
+            .unwrap_or_default();
+        let levels = kh2_tables::subfile(&mut self.0, &t::LVUP).ok().and_then(|b| kh2_tables::rt::decode_lvup::<t::Lvup>(&b)).and_then(|c| c.into_iter().next()).unwrap_or_default();
+        let items = self.table::<t::Item>(&t::ITEM).unwrap_or_default();
+        let stats = self.table::<t::ItemStat>(&t::ITEM_STAT).unwrap_or_default();
+        let kk = items.iter().find(|i| i.id == 41).and_then(|i| stats.iter().find(|s| s.id == i.stat_entry));
+        let (weapon_attack, weapon_magic) = kk.map_or((0, 0), |s| (s.attack as i32, s.magic as i32));
+        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera, magc, cmd, magi, levels, weapon_attack, weapon_magic })
     }
 
     /// Everything Sora needs.

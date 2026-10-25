@@ -1,0 +1,11 @@
+# TODO (round 3)
+
+1. [x] Spell attacks: stages, atkp rows, magi sizes, damage helper, Cure heal.
+2. [ ] Second keyblade and weapon bones for drive forms.
+3. [ ] Ability system (Loadout set by the host).
+4. [ ] Items, HP/MP/drive state, level and EXP.
+5. [ ] Party members (or the plan).
+6. [ ] Golden-trace suite, docs/PORTING-BACK.md.
+7. [ ] Windowed sample host.
+
+Later: spell flight paths, the ability system's full block, summons, enemies.

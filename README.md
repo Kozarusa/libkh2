@@ -134,7 +134,11 @@ Animation export: `kh2_sample_motion` (any slot at any frame, root motion separa
 `kh2_motion_info`, `kh2_motion_slot`; skinning with kh2-extras glb files is described in
 `docs/SKINNING.md`.
 
-Not in v1: enemies, spell objects and their damage, the second keyblade of a form, summons, sounds and effects, moving platforms. See `DESIGN.md`.
+Spell attacks (step 1 of round 3): each fired spell sends `KH2_EV_SPELL_ATTACK` per stage with its
+`atkp` row, `magi` size, life, speed, start and direction; `kh2_damage` computes a row's damage
+with Sora's `lvup` stats; Cure heals Sora (`KH2_EV_HEALED`).
+
+Not in v1: enemies, the spells' flight paths, the second keyblade of a form, summons, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits
 

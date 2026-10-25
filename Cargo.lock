@@ -105,7 +105,7 @@ dependencies = [
 
 [[package]]
 name = "libkh2"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "glam",
  "kh2-anim",
@@ -119,7 +119,7 @@ dependencies = [
 
 [[package]]
 name = "libkh2-bevy-shim"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "glam",
  "libkh2-bevy-shim-derive",
@@ -127,11 +127,11 @@ dependencies = [
 
 [[package]]
 name = "libkh2-bevy-shim-derive"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "libkh2-pure"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "kh2-map",
  "kh2-model",

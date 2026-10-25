@@ -144,6 +144,14 @@ the dodge roll, reaction commands, the auto-target, sounds and effects (frame tr
 reported, not played), the game's exact COCT walker (`Oct`, unwired in kh2-rs too), weapon
 switching, moving platforms.
 
+## 4a. Spell attacks (round 3 step 1)
+
+`Sora::spell_stages` names the spells' atkp ids from kh2-rs `magic.rs` (Fire 502, Blizzard 248,
+Thunder 250/251/249, Cure 708) and their `magi` offsets; the row is `magic_rules::attack_row`.
+decided: the spell objects' movement (Blizzard homing, Fire following, Thunder's multi-target
+pattern) and the script VM stay out; the host moves the volume by `life` and `speed`. `kh2_damage`
+transcribes `GameData::damage` with the target's caps replaced by a floor of 1.
+
 ## 4b. Regression and drift (step 7)
 
 Drift has two sources: (1) the files compiled in place change (caught by the build and the

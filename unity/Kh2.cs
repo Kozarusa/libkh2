@@ -98,7 +98,15 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_camera_reset(int handle, int row);
     [DllImport(Lib)] public static extern int kh2_lock_on_pick(int handle, float[] points, uint count);
     [StructLayout(LayoutKind.Sequential)]
-    public struct Event { public int kind, slot, castKind, motion, voice, charge; }
+    public struct Event
+    {
+        public int kind, slot, castKind, motion, voice, charge, stage, atkp, subId;
+        public float radius, height, life, speed, posX, posY, posZ, dirX, dirY, dirZ;
+        public int amount, hp;
+    }
+
+    [DllImport(Lib)] public static extern int kh2_damage(int handle, int atkp, int subId, int defense, int maxHp, int weakness, int general);
+    [DllImport(Lib)] public static extern int kh2_set_level(int handle, int level);
 
     [DllImport(Lib)] public static extern int kh2_cast(int handle, int slot);
     [DllImport(Lib)] public static extern int kh2_set_magic_levels(int handle, byte[] levels);

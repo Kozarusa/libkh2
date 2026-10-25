@@ -20,7 +20,7 @@
 
 /* The version this header describes; kh2_version() returns the library's (same packing). */
 #define KH2_VERSION_MAJOR 0
-#define KH2_VERSION_MINOR 2
+#define KH2_VERSION_MINOR 3
 #define KH2_VERSION_PATCH 0
 #define KH2_VERSION ((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)
 
@@ -192,9 +192,21 @@ KH2_API int32_t kh2_set_mp(int32_t handle, int32_t mp, int32_t max_mp);
 #define KH2_EV_CAST_CANCELLED 3 /* the motion changed before the trigger: no spell, no cost */
 #define KH2_EV_MP_RESTORED 4    /* the MP charge ended */
 #define KH2_EV_FORM_CHANGED 5   /* slot = new form (0 base), cast_kind = old form */
+#define KH2_EV_SPELL_ATTACK 6   /* slot, stage, atkp/sub_id row, radius/height/life/speed, pos, dir */
+#define KH2_EV_HEALED 7         /* amount, hp */
 typedef struct kh2_event {
     int32_t kind, slot, cast_kind, motion, voice, charge;
+    int32_t stage, atkp, sub_id;  /* spell attack: stage and its atkp row (for kh2_damage) */
+    float radius, height;         /* the stage's size (magi row) */
+    float life, speed;            /* ticks the stage lasts (0: one shot), units per tick */
+    float pos[3], dir[3];         /* where it starts and which way it goes */
+    int32_t amount, hp;           /* healed */
 } kh2_event;
+/* The damage of one of Sora's attack rows (sub_id -1: first variant) against a target's defense,
+ * max HP (type 5 rows) and element / general percents (100 neutral). -1: unknown row. */
+KH2_API int32_t kh2_damage(int32_t handle, int32_t atkp, int32_t sub_id, int32_t defense, int32_t max_hp, int32_t weakness, int32_t general);
+/* Level 1..99: strength, magic, defense from the disc's lvup row plus the Kingdom Key. */
+KH2_API int32_t kh2_set_level(int32_t handle, int32_t level);
 /* Takes the oldest event: 1 written, 0 none left. */
 KH2_API int32_t kh2_poll_event(int32_t handle, kh2_event *out);
 

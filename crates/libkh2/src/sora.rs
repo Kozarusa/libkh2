@@ -295,6 +295,12 @@ pub struct Sora {
     pub charge: kh2_game_core::magic_rules::Charge,
     /// Spell levels per magic slot (0 = not owned): Fire, Blizzard, Thunder, Cure, Magnet, Reflect.
     pub magic_levels: [u8; 6],
+    /// Sora's level and status (kh2-rs `GameData::sora_stats`: `lvup` row plus the Kingdom Key).
+    pub level: i32,
+    pub exp: i32,
+    pub strength: i32,
+    pub magic: i32,
+    pub defense: i32,
     /// A cast request: (slot, ticks it is still tried).
     pub cast_request: Option<(u8, u8)>,
     pub cast: Option<Cast>,
@@ -320,6 +326,12 @@ pub struct Sora {
 
 impl Sora {
     pub fn new(game: Arc<Game>, at: Vec3) -> Sora {
+        let mut s = Sora::bare(game, at);
+        s.set_level(1);
+        s
+    }
+
+    fn bare(game: Arc<Game>, at: Vec3) -> Sora {
         let body = Anim::new(game.sora.clone());
         let weapon = game.keyblade.clone().map(Anim::new);
         let max_hp = game.params.max_hp;
@@ -357,6 +369,11 @@ impl Sora {
             max_mp,
             charge: Default::default(),
             magic_levels: [1, 1, 1, 1, 0, 0],
+            level: 1,
+            exp: 0,
+            strength: 0,
+            magic: 0,
+            defense: 0,
             cast_request: None,
             cast: None,
             events: Vec::new(),
@@ -1018,6 +1035,7 @@ impl Sora {
         cast.paid = true;
         self.cast = Some(cast);
         self.events.push(Event::SpellFired { slot: cast.slot, kind: cast.kind, charge });
+        self.spell_stages(&cast);
     }
 
     /// The drive request (kh2-rs `drive_tick`, `DriveRequest::Enter`): the entry checks, the Anti /
@@ -1169,6 +1187,83 @@ impl Sora {
         } else if self.drive.change.is_none() {
             self.drive.points.gain(drain as i32);
         }
+    }
+
+    /// Sets the level and rebuilds the status from the `lvup` row (kh2-rs `GameData::sora_stats`:
+    /// row `level - 1`, defaults 2 / 6 / 2 without a table, plus the Kingdom Key's attack and magic).
+    pub fn set_level(&mut self, level: i32) {
+        let p = &self.game.params;
+        let level = level.clamp(1, p.levels.len().max(1) as i32);
+        let l = p.levels.get((level - 1) as usize);
+        self.level = level;
+        self.strength = l.map_or(2, |l| l.strength as i32) + p.weapon_attack;
+        self.magic = l.map_or(6, |l| l.magic as i32) + p.weapon_magic;
+        self.defense = l.map_or(2, |l| l.defense as i32);
+    }
+
+    /// The attack stages of a fired spell (kh2-rs `magic.rs` event 21 and the spell objects): the
+    /// `atkp` ids are the spells' (`ATKP_FIRE` 502, Blizzard 248, Thunder 250 / 251 strikes and
+    /// 249 column, Cure 708 on the caster), the row is `attack_row(id, kind)`, the sizes are the
+    /// `magi` row's (Fire radius / height / time at 0x0 / 0x4 / 0x8; Blizzard life / speed / shot size
+    /// at 0x10 / 0x14 / 0x18; Thunder strike radius 0x24, column height / radius 0x28 / 0x2c, time
+    /// 0x34; Cure range 0x38). decided: the spell objects' flight (Blizzard's homing, Thunder's
+    /// strike pattern over several targets) is the host's; one strike lands on the target point, or
+    /// in front of Sora without one. Cure heals Sora with `heal_amount` / `healed`.
+    fn spell_stages(&mut self, cast: &Cast) {
+        use kh2_game_core::magic_rules as rules;
+        let p = self.game.params.clone();
+        let magi = rules::magi_row(&p.magi, cast.kind).cloned().unwrap_or_default();
+        let fwd = self.motor.forward();
+        let chest = self.motor.pos + Vec3::Y * 100.0;
+        let row = |id: u16| rules::attack_row(&p.atkp, id, cast.kind).or_else(|| rules::attack_row(&p.atkp, id, 0)).map(|i| &p.atkp[i]);
+        let push = |s: &mut Sora, stage: u8, id: u16, radius: f32, height: f32, life: f32, speed: f32, pos: Vec3, dir: Vec3| {
+            if let Some(r) = row(id) {
+                s.events.push(Event::SpellAttack { slot: cast.slot, stage, atkp: r.id, sub_id: r.sub_id, radius, height, life, speed, pos, dir });
+            }
+        };
+        match cast.slot {
+            0 => push(self, 0, 502, magi.f(0x0), magi.f(0x4), magi.f(0x8), 0.0, chest, fwd),
+            1 => push(self, 0, 248, magi.f(0x18), magi.f(0x18), magi.f(0x10), magi.f(0x14), chest, fwd),
+            2 => {
+                let at = self.target.map_or(self.motor.pos + fwd * 300.0, |t| t.pos);
+                let strike = if self.motor.grounded { 250 } else { 251 };
+                push(self, 0, strike, magi.f(0x24), 0.0, 0.0, 0.0, at, -Vec3::Y);
+                push(self, 1, 249, magi.f(0x2c), magi.f(0x28), magi.f(0x34), 0.0, at, Vec3::Y);
+            }
+            3 => {
+                if let Some(r) = row(708).cloned() {
+                    push(self, 0, 708, magi.f(0x38), 0.0, 0.0, 0.0, chest, Vec3::Y);
+                    let heal = rules::heal_amount(&r, self.strength, self.magic);
+                    let before = self.hp;
+                    self.hp = rules::healed(self.hp, self.max_hp, heal);
+                    self.events.push(Event::Healed { amount: self.hp - before, hp: self.hp });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The damage one of Sora's attack rows deals to a target (kh2-rs `GameData::damage`, the
+    /// game's damage routine): `weakness` is the target's percent for the row's element,
+    /// `general` its general percent, `max_hp` for type 5 rows. The caps are the player's (none).
+    pub fn damage(&self, atkp: u16, sub_id: Option<u16>, defense: i32, max_hp: i32, weakness: i32, general: i32) -> Option<i32> {
+        let p = &self.game.params;
+        let a = match sub_id {
+            Some(s) => p.atkp.iter().find(|r| r.id == atkp && r.sub_id == s),
+            None => p.atkp(atkp as i16),
+        }?;
+        let stat = if a.critical_adjust == 1 { self.magic } else { self.strength };
+        let power = a.power as i32;
+        let dmg = match a.r#type {
+            5 => (max_hp * stat * power + 9999) / 10000,
+            6 => (stat * power + 99) / 100,
+            _ => {
+                // decided: the target's damage caps are not known here; the floor is 1 (kh2-rs min_taken).
+                let base = (stat - defense).max(1);
+                ((base as i64 * power as i64 * weakness as i64 * general as i64 + 999_999) / 1_000_000) as i32
+            }
+        };
+        Some(dmg.max(0))
     }
 
     /// The input of the last tick.
@@ -1352,6 +1447,12 @@ pub enum Event {
     CastCancelled { slot: u8 },
     /// The MP charge ended and MP is full again.
     MpRestored,
+    /// One attack stage of a fired spell (kh2-rs `magic.rs` event 21): the `atkp` row (id, sub id)
+    /// the host's hit test uses, the stage's size from the spell's `magi` row, where it starts and
+    /// which way it goes. `life` is the stage's time in ticks (0: one shot), `speed` units per tick.
+    SpellAttack { slot: u8, stage: u8, atkp: u16, sub_id: u16, radius: f32, height: f32, life: f32, speed: f32, pos: Vec3, dir: Vec3 },
+    /// HP restored (Cure on Sora, an item): the amount and the HP after it.
+    Healed { amount: i32, hp: i32 },
     /// The body changed: drive form `to` (0 = base Sora) replaced form `from`.
     FormChanged { from: u8, to: u8 },
 }
