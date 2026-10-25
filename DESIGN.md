@@ -155,6 +155,13 @@ digest outside git. decided: no live comparison with kh2-rs's Bevy app (it would
 app headless); the comparison points with kh2-rs are its own test values (the 185-unit jump's
 30.1-tick rise) and the shared rule code itself.
 
+## 4c. Polish (step 8)
+
+Every C entry point runs inside `catch_unwind` (`ffi::guard` / `ffi::with`), so a bug becomes an
+error return; a mutex poisoned by such a panic is taken over (the state is plain data). The
+release profile therefore unwinds instead of aborting (+225 KB). The header carries
+`KH2_VERSION`; the crate version is 0.2.0.
+
 ## 5. Risks and next steps
 
 * kh2-rs's files are compiled in place; an API change there breaks libkh2's build (fix at the call

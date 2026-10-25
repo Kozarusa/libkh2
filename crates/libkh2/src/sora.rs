@@ -309,7 +309,7 @@ pub struct Sora {
     /// The form being entered (loaded before the change motion ends).
     pub pending_form: Option<Arc<crate::drive::FormAssets>>,
     /// The base body while a form is active: body, keyblade, attack table, leaps, growth.
-    pub base: Option<(Arc<Rig>, Option<Arc<Rig>>, Arc<moveset::Moveset>, Arc<crate::data::AttackLeaps>, Growth)>,
+    pub base: Option<BaseBody>,
     /// Evaluate the skeleton every tick (the bone matrices, the leap's own target point and the
     /// attack volumes need it).
     pub pose: bool,
@@ -1366,6 +1366,9 @@ pub struct Cast {
     pub cost: u8,
     pub paid: bool,
 }
+
+/// The base body kept while a form is active: body, keyblade, attack table, leaps, growth.
+pub type BaseBody = (Arc<Rig>, Option<Arc<Rig>>, Arc<moveset::Moveset>, Arc<crate::data::AttackLeaps>, Growth);
 
 /// What a hit did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

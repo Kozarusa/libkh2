@@ -3,7 +3,7 @@
 # the files libkh2 compiles in place and the files it transcribes. Read-only: only `git diff`.
 # Exit 1 when any of them changed. Run from the repository root.
 set -e
-pinned=$(cat KH2RS_COMMIT)
+pinned=$(tr -d '\r\n' < KH2RS_COMMIT)
 kh2rs=../kh2-rs
 compiled="crates/kh2-game-core/src/motor.rs crates/kh2-game-core/src/world.rs crates/kh2-game-core/src/reaction_rules.rs crates/kh2-game-core/src/camera_rules.rs crates/kh2-game-core/src/magic_rules.rs crates/kh2-game-core/src/shared/drive.rs crates/kh2-player/src/controller_rules.rs"
 transcribed="crates/kh2-player/src/sora.rs crates/kh2-game-core/src/skel.rs crates/kh2-game-core/src/camera.rs crates/kh2-player/src/drive.rs crates/kh2-player/src/magic.rs crates/kh2-game-core/src/combat.rs crates/kh2-game-core/src/shared/sora.rs"

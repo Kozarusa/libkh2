@@ -17,6 +17,10 @@ static void quad(kh2_surface *t, const float a[3], const float b[3], const float
 
 int main(int argc, char **argv) {
     char err[256];
+    if ((kh2_version() >> 8) != (KH2_VERSION >> 8)) {
+        fprintf(stderr, "kh2.h is %x, the library %x\n", KH2_VERSION, kh2_version());
+        return 1;
+    }
     if (kh2_init(argc > 1 ? argv[1] : NULL) != 0) {
         kh2_last_error(err, sizeof err);
         fprintf(stderr, "kh2_init: %s\n", err);
@@ -49,6 +53,24 @@ int main(int argc, char **argv) {
                    t, st.pos[0], st.pos[1], st.pos[2], st.yaw, st.state, st.motion_id, tag, st.frame, st.combo, st.attack_active);
         }
     }
+    /* Magic: Fire, with its events; the field camera following Sora. */
+    kh2_cast(h, 0);
+    kh2_cam_input ci = {0};
+    kh2_cam_view cv;
+    kh2_event ev;
+    for (int t = 0; t < 120; t++) {
+        kh2_inputs in = {0};
+        in.cam_look_x = 1.0f;
+        kh2_tick(h, &in, &st);
+        if (kh2_camera_tick(h, &ci, &cv) == 0 && t % 40 == 0)
+            printf("camera t=%3d pos=(%7.1f %6.1f %7.1f) look=(%7.1f %6.1f %7.1f) fov=%.2f\n", t, cv.pos[0], cv.pos[1], cv.pos[2], cv.look[0], cv.look[1], cv.look[2], cv.fov);
+        while (kh2_poll_event(h, &ev) == 1)
+            printf("event t=%3d kind=%d slot=%d cast_kind=%d motion=%d -> MP %d/%d\n", t, ev.kind, ev.slot, ev.cast_kind, ev.motion, st.mp, st.max_mp);
+    }
+    /* A hit taken from the front (Sora faces +x) with attack row 0. */
+    int hit = kh2_hit_taken(h, 0, 3, -1, 0, 0);
+    kh2_get_state(h, &st);
+    printf("hit: %d, state %d, HP %d/%d\n", hit, st.state, st.hp, st.max_hp);
     int n = kh2_bone_count(h, 0);
     printf("body bones: %d, keyblade bones: %d\n", n, kh2_bone_count(h, 1));
     kh2_delete(h);

@@ -33,7 +33,8 @@ sh examples/build_min.sh && build/min <disc image>     # Linux / macOS
 
 Pure-Rust example host: `cargo run --release -p libkh2 --example host -- <disc image>`.
 
-Unity: `unity/Kh2.cs` (P/Invoke bindings and a `MonoBehaviour` driver; documented, not built here).
+Unity: `unity/Kh2.cs` (P/Invoke bindings and a `MonoBehaviour` driver) and the sample scene in
+`docs/UNITY.md` (documented, not built here).
 
 ## API tour
 
@@ -80,14 +81,25 @@ kh2_delete(h); kh2_terminate();
   (Git Bash on Windows) lists changes in the kh2-rs files compiled in place, the transcribed ones
   and the path dependencies since then, and exits 1 on drift.
 
+## Threads, errors, versions
+
+* One library state per process behind a mutex: every call may come from any thread; calls are
+  serialised, so tick Sora instances from one thread for predictable timing.
+* No call panics or aborts across the C ABI: internal errors (including a caught panic) return -1
+  and `kh2_last_error` says why. Pointers are only read during the call.
+* `KH2_VERSION` in `kh2.h` and `kh2_version()` (major << 16 | minor << 8 | patch); the C example
+  refuses a library whose major.minor differs.
+* Linux / macOS: `examples/build_min.sh` and the Rust build are written for them but untested
+  here (only Windows with MSVC was run).
+
 ## Numbers (this machine, release build)
 
 | | |
 |---|---|
-| `kh2.dll` | about 375 KB (thin LTO, stripped, panic = abort) |
+| `kh2.dll` | about 600 KB (thin LTO, stripped, unwinding for the FFI guard) |
 | clean release build | seconds; 16 crates, glam the only third-party one, no Bevy |
-| tick without pose | about 0.5 us |
-| tick with pose (body 228 bones + keyblade 12, full rig) | about 22 us |
+| tick without pose | about 0.3 us |
+| tick with pose (body 228 bones + keyblade 12, full rig) | about 14 us |
 
 ## What works, what does not
 

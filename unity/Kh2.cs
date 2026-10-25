@@ -66,6 +66,7 @@ public static class Kh2
     }
 
     [DllImport(Lib)] public static extern int kh2_init(string isoPath);
+    [DllImport(Lib)] public static extern uint kh2_version();
     [DllImport(Lib)] public static extern void kh2_terminate();
     [DllImport(Lib)] public static extern uint kh2_last_error(byte[] buf, uint len);
     [DllImport(Lib)] public static extern int kh2_surfaces_load([In] Surface[] tris, uint count);

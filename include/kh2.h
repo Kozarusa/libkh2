@@ -9,12 +9,20 @@
  * (sin yaw, 0, cos yaw). Matrices are 16 floats, column-major.
  *
  * Every function returns -1 (or a negative value) on error; kh2_last_error explains it.
- * The library keeps one global state (like libsm64) guarded by a mutex.
+ * The library keeps one global state (like libsm64) guarded by a mutex: every call is safe from any
+ * thread and calls are serialised (no parallel ticks). Pointers passed in are only read during the
+ * call. No call panics or aborts through the ABI: internal errors return -1 with a message.
  */
 #ifndef KH2_H
 #define KH2_H
 
 #include <stdint.h>
+
+/* The version this header describes; kh2_version() returns the library's (same packing). */
+#define KH2_VERSION_MAJOR 0
+#define KH2_VERSION_MINOR 2
+#define KH2_VERSION_PATCH 0
+#define KH2_VERSION ((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)
 
 #ifdef _WIN32
 #define KH2_API __declspec(dllimport)
@@ -107,6 +115,7 @@ typedef struct kh2_volume {
 /* Opens the disc image (NULL: the KH2_ISO environment variable) and loads Sora's model, motion
  * set, keyblade, attack table and movement parameters. Nothing is copied out of the disc. */
 KH2_API int32_t kh2_init(const char *iso_path);
+KH2_API uint32_t kh2_version(void);
 KH2_API void kh2_terminate(void);
 /* The last error message; returns its full length. */
 KH2_API uint32_t kh2_last_error(char *buf, uint32_t len);
@@ -204,16 +213,16 @@ KH2_API int32_t kh2_drive_objects(int32_t handle, int32_t out[3]);
 KH2_API int32_t kh2_drive_outgoing_damage(int32_t handle, int32_t atk_type, int32_t damage);
 
 /* ---- Animation export (any slot, independent of what Sora plays; see docs/SKINNING.md) ---- */
-typedef struct kh2_motion_info {
+typedef struct kh2_motion_desc {
     float frame_start, frame_end, frame_return;
     float fps;              /* the animator steps fps / 60 frames per 60 Hz tick */
     int32_t has_root_motion;
     char tag[8];            /* e.g. "A300" */
-} kh2_motion_info;
+} kh2_motion_desc;
 KH2_API int32_t kh2_motion_slot_count(int32_t handle, int32_t which);
 /* variant: 0 battle + weapon, 1 battle, 2 field, 3 field + weapon (the game's fallback applies). */
 KH2_API int32_t kh2_motion_slot(int32_t handle, int32_t which, int32_t motion_id, int32_t variant);
-KH2_API int32_t kh2_motion_info(int32_t handle, int32_t which, int32_t slot, kh2_motion_info *out);
+KH2_API int32_t kh2_motion_info(int32_t handle, int32_t which, int32_t slot, kh2_motion_desc *out);
 /* Bone matrices of `slot` at `frame` relative to the motion's root; root = (x, y, z, yaw) or NULL. */
 KH2_API int32_t kh2_sample_motion(int32_t handle, int32_t which, int32_t slot, float frame, float *out, uint32_t max_bones, float *root);
 

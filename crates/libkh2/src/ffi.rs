@@ -91,16 +91,44 @@ fn set_error(e: impl std::fmt::Display) -> i32 {
     -1
 }
 
+/// Runs `f` and turns a panic into an error return: no panic crosses the C ABI (the release
+/// profile unwinds for this). The panic message goes to `kh2_last_error`.
+fn guard<R>(fallback: R, f: impl FnOnce() -> R) -> R {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(r) => r,
+        Err(p) => {
+            let msg = p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_default();
+            set_error(format!("internal error (panic): {msg}"));
+            fallback
+        }
+    }
+}
+
+/// The library state, locked. A lock poisoned by an earlier panic is taken over: the state is
+/// plain data and every entry point leaves it consistent between ticks.
+fn lib() -> std::sync::MutexGuard<'static, Option<Lib>> {
+    LIB.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn with<R>(fallback: R, f: impl FnOnce(&mut Lib) -> R) -> R {
-    match LIB.lock() {
-        Ok(mut g) => match g.as_mut() {
-            Some(l) => f(l),
-            None => {
-                set_error("kh2_init has not run");
-                fallback
+    let mut g = lib();
+    match g.as_mut() {
+        Some(l) => {
+            let mut fallback = Some(fallback);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(l)));
+            match r {
+                Ok(v) => v,
+                Err(p) => {
+                    let msg = p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_default();
+                    set_error(format!("internal error (panic): {msg}"));
+                    fallback.take().unwrap()
+                }
             }
-        },
-        Err(_) => fallback,
+        }
+        None => {
+            set_error("kh2_init has not run");
+            fallback
+        }
     }
 }
 
@@ -111,6 +139,10 @@ fn with<R>(fallback: R, f: impl FnOnce(&mut Lib) -> R) -> R {
 /// `iso_path` is NULL or a NUL-terminated UTF-8 path.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kh2_init(iso_path: *const c_char) -> i32 {
+    guard(-1, || unsafe { init(iso_path) })
+}
+
+unsafe fn init(iso_path: *const c_char) -> i32 {
     let path = if iso_path.is_null() {
         match std::env::var_os("KH2_ISO") {
             Some(p) => PathBuf::from(p),
@@ -130,21 +162,21 @@ pub unsafe extern "C" fn kh2_init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    match LIB.lock() {
-        Ok(mut g) => {
-            *g = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default() });
-            0
-        }
-        Err(e) => set_error(e),
-    }
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default() });
+    0
+}
+
+/// The library version: major << 16 | minor << 8 | patch (compare with `KH2_VERSION` in kh2.h).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_version() -> u32 {
+    let n = |s: &str| s.parse::<u32>().unwrap_or(0);
+    (n(env!("CARGO_PKG_VERSION_MAJOR")) << 16) | (n(env!("CARGO_PKG_VERSION_MINOR")) << 8) | n(env!("CARGO_PKG_VERSION_PATCH"))
 }
 
 /// Frees everything `kh2_init` loaded.
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_terminate() {
-    if let Ok(mut g) = LIB.lock() {
-        *g = None;
-    }
+    guard((), || *lib() = None);
 }
 
 /// Copies the last error message (NUL-terminated, cut to `len`); returns its full length.
