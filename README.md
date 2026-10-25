@@ -219,3 +219,12 @@ the bonus levels (`bons`), which are not ported. Save record: `kh2_state_save` /
 ("KH2S" v1, the status and the place, not the moment; malformed records are refused unchanged).
 Replays: `battle_replays_the_same` runs Sora, Donald, Goofy and three enemies twice and compares
 every tick (and a golden digest file); the members' generator word is kept per party.
+
+Robustness: `tests/fuzz.rs` calls the C API at random (NULLs, stray handles and indices, huge and
+non-finite numbers, damaged save records) before `kh2_init` and, with `KH2_ISO`, after it with
+Sora, the party and enemies; a panic hook fails the run on any panic (even one the guard catches),
+a watchdog on a hang, and a fresh Sora must still tick at the end (`KH2_FUZZ_STEPS`,
+`KH2_FUZZ_SEED`). decided: positions, targets, spawn points and collision vertices must be finite
+and within 1e7 units (else -1); sticks are held to -1..1 (NaN 0); max HP/MP to 9999; damage to
+0..999,999. The full function list with the header's comments: `docs/API-REFERENCE.md`, generated
+by `python scripts/gen_api_ref.py` (`--check` tells whether it is up to date).

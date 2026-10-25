@@ -219,6 +219,9 @@ unsafe fn write_str(s: &str, buf: *mut c_char, len: u32) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kh2_surfaces_load(tris: *const Surface, count: u32) -> i32 {
     let tris = if count == 0 || tris.is_null() { &[][..] } else { unsafe { std::slice::from_raw_parts(tris, count as usize) } };
+    if !tris.iter().all(|t| t.v.iter().all(|&v| in_world(v))) {
+        return set_error("a vertex is not finite or lies beyond 1e7 units");
+    }
     with(-1, |l| {
         l.world = world_from_surfaces(tris);
         l.world.tris.len() as i32
@@ -251,9 +254,25 @@ pub extern "C" fn kh2_set_collision(group: u32, solid: i32) {
     with((), |l| l.world.set_group(group, solid != 0));
 }
 
+/// decided: places the library accepts: finite and within 1e7 units (100 km) of the origin. The
+/// collision grid and the movers are sized by positions; a stray huge one must not reach them.
+const WORLD_LIMIT: f32 = 1.0e7;
+
+fn in_world(p: [f32; 3]) -> bool {
+    p.iter().all(|c| c.is_finite() && c.abs() <= WORLD_LIMIT)
+}
+
+/// A stick or look value: NaN and infinities become 0, the rest is held to -1..1 (stick) or kept.
+fn finite_or_zero(v: f32) -> f32 {
+    if v.is_finite() { v } else { 0.0 }
+}
+
 /// Creates a Sora standing at (x, y, z). Returns its handle, or -1.
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_create(x: f32, y: f32, z: f32) -> i32 {
+    if !in_world([x, y, z]) {
+        return set_error("the position is not finite or lies beyond 1e7 units");
+    }
     with(-1, |l| {
         let mut s = Sora::new(l.game.clone(), Vec3::new(x, y, z));
         // Settle on the floor below the start point, if there is one within a step.
@@ -306,8 +325,8 @@ fn sora_do<R>(h: i32, fallback: R, f: impl FnOnce(&mut Sora, &World) -> R) -> R 
 
 fn input_of(i: &Kh2Inputs) -> Input {
     Input {
-        stick: [i.stick_x, i.stick_y],
-        cam_look: [i.cam_look_x, i.cam_look_z],
+        stick: [finite_or_zero(i.stick_x).clamp(-1.0, 1.0), finite_or_zero(i.stick_y).clamp(-1.0, 1.0)],
+        cam_look: [finite_or_zero(i.cam_look_x).clamp(-1.0e6, 1.0e6), finite_or_zero(i.cam_look_z).clamp(-1.0e6, 1.0e6)],
         attack: i.buttons & KH2_BTN_ATTACK != 0,
         jump: i.buttons & KH2_BTN_JUMP != 0,
         guard: i.buttons & KH2_BTN_GUARD != 0,
@@ -403,6 +422,10 @@ pub unsafe extern "C" fn kh2_get_state(handle: i32, state: *mut Kh2State) -> i32
 /// Moves Sora to (x, y, z) (a warp: velocity and jump cleared, state ground or air by the floor).
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_set_position(handle: i32, x: f32, y: f32, z: f32, yaw: f32) -> i32 {
+    if !in_world([x, y, z]) || !yaw.is_finite() {
+        return set_error("the position is not finite or lies beyond 1e7 units");
+    }
+    let yaw = kh2_game_core::motor::wrap_angle(yaw % std::f32::consts::TAU);
     sora_do(handle, -1, |s, w| {
         let capsule = s.motor.capsule;
         s.motor = kh2_game_core::motor::Motor { pos: Vec3::new(x, y, z), yaw, capsule, ..Default::default() };
@@ -427,6 +450,9 @@ pub extern "C" fn kh2_set_position(handle: i32, x: f32, y: f32, z: f32, yaw: f32
 /// height, world units. Feeds the attack table's range tests, the attack lunge, turn and leap.
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_set_target(handle: i32, x: f32, y: f32, z: f32, radius: f32, half_height: f32) -> i32 {
+    if !in_world([x, y, z]) || !in_world([radius, half_height, 0.0]) {
+        return set_error("the target is not finite or lies beyond 1e7 units");
+    }
     sora_do(handle, -1, |s, _| {
         s.target = Some(Target { pos: Vec3::new(x, y, z), radius, half_height });
         0
@@ -464,7 +490,8 @@ pub extern "C" fn kh2_hit_taken(handle: i32, atkp: i32, damage: i32, dir_x: f32,
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_set_hp(handle: i32, hp: i32, max_hp: i32) -> i32 {
     sora_do(handle, -1, |s, _| {
-        s.max_hp = max_hp.max(1);
+        // decided: maxima held to 9999 (the save record's range; the game's stay far below).
+        s.max_hp = max_hp.clamp(1, 9999);
         s.hp = hp.clamp(0, s.max_hp);
         0
     })
@@ -722,7 +749,8 @@ pub unsafe extern "C" fn kh2_camera_tick(handle: i32, input: *const Kh2CamInput,
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_camera_reset(handle: i32, row: i32) -> i32 {
     with(-1, |l| {
-        let Ok(k) = usize::try_from(handle) else { return -1 };
+        // Only for a live Sora (a stray handle must not size the camera table).
+        let Some(k) = usize::try_from(handle).ok().filter(|&k| l.soras.get(k).is_some_and(Option::is_some)) else { return set_error(format!("no Sora with handle {handle}")) };
         if l.cameras.len() <= k {
             l.cameras.resize_with(k + 1, || None);
         }
@@ -780,7 +808,7 @@ pub unsafe extern "C" fn kh2_set_magic_levels(handle: i32, levels: *const u8) ->
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_set_mp(handle: i32, mp: i32, max_mp: i32) -> i32 {
     sora_do(handle, -1, |s, _| {
-        s.max_mp = max_mp.max(0);
+        s.max_mp = max_mp.clamp(0, 9999);
         s.mp = mp.clamp(0, s.max_mp);
         0
     })
@@ -1172,6 +1200,10 @@ pub unsafe extern "C" fn kh2_enemy_spawn(handle: i32, kind: *const c_char, x: f3
         return set_error("no enemy kind");
     }
     let Ok(kind) = unsafe { CStr::from_ptr(kind) }.to_str().map(str::to_string) else { return set_error("kind is not UTF-8") };
+    if !in_world([x, y, z]) || !yaw.is_finite() {
+        return set_error("the position is not finite or lies beyond 1e7 units");
+    }
+    let yaw = yaw % std::f32::consts::TAU;
     with(-1, |l| {
         if l.enemy_data.is_none() {
             match l.disc.enemies() {

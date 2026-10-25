@@ -1320,15 +1320,20 @@ impl Sora {
         let berserk = self.loadout.as_ref().map_or(0, |l| kh2_game_core::abilities::berserk_for_row(l.block(), self.charge.active(), a.critical_adjust));
         let stat = if a.critical_adjust == 1 { self.magic } else { self.strength + berserk };
         let power = a.power as i32;
+        // In i64 and saturating: the host passes any numbers (the game's own stay far below).
+        let (stat, power) = (stat as i64, power as i64);
         let dmg = match a.r#type {
-            5 => (max_hp * stat * power + 9999) / 10000,
-            6 => (stat * power + 99) / 100,
+            5 => (max_hp as i64).saturating_mul(stat).saturating_mul(power).saturating_add(9999) / 10000,
+            6 => stat.saturating_mul(power).saturating_add(99) / 100,
             _ => {
                 // decided: the target's damage caps are not known here; the floor is 1 (kh2-rs min_taken).
-                let base = (stat - defense).max(1);
-                ((base as i64 * power as i64 * weakness as i64 * general as i64 + 999_999) / 1_000_000) as i32
+                let base = stat.saturating_sub(defense as i64).max(1);
+                base.saturating_mul(power).saturating_mul(weakness as i64).saturating_mul(general as i64).saturating_add(999_999) / 1_000_000
             }
-        };
+        }
+        // decided: held to 0..=999,999 (beyond any HP), so the ability percentages that follow
+        // (kh2-rs `attacker_bonuses`, i32) cannot overflow.
+        .clamp(0, 999_999) as i32;
         let dmg = match &self.loadout {
             Some(l) => kh2_game_core::abilities::attacker_bonuses(l.block(), self.hits, a, dmg),
             None => dmg,
@@ -1458,7 +1463,12 @@ impl Sora {
         let p = self.game.params.clone();
         let low = self.max_hp > 0 && self.hp as f32 / self.max_hp as f32 <= p.low_hp_fraction;
         let mult = low.then(|| self.loadout.as_ref().map_or(1, |l| i32::from(l.block().exp_multiplier)));
-        let amount = kh2_game_core::items::defeat_payout(table, row, mult);
+        // kh2-rs `defeat_payout` multiplies in i32; the game's values (lvpm and enmp Experience)
+        // stay far below its limit. Larger host values are paid as the experience cap instead of
+        // overflowing.
+        let product = i64::from(table) * i64::from(row) + 99;
+        let fits = product <= i64::from(i32::MAX) && (product / 100).saturating_mul(i64::from(mult.unwrap_or(1)).abs()) <= i64::from(i32::MAX);
+        let amount = if fits { kh2_game_core::items::defeat_payout(table, row, mult) } else { 9_999_999 };
         if amount <= 0 {
             return 0;
         }
