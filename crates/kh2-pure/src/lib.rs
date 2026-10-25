@@ -27,3 +27,14 @@ pub mod camera_rules;
 #[path = "../../../../kh2-rs/crates/kh2-game-core/src/magic_rules.rs"]
 #[allow(dead_code)]
 pub mod magic_rules;
+
+/// kh2-rs `shared::drive::rules` (drive points, form timer, form choice, entry checks, memt merge,
+/// weapon lookup), extracted from kh2-rs's source by `build.rs`.
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod drive_rules {
+    use kh2_tables::player::{self, form, DriveForm, FormLevels, Memt, Sstm};
+    use kh2_tables::tables as t;
+    /// `data::KINGDOM_KEY` (an item id the rules may name).
+    pub const KINGDOM_KEY: u16 = 41;
+    include!(concat!(env!("OUT_DIR"), "/drive_rules.rs"));
+}

@@ -54,6 +54,12 @@ pub struct Kh2State {
     pub max_mp: i32,
     /// MP charge frames left (0 when no charge runs).
     pub mp_charge: f32,
+    /// Drive: the active form (0 none), gauge points, fraction 0..99, form time left / total.
+    pub form: i32,
+    pub drive_points: i32,
+    pub drive_fraction: i32,
+    pub form_time: f32,
+    pub form_time_total: f32,
 }
 
 #[repr(C)]
@@ -71,6 +77,7 @@ struct Lib {
     disc: Disc,
     world: World,
     soras: Vec<Option<Sora>>,
+    forms: std::collections::HashMap<u8, Arc<crate::drive::FormAssets>>,
     cameras: Vec<Option<crate::camera::Camera>>,
 }
 
@@ -125,7 +132,7 @@ pub unsafe extern "C" fn kh2_init(iso_path: *const c_char) -> i32 {
     };
     match LIB.lock() {
         Ok(mut g) => {
-            *g = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new() });
+            *g = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default() });
             0
         }
         Err(e) => set_error(e),
@@ -293,6 +300,11 @@ fn state_of(s: &Sora) -> Kh2State {
         mp: s.mp,
         max_mp: s.max_mp,
         mp_charge: s.charge.left,
+        form: if s.drive.in_form { i32::from(s.drive.form) } else { 0 },
+        drive_points: i32::from(s.drive.points.whole),
+        drive_fraction: i32::from(s.drive.points.fraction),
+        form_time: s.drive.timer.left,
+        form_time_total: s.drive.timer.total,
     }
 }
 
@@ -741,8 +753,111 @@ pub unsafe extern "C" fn kh2_poll_event(handle: i32, out: *mut Kh2Event) -> i32 
             E::SpellFired { slot, kind, charge } => Kh2Event { kind: 2, slot: slot.into(), cast_kind: kind as i32, motion: -1, voice: -1, charge: charge as i32 },
             E::CastCancelled { slot } => Kh2Event { kind: 3, slot: slot.into(), cast_kind: -1, motion: -1, voice: -1, charge: 0 },
             E::MpRestored => Kh2Event { kind: 4, slot: -1, cast_kind: -1, motion: -1, voice: -1, charge: 0 },
+            E::FormChanged { from, to } => Kh2Event { kind: 5, slot: to.into(), cast_kind: from.into(), motion: -1, voice: -1, charge: 0 },
         };
         unsafe { *out = v };
         1
+    })
+}
+
+/// Drive gauge and forms: gauge points and maximum, the owned forms (bit 1 Valor, 2 Wisdom,
+/// 3 Master, 4 Final; bit 5 Anti is never owned) and the form levels (6 bytes by form id).
+///
+/// # Safety
+/// `levels` is NULL or points to 6 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_drive_setup(handle: i32, points: u8, max_points: u8, owned_mask: u32, levels: *const u8) -> i32 {
+    let lv: Option<[u8; 6]> = (!levels.is_null()).then(|| unsafe { std::ptr::read(levels as *const [u8; 6]) });
+    sora_do(handle, -1, |s, _| {
+        let d = &mut s.drive;
+        d.points.max = max_points;
+        d.points.whole = points.min(max_points);
+        d.points.fraction = 0;
+        d.owned = std::array::from_fn(|i| owned_mask >> i & 1 != 0 && i != 5);
+        if let Some(l) = lv {
+            d.level = l;
+        }
+        0
+    })
+}
+
+/// Adds drive gauge (percent of a point; 100 = one point), outside a form.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_drive_gain(handle: i32, percent: i32) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        if !s.drive.in_form {
+            s.drive.points.gain(percent);
+        }
+        0
+    })
+}
+
+/// A landed hit with the attack row id: the combo latch (as `kh2_report_hit`) and the row's
+/// DriveDrain (gauge gain, or form time lost in a form).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_report_hit_atkp(handle: i32, atkp: i32) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        s.connected = true;
+        s.drive_hit(atkp as i16);
+        0
+    })
+}
+
+/// Enters drive form `form` (1 Valor, 2 Wisdom, 3 Master, 4 Final) through the entry checks and
+/// the Anti / Final roll. Returns the form entered (5 for Anti), or -1 (`kh2_last_error`). The
+/// body swaps when the change motion ends (`KH2_EV_FORM_CHANGED`).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_drive_enter(handle: i32, form: i32) -> i32 {
+    let r = with(Err("no Sora".to_string()), |l| {
+        let Some(data) = l.game.drive.clone() else { return Err("no drive tables".to_string()) };
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return Err(format!("no Sora with handle {handle}")) };
+        let (disc, cache) = (&mut l.disc, &mut l.forms);
+        let mut load = |f: u8| -> Option<Arc<crate::drive::FormAssets>> {
+            if let Some(a) = cache.get(&f) {
+                return Some(a.clone());
+            }
+            let a = Arc::new(disc.form_assets(&data, f, 0).ok()?);
+            cache.insert(f, a.clone());
+            Some(a)
+        };
+        s.drive_enter(form.clamp(0, 255) as u8, &mut load)
+    });
+    match r {
+        Ok(f) => i32::from(f),
+        Err(e) => set_error(e),
+    }
+}
+
+/// Reverts to base Sora (refused in Anti form while in battle, or during a change).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_drive_revert(handle: i32) -> i32 {
+    sora_do(handle, -1, |s, _| if s.drive_revert(true) { 0 } else { set_error("cannot revert now") })
+}
+
+/// The active form's object and weapon object ids (objentry ids): out[0] body, out[1] hand 0,
+/// out[2] hand 1 (-1 none). Returns 0, or -1 when no form is active.
+///
+/// # Safety
+/// `out` points to 3 writable ints.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_drive_objects(handle: i32, out: *mut i32) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    sora_do(handle, -1, |s, _| {
+        let Some(f) = s.drive.files.as_ref() else { return -1 };
+        let v = [i32::from(f.object), f.hands[0].as_ref().map_or(-1, |h| h.0 as i32), f.hands[1].as_ref().map_or(-1, |h| h.0 as i32)];
+        unsafe { std::ptr::copy_nonoverlapping(v.as_ptr(), out, 3) };
+        0
+    })
+}
+
+/// The damage Sora deals in his form (kh2-rs `rules::outgoing_damage`: Anti scales non-magic
+/// attack types).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_drive_outgoing_damage(handle: i32, atk_type: i32, damage: i32) -> i32 {
+    sora_do(handle, -1, |s, _| match s.game.drive.as_ref() {
+        Some(d) => kh2_game_core::drive_rules::outgoing_damage(&d.tuning, if s.drive.in_form { s.drive.form } else { 0 }, atk_type as u8, damage),
+        None => damage,
     })
 }

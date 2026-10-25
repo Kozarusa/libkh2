@@ -383,3 +383,51 @@ fn level_one_spells_cast_pay_and_charge() {
     eprintln!("MP charge ended after {restored:?} ticks (MpDrive {})", game.params.prty.mp_drive);
     assert!(restored.is_some() && s.mp == s.max_mp);
 }
+
+#[test]
+fn drive_forms_enter_swap_and_revert() {
+    use kh2::sora::Event;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = game.drive.clone().expect("drive tables");
+    let w = floor();
+    for form in 1..=4u8 {
+        let mut s = standing(&game, &w);
+        s.drive.points = kh2_game_core::drive_rules::Points { whole: 9, fraction: 0, max: 9 };
+        s.drive.owned[form as usize] = true;
+        let base_bones = s.body.pose.len();
+        let mut load = |f: u8| d.form_assets(&data, f, 0).ok().map(Arc::new);
+        let entered = s.drive_enter(form, &mut load).expect("enter");
+        assert_eq!(entered, form, "out of battle there is no Anti roll");
+        assert_eq!(s.state, State::FormChange);
+        let mut changed_at = None;
+        for t in 0..900 {
+            s.tick(&w, &Input::default());
+            if s.events.drain(..).any(|e| e == Event::FormChanged { from: 0, to: form }) {
+                changed_at = Some(t);
+            }
+            if changed_at.is_some() && s.state == State::Ground {
+                break;
+            }
+        }
+        let files = s.drive.files.clone().expect("form files");
+        let cost = data.form(form).unwrap().cost;
+        eprintln!(
+            "form {form}: {} ({} bones, base {base_bones}), object {}, hands {:?}, changed after {changed_at:?} ticks, points 9 -> {}, cost {cost}, timer {}/{}, growth {:?}",
+            files.model, s.body.pose.len(), files.object, files.hands.iter().map(|h| h.as_ref().map(|x| x.1.clone())).collect::<Vec<_>>(), s.drive.points.whole, s.drive.timer.left, s.drive.timer.total, s.growth
+        );
+        assert!(changed_at.is_some() && s.drive.in_form && s.state == State::Ground);
+        assert_eq!(s.drive.points.whole, 9 - cost);
+        assert!(s.drive.timer.left < s.drive.timer.total, "the form timer drains");
+        // The form's attack table plays.
+        s.tick(&w, &Input { attack: true, ..Default::default() });
+        s.tick(&w, &Input::default());
+        eprintln!("form {form} attack: {}", s.body.tag());
+        assert!(matches!(s.state, State::Attack { .. }) || form == 2, "{:?}", s.state);
+        for _ in 0..120 {
+            s.tick(&w, &Input::default());
+        }
+        assert!(s.drive_revert(true));
+        assert!(!s.drive.in_form && s.body.rig.model.bones.len() == game.sora.model.bones.len());
+    }
+}

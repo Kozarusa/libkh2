@@ -103,7 +103,12 @@ Magic (`kh2_cast`, `kh2_poll_event`): Fire, Blizzard, Thunder, Cure at level 1 (
 MP paid at frame trigger 17, MP charge (Cure takes all MP); the host spawns the spell on the event
 (disc test `level_one_spells_cast_pay_and_charge`).
 
-Not in v1: enemies, spell objects and their damage, drive forms, summons, sounds and effects, moving platforms. See `DESIGN.md`.
+Drive forms (`kh2_drive_enter`, `kh2_drive_revert`): Valor, Wisdom, Master, Final (Anti through the
+roll) with kh2-rs's drive rules: entry checks, cost, Anti/Final roll, change motions 52/53, the
+form body, keyblade and attack table swapped in, the form's growth ability, form timer and
+revert, HP/MP refill (disc test `drive_forms_enter_swap_and_revert`).
+
+Not in v1: enemies, spell objects and their damage, the second keyblade of a form, summons, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits
 

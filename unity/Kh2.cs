@@ -54,6 +54,8 @@ public static class Kh2
         public int motionFinished, blending, combo, attackActive, attackId, attackGroup;
         public int comboWindow, finisherWindow, weaponOut, groundMaterial, invulnerable, hp, maxHp, mp, maxMp;
         public float mpCharge;
+        public int form, drivePoints, driveFraction;
+        public float formTime, formTimeTotal;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -101,6 +103,12 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_set_magic_levels(int handle, byte[] levels);
     [DllImport(Lib)] public static extern int kh2_set_mp(int handle, int mp, int maxMp);
     [DllImport(Lib)] public static extern int kh2_poll_event(int handle, out Event ev);
+    [DllImport(Lib)] public static extern int kh2_drive_setup(int handle, byte points, byte maxPoints, uint ownedMask, byte[] levels);
+    [DllImport(Lib)] public static extern int kh2_drive_gain(int handle, int percent);
+    [DllImport(Lib)] public static extern int kh2_report_hit_atkp(int handle, int atkp);
+    [DllImport(Lib)] public static extern int kh2_drive_enter(int handle, int form);
+    [DllImport(Lib)] public static extern int kh2_drive_revert(int handle);
+    [DllImport(Lib)] public static extern int kh2_drive_objects(int handle, int[] outIds);
     [DllImport(Lib)] public static extern int kh2_motion_tag(int handle, byte[] buf, uint len);
 
     public static string LastError()

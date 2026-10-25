@@ -128,7 +128,14 @@ Step 4: `magic_rules.rs` compiled in place; `Sora::try_cast` / `magic_trigger` t
 scripts (VM), effects or spell attacks (the host spawns them on `SpellFired`), no Magic Lock-On
 or Leaf Bracer, the MP regeneration factor 1.0, a request is retried for 30 ticks.
 
-Not covered: enemies, magic, drive forms, summons, items,
+Step 5: `shared/drive.rs` mixes Bevy glue and a pure `rules` module; `crates/kh2-pure/build.rs`
+extracts that module's text from kh2-rs at build time (brace-matched) and compiles it. `drive.rs`
+transcribes `DriveRules::object_files`/`files` and `drive_tick`'s enter/change/timer/revert.
+decided: world 0 for the memt merge, Donald and Goofy present, no form abilities beyond the growth
+kind (the ability system is not ported), the second keyblade not loaded (hand 1 id only when the
+memt record names it), drain factor 1.0 (no Form Boost), assets loaded on first entry and cached.
+
+Not covered: enemies, magic, summons, items,
 the dodge roll, reaction commands, the auto-target, sounds and effects (frame triggers are
 reported, not played), the game's exact COCT walker (`Oct`, unwired in kh2-rs too), weapon
 switching, moving platforms.

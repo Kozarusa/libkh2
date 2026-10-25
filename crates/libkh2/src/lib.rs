@@ -8,6 +8,7 @@
 pub mod anim;
 pub mod camera;
 pub mod data;
+pub mod drive;
 pub mod ffi;
 pub mod sora;
 

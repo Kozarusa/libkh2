@@ -81,6 +81,8 @@ pub enum State {
     Counter,
     /// A spell's cast motion plays.
     Magic,
+    /// A drive form change plays (the change motions): no input.
+    FormChange,
 }
 
 impl State {
@@ -99,6 +101,7 @@ impl State {
             State::Down => 9,
             State::Counter => 10,
             State::Magic => 11,
+            State::FormChange => 12,
         }
     }
 }
@@ -299,6 +302,14 @@ pub struct Sora {
     pub target: Option<Target>,
     pub body: Anim,
     pub weapon: Option<Anim>,
+    /// The attack table and its leaps (the base body's, or a drive form's).
+    pub moves: Arc<moveset::Moveset>,
+    pub leaps: Arc<crate::data::AttackLeaps>,
+    pub drive: crate::drive::DriveState,
+    /// The form being entered (loaded before the change motion ends).
+    pub pending_form: Option<Arc<crate::drive::FormAssets>>,
+    /// The base body while a form is active: body, keyblade, attack table, leaps, growth.
+    pub base: Option<(Arc<Rig>, Option<Arc<Rig>>, Arc<moveset::Moveset>, Arc<crate::data::AttackLeaps>, Growth)>,
     /// Evaluate the skeleton every tick (the bone matrices, the leap's own target point and the
     /// attack volumes need it).
     pub pose: bool,
@@ -312,6 +323,7 @@ impl Sora {
         let body = Anim::new(game.sora.clone());
         let weapon = game.keyblade.clone().map(Anim::new);
         let max_hp = game.params.max_hp;
+        let (moves, leaps) = (game.moves.clone(), Arc::new(game.leaps.clone()));
         let max_mp = game.params.max_mp;
         // The capsule stays kh2-rs's `Capsule::default()` (radius 35, Sora's body shape).
         Sora {
@@ -349,6 +361,11 @@ impl Sora {
             cast: None,
             events: Vec::new(),
             target: None,
+            moves,
+            leaps,
+            drive: crate::drive::DriveState::default(),
+            pending_form: None,
+            base: None,
             body,
             weapon,
             pose: true,
@@ -359,7 +376,7 @@ impl Sora {
     }
 
     fn motion(&self, id: usize, pstate: PlayerState) -> Option<usize> {
-        self.game.sora.mset.slot(id, pstate)
+        self.body.rig.mset.slot(id, pstate)
     }
 
     /// The jump height of the jump action and of the flag-bit-1 reach (kh2-rs `sora::jump_height`,
@@ -378,7 +395,7 @@ impl Sora {
     /// drawn pose (kh2-rs `sora::target_points`).
     fn own_point(&self) -> Option<Target> {
         let body = self.body_matrix();
-        let s = self.game.sora.model.shapes.iter().find(|s| s.kind == kh2_model::collision::kind::TARGET && s.argument & 1 == 0)?;
+        let s = self.body.rig.model.shapes.iter().find(|s| s.kind == kh2_model::collision::kind::TARGET && s.argument & 1 == 0)?;
         let m = match s.bone {
             Some(b) => body * self.body.pose.get(b).copied().unwrap_or(Mat4::IDENTITY),
             None => body,
@@ -420,7 +437,7 @@ impl Sora {
         } else if c.dir != Vec3::ZERO {
             self.motor.yaw = c.dir.x.atan2(c.dir.z);
         }
-        let leap = self.game.leaps.of(a);
+        let leap = self.leaps.of(a);
         if leap.height > 0.0 {
             if !airborne {
                 self.hits = 1;
@@ -444,7 +461,7 @@ impl Sora {
         }
         let mut chosen = None;
         for k in key::EXPLICIT {
-            if let Ok(a) = self.game.moves.explicit(k, &chain, w) {
+            if let Ok(a) = self.moves.explicit(k, &chain, w) {
                 let mut cc = chain;
                 if cc.press(w, self.connected).is_some() {
                     chain = cc;
@@ -473,10 +490,10 @@ impl Sora {
             return false;
         }
         let reference = reference_direction(&self.motor, c.target);
-        let ledge = ledge_flagged(world, &self.motor, air, body_shape(&self.game.sora), reference, self.game.params.plyr.attack_j_front);
+        let ledge = ledge_flagged(world, &self.motor, air, body_shape(&self.body.rig), reference, self.game.params.plyr.attack_j_front);
         let scene = Scene { target: c.target.map(|t| probe(&t, self.motor.pos, reference)), others: c.target.iter().map(|t| probe(t, self.motor.pos, reference)).collect(), ledge_probe: ledge, jump_height: c.jump_height };
-        let (_, idx) = self.game.moves.select(&chain, &scene, playing);
-        let Some(a) = idx.map(|i| self.game.moves.actions[i].clone()) else { return false };
+        let (_, idx) = self.moves.select(&chain, &scene, playing);
+        let Some(a) = idx.map(|i| self.moves.actions[i].clone()) else { return false };
         self.hits = chain.combo;
         self.finishers = chain.finishers;
         self.start_attack(&a, air, c, keep_out)
@@ -530,7 +547,9 @@ impl Sora {
         self.battle_ticks = (self.battle_ticks - 1.0).max(0.0);
         let pstate = motion_state(self.battle_ticks > 0.0, true);
         let c = Ctx { pstate, dir, target: self.target, own_point: if self.pose { self.own_point() } else { None }, jump_height: self.jump_height() };
-        let motion = |id: usize| game.sora.mset.slot(id, pstate);
+        let rig = self.body.rig.clone();
+        let moves = self.moves.clone();
+        let motion = |id: usize| rig.mset.slot(id, pstate);
 
         let mut airborne_dy: Option<f32> = None;
         let fall_max = game.params.sstm.fall_max;
@@ -595,7 +614,7 @@ impl Sora {
                         self.dash_brake = f.air_slide_brake;
                         self.invuln = f.air_slide_star_time;
                         self.body.restart(motion(QUICK_RUN_MOTION), false, 0.0);
-                    } else if let Some(g) = game.moves.by_key(key::GUARD).filter(|g| self.abilities.chain(self.hits, self.finishers, false, false).check(g).is_ok()).cloned()
+                    } else if let Some(g) = moves.by_key(key::GUARD).filter(|g| self.abilities.chain(self.hits, self.finishers, false, false).check(g).is_ok()).cloned()
                         && let Some(slot) = motion(g.motion as usize)
                     {
                         self.state = State::Guard;
@@ -737,6 +756,13 @@ impl Sora {
             }
             // Handled after this match (no input reaches them).
             State::Hurt | State::Blown | State::Down => {}
+            State::FormChange => {
+                // kh2-rs: no input, the drive code ends the state; gravity goes on.
+                self.motor.vel = Vec3::ZERO;
+                if !self.motor.grounded {
+                    airborne_dy = Some(self.motor.jump_dy(fall_max));
+                }
+            }
             State::Magic => {
                 // kh2-rs `sora::tick` State::Magic: gravity unless the motion suspends it; control
                 // comes back when it ends or its blend-to-idle range opens with a press or a direction.
@@ -764,7 +790,7 @@ impl Sora {
                 }
                 // An attack after a guard hit answers with the counter action (key 39, its ability).
                 let counter = (self.state == State::Counter && attack)
-                    .then(|| game.moves.by_key(key::COUNTER).filter(|c| self.abilities.chain(self.hits, self.finishers, false, false).check(c).is_ok()).cloned())
+                    .then(|| moves.by_key(key::COUNTER).filter(|c| self.abilities.chain(self.hits, self.finishers, false, false).check(c).is_ok()).cloned())
                     .flatten()
                     .and_then(|c| motion(c.motion as usize).map(|slot| (c, slot)));
                 if let Some((_, slot)) = counter {
@@ -884,6 +910,7 @@ impl Sora {
         // The pose step of the same tick (kh2-rs `Sim::Pose` runs after `Sim::Sora`), then the
         // keyblade follows the body's slot and frame (kh2-rs `sync_weapon`, run before the next
         // controller tick there).
+        self.drive_tick();
         let before = (self.body.slot, self.body.frame);
         self.body.step(self.pose);
         self.magic_trigger(before);
@@ -932,7 +959,7 @@ impl Sora {
         let (motion_id, blend, fin_motion) = rules::cast_motion(&row, airborne, finisher);
         let kind = rules::script_kind(row.id, rules::cast_kind(row.level, fin_motion, 0));
         self.battle_ticks = self.battle_ticks.max(BATTLE_TICKS);
-        let mslot = self.game.sora.mset.slot(motion_id as usize, PlayerState::BattleWeapon);
+        let mslot = self.body.rig.mset.slot(motion_id as usize, PlayerState::BattleWeapon);
         self.body.restart(mslot, false, blend);
         self.state = State::Magic;
         self.timer = 0.0;
@@ -993,6 +1020,157 @@ impl Sora {
         self.events.push(Event::SpellFired { slot: cast.slot, kind: cast.kind, charge });
     }
 
+    /// The drive request (kh2-rs `drive_tick`, `DriveRequest::Enter`): the entry checks, the Anti /
+    /// Final roll, the cost, then the leaving change motion on the old body. `load` returns the
+    /// assets of the form the roll picked. Returns the form entered.
+    pub fn drive_enter(&mut self, chosen: u8, load: &mut dyn FnMut(u8) -> Option<Arc<crate::drive::FormAssets>>) -> Result<u8, String> {
+        use kh2_game_core::drive_rules as rules;
+        let data = self.game.drive.clone().ok_or("no drive tables")?;
+        let st = &mut self.drive;
+        let can_act = st.change.is_none() && self.hp > 0 && !matches!(self.state, State::Down | State::Blown);
+        let ctx = rules::EnterCtx { current_form: st.form, owned: st.owned, points: st.points.whole, donald: st.donald, goofy: st.goofy, locked: !can_act };
+        let row = rules::check_enter(&data.forms, chosen, &ctx).map_err(|e| format!("{e:?}"))?;
+        let battle = self.battle_ticks > 0.0;
+        let roll = rules::RollCtx {
+            chosen,
+            may_anti: rules::companions_ok(kh2_tables::player::form::ANTI, st.donald, st.goofy),
+            battle,
+            final_owned: st.owned[kh2_tables::player::form::FINAL as usize],
+            story_flag: true,
+            points: st.points.whole,
+            final_cost: data.form(kh2_tables::player::form::FINAL).map_or(u8::MAX, |f| f.cost),
+            anti_factor: 1,
+        };
+        let rolled = rules::choose_form(&data.tuning, &data.levels, &roll, st.counters, &mut st.rng);
+        let entered = rolled.form;
+        let assets = load(entered).ok_or_else(|| format!("form {entered}: files not loadable"))?;
+        let st = &mut self.drive;
+        st.counters = rolled.counters;
+        if rolled.gave_final {
+            st.owned[kh2_tables::player::form::FINAL as usize] = true;
+        }
+        st.points.spend(data.form(entered).map_or(row.cost, |f| f.cost));
+        st.form = entered;
+        self.pending_form = Some(assets);
+        let slot = self.body.rig.mset.slot(crate::drive::MOTION_LEAVE, PlayerState::BattleWeapon);
+        if slot.is_some() {
+            self.body.restart(slot, false, 4.0);
+            self.state = State::FormChange;
+            self.motor.vel = Vec3::ZERO;
+            self.queued_attack = false;
+        }
+        self.drive.change = Some((entered, crate::drive::Phase::Leaving, 0, slot.is_some()));
+        Ok(entered)
+    }
+
+    /// Back to base Sora (kh2-rs `do_revert`). False when no form is active or a change runs.
+    pub fn drive_revert(&mut self, by_command: bool) -> bool {
+        use kh2_game_core::drive_rules as rules;
+        if !self.drive.in_form || self.drive.change.is_some() || (by_command && !rules::can_revert(self.drive.form, self.battle_ticks > 0.0)) {
+            return false;
+        }
+        let Some((body, weapon, moves, leaps, growth)) = self.base.take() else { return false };
+        let from = self.drive.form;
+        self.body = Anim::new(body);
+        self.weapon = weapon.map(Anim::new);
+        self.moves = moves;
+        self.leaps = leaps;
+        self.growth = growth;
+        self.drive.in_form = false;
+        self.drive.form = 0;
+        self.drive.timer = Default::default();
+        self.drive.files = None;
+        self.state = if self.motor.grounded { State::Ground } else { State::Air };
+        if !self.motor.grounded {
+            self.motor.start_fall();
+        }
+        self.events.push(Event::FormChanged { from, to: 0 });
+        true
+    }
+
+    /// The change task and the form timer (kh2-rs `drive_tick`).
+    fn drive_tick(&mut self) {
+        use crate::drive::{Phase, CHANGE_TIMEOUT, MOTION_ARRIVE};
+        use kh2_game_core::drive_rules as rules;
+        let Some(data) = self.game.drive.clone() else { return };
+        if let Some((to, phase, ticks, motion)) = self.drive.change.as_mut() {
+            *ticks += 1;
+            self.invuln = self.invuln.max(2.0);
+            let done = match phase {
+                Phase::Leaving => !*motion || self.body.finished || *ticks > CHANGE_TIMEOUT,
+                Phase::Arriving => *ticks > 1 && (self.body.finished || *ticks > CHANGE_TIMEOUT),
+            };
+            let (to, phase, t) = (*to, *phase, *ticks);
+            if done && phase == Phase::Leaving {
+                let Some(a) = self.pending_form.take() else {
+                    self.drive.change = None;
+                    return;
+                };
+                if self.base.is_none() {
+                    self.base = Some((self.body.rig.clone(), self.weapon.as_ref().map(|w| w.rig.clone()), self.moves.clone(), self.leaps.clone(), self.growth));
+                }
+                self.body = Anim::new(a.body.clone());
+                self.weapon = a.weapon.clone().map(Anim::new);
+                self.moves = a.moves.clone();
+                self.leaps = a.leaps.clone();
+                self.drive.files = Some(a.files.clone());
+                let level = self.drive.level[to as usize];
+                // In a form the form's own growth ability is the only one (kh2-rs `Growth`).
+                let g = rules::growth_level(&data.levels, to, level);
+                self.growth = Growth { high_jump: if to == 1 { g } else { 0 }, quick_run: if to == 2 { g } else { 0 }, aerial_dodge: if to == 3 { g } else { 0 }, glide: if to == 4 { g } else { 0 } };
+                self.drive.timer = rules::FormTimer::start(&data.tuning, to, level);
+                self.drive.in_form = true;
+                // FUN_001a04b0: HP raised to the maximum, MP set to its maximum (a charge ends).
+                self.hp = self.max_hp;
+                self.mp = self.max_mp;
+                self.charge = Default::default();
+                self.events.push(Event::FormChanged { from: 0, to });
+                self.drive.change = Some((to, Phase::Arriving, 0, true));
+                self.state = State::FormChange;
+                return;
+            }
+            if done && phase == Phase::Arriving {
+                self.drive.change = None;
+                self.invuln = 0.0;
+                self.state = if self.motor.grounded { State::Ground } else { State::Air };
+                if !self.motor.grounded {
+                    self.motor.start_fall();
+                }
+            } else if phase == Phase::Arriving && t == 1 {
+                let slot = self.body.rig.mset.slot(MOTION_ARRIVE, PlayerState::BattleWeapon);
+                match slot {
+                    Some(_) => self.body.restart(slot, false, 0.0),
+                    None => {
+                        self.state = if self.motor.grounded { State::Ground } else { State::Air };
+                        self.drive.change = None;
+                        self.invuln = 0.0;
+                    }
+                }
+            }
+        }
+        if self.drive.in_form && self.drive.change.is_none() {
+            let drain = rules::drain_per_tick(&data.tuning, self.battle_ticks > 0.0, 1.0);
+            let form = self.drive.form;
+            self.drive.timer.add(form, -drain);
+            if self.drive.timer.expired() {
+                self.drive_revert(false);
+            }
+        }
+    }
+
+    /// A landed hit's drive effect (kh2-rs `drive_tick`, FUN_00178748): the attack row's DriveDrain
+    /// fills the gauge, or takes form time while in a form.
+    pub fn drive_hit(&mut self, atkp: i16) {
+        let Some(data) = self.game.drive.clone() else { return };
+        let Some(drain) = self.game.params.atkp(atkp).map(|a| a.drive_drain).filter(|&d| d != 0) else { return };
+        if self.drive.in_form {
+            let form = self.drive.form;
+            self.drive.timer.add(form, -(drain as f32) * data.tuning.form_hit_loss);
+        } else if self.drive.change.is_none() {
+            self.drive.points.gain(drain as i32);
+        }
+    }
+
     /// The input of the last tick.
     pub fn last_input(&self) -> Input {
         self.prev
@@ -1004,7 +1182,7 @@ impl Sora {
         self.hp = self.max_hp;
         self.invuln = 120.0;
         self.state = State::Hurt;
-        let slot = self.game.sora.mset.slot(id::DAMAGE_BLOW_RECOV, PlayerState::BattleWeapon);
+        let slot = self.body.rig.mset.slot(id::DAMAGE_BLOW_RECOV, PlayerState::BattleWeapon);
         self.body.restart(slot, false, 6.0);
     }
 
@@ -1020,7 +1198,7 @@ impl Sora {
         let facing = self.motor.forward();
         let from_front = facing.dot(-dir) > 0.0;
         if self.state == State::Guard && !self.body.trigger(range::BLEND_TO_IDLE) && from_front {
-            let slot = game.sora.mset.slot(id::AUTOGUARD, PlayerState::BattleWeapon);
+            let slot = self.body.rig.mset.slot(id::AUTOGUARD, PlayerState::BattleWeapon);
             self.body.restart(slot, false, 2.0);
             self.state = State::Counter;
             self.invuln = 18.0;
@@ -1039,7 +1217,7 @@ impl Sora {
             a => a,
         };
         let pstate = PlayerState::BattleWeapon;
-        let rig = game.sora.clone();
+        let rig = self.body.rig.clone();
         let first_slot = |ids: &[usize]| ids.iter().find_map(|&i| rig.mset.slot(i, pstate));
         let away = dir.with_y(0.0).normalize_or_zero();
         match action {
@@ -1157,7 +1335,7 @@ impl Sora {
 
     /// The air-only flag of an action is read by `Chain::check`; re-exported for tests.
     pub fn moves(&self) -> &moveset::Moveset {
-        &self.game.moves
+        &self.moves
     }
 }
 
@@ -1174,6 +1352,8 @@ pub enum Event {
     CastCancelled { slot: u8 },
     /// The MP charge ended and MP is full again.
     MpRestored,
+    /// The body changed: drive form `to` (0 = base Sora) replaced form `from`.
+    FormChanged { from: u8, to: u8 },
 }
 
 /// A running cast (kh2-rs `magic::Cast`, the parts without the effect files and the script VM).

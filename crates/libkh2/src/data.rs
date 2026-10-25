@@ -131,6 +131,8 @@ pub struct Game {
     pub keyblade: Option<Arc<Rig>>,
     pub moves: Arc<Moveset>,
     pub leaps: AttackLeaps,
+    /// The drive tables (`None` when they could not be read).
+    pub drive: Option<Arc<crate::drive::DriveData>>,
 }
 
 #[derive(Debug)]
@@ -177,8 +179,13 @@ impl Disc {
     }
 
     fn rig(&mut self, name: &str) -> Result<Rig, LoadError> {
+        self.rig_named(name, name)
+    }
+
+    /// A model and a motion set by object names (`obj/<model>.mdlx`, `obj/<mset>.mset`).
+    pub fn rig_named(&mut self, name: &str, mset_name: &str) -> Result<Rig, LoadError> {
         let model = self.read(&format!("obj/{name}.mdlx")).and_then(|d| kh2_model::mdlx(&d).ok_or_else(|| LoadError(format!("{name}.mdlx: not a model"))))?;
-        let mset = self.read(&format!("obj/{name}.mset")).and_then(|d| kh2_anim::Mset::parse(&d).ok_or_else(|| LoadError(format!("{name}.mset: not a motion set"))))?;
+        let mset = self.read(&format!("obj/{mset_name}.mset")).and_then(|d| kh2_anim::Mset::parse(&d).ok_or_else(|| LoadError(format!("{name}.mset: not a motion set"))))?;
         Ok(Rig { model, mset })
     }
 
@@ -223,6 +230,7 @@ impl Disc {
         let ptya = kh2_tables::subfile(&mut self.0, &t::PTYA).map_err(err("ptya"))?;
         let moves = Moveset::parse(&ptya, index).ok_or_else(|| LoadError(format!("ptya: no table {index}")))?;
         let leaps = AttackLeaps::parse(&ptya, index);
-        Ok(Game { params, sora, keyblade, moves: Arc::new(moves), leaps })
+        let drive = crate::drive::DriveData::load(self).ok().map(Arc::new);
+        Ok(Game { params, sora, keyblade, moves: Arc::new(moves), leaps, drive })
     }
 }
