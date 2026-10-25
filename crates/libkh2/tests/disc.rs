@@ -1928,3 +1928,29 @@ fn hits_from_members_before_the_enemy_tick_knock_orbs_out() {
     let after = run.mission.as_ref().unwrap().counters()[1];
     assert_eq!(before - after, 3, "{before} -> {after}");
 }
+
+/// Round 9 evidence for the limit damage dead end: the effect files (type 18) of every limit file
+/// decode with kh2-rs's kh2-fx and use no particle program of the hit family (pppKeHitBall,
+/// pppKeHitChk, pppKeHitChkPxB, pppKeHitBorn, pppKeThHitBorn); the limit's own script (Comet)
+/// makes only the timer, effect and query calls listed in docs/DEVIATIONS.md, also with its
+/// sub-commands sent.
+#[test]
+fn limit_effect_files_carry_no_hit_programs() {
+    let Some(mut d) = disc() else { return };
+    let ld = d.limits().expect("limits");
+    let mut files: Vec<String> = ld.rows.iter().map(|r| r.file.clone()).collect();
+    files.sort();
+    files.dedup();
+    let mut checked = 0;
+    for f in &files {
+        let Ok(b) = d.read(&format!("limit/us/{f}")) else { continue };
+        for e in kh2_bar::parse(&b).unwrap().iter().filter(|e| e.kind == 18) {
+            let p = kh2_fx::Pax::parse(e.data).expect("pax");
+            let hits: Vec<&str> = p.dpds.iter().flat_map(|d| &d.particles).flat_map(|pd| &pd.groups).flat_map(|g| &g.programs).map(|pr| kh2_fx::ppp::name(pr.kind)).filter(|n| n.contains("Hit")).collect();
+            assert!(hits.is_empty(), "{f}: {hits:?}");
+            checked += 1;
+        }
+    }
+    eprintln!("{checked} limit effect files, no hit programs");
+    assert!(checked > 10);
+}

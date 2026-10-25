@@ -67,10 +67,19 @@ Inputs the original cannot get
 - Positions must be finite and within 1e7 units; sticks are held to -1..1; maximum HP / MP to
   9999; a damage query to 0..999,999 (fuzz-driven bounds, beyond anything the game holds).
 
-Limits deal no damage (measured round 8, a dead end without new kh2-rs source): a limit file
-(`limit/us/<name>.bar`) holds the limit's script (type 3), the `LIMI` set (type 0x14: a BAR of
-per-participant motion sets, the A9xx sub-motions libkh2 already plays, whose motions carry no
-attack triggers), the effect file (type 18, PAX), its sounds, gauge pictures and voice. The scripts
-call only motions (host 2.47), effects (2.50) and PAX elements (2.59) and create no object (no host
-1.0). So the damage can only come from the PAX elements' own hit data, which kh2-rs does not decode
-(no PAX hit volumes, no kind-5000 object), and libkh2 loads no effect files.
+Limits deal no damage. The evidence (rounds 8 and 9), a dead end without the executable's limit task:
+- A limit file (`limit/us/<name>.bar`) holds the limit's script (type 3), the `LIMI` set (type 0x14:
+  per-participant motion sets, the A9xx sub-motions libkh2 plays, with no attack triggers), its
+  effect file (type 18, PAX), sounds, gauge pictures and voice.
+- The effect files decode with kh2-rs's kh2-fx; none of the 19 uses a particle program of the hit
+  family (pppKeHitBall, pppKeHitChk, pppKeHitChkPxB, pppKeHitBorn, pppKeThHitBorn); the PAX
+  elements carry a bone, a transform and a sound, no attack row (`limit_effect_files_carry_no_hit_programs`).
+- Comet's script (donald.bar) runs 600 ticks making only these host calls: 0.21, 1.23, 1.94, 1.131,
+  1.147, 1.165 and 1.221 every tick, 1.183, 2.23, 2.48, 2.49, 2.55, one 2.59 (the effect), 2.60 (the
+  gauge) every tick; sending its sub-commands 281 / 283 (event 23) adds none. No object is created
+  (no host 1.0) and no attack object (no host 2.10).
+- The members' own scripts have no limit mode (Donald's modes: idle, battle, fire, blizzard,
+  thunder, cure, ...; Goofy's: blade, turbo, tornado, ... -- Goofy Tornado is his Special, which
+  libkh2 runs since 0.7, not a limit).
+So the hits come from the executable's limit task code (`FUN_001b2c10` / `FUN_001b2e08` and the
+kind-5000 objects it makes), which kh2-rs has not ported; there is no data to drive them from.

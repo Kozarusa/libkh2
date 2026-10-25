@@ -273,6 +273,15 @@ name = "kh2-bdx"
 version = "0.1.0"
 
 [[package]]
+name = "kh2-fx"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "kh2-bar",
+ "kh2-ps2",
+]
+
+[[package]]
 name = "kh2-image"
 version = "0.1.0"
 dependencies = [
@@ -343,6 +352,7 @@ dependencies = [
  "kh2-ard",
  "kh2-bar",
  "kh2-bdx",
+ "kh2-fx",
  "kh2-map",
  "kh2-model",
  "kh2-tables",
