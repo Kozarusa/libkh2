@@ -48,8 +48,10 @@ Summons
   scripts).
 
 Enemies and reaction commands
-- An area's battle groups spawn on request (`kh2_area_spawn`), but its signals, waves, triggers,
-  events and missions do not run; the Struggle's mission manager is the host's (`docs/STRUGGLE.md`).
+- An area's battle program runs on request (`kh2_area_run`: groups, kind-2 waves, kind-6 groups,
+  counters, signals); the program is the host's choice (no story), the defeated are not remembered
+  across areas, the field objects that raise signals are the host's (`kh2_area_raise_event`); the
+  Struggle's mission manager is the host's (`docs/STRUGGLE.md`).
   M_EX850 and M_EX870 wait for such a set-up and stay idle (see `ENEMY-KINDS.md`).
 - No camera: every enemy counts as on screen. No clashes. Prize drops are reported as counts.
 - A defeat by a party member pays no experience (the event carries the values).

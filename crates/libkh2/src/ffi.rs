@@ -95,6 +95,7 @@ struct Lib {
     limit_data: Option<Arc<crate::limit::LimitData>>,
     auto_shown: std::collections::HashMap<i32, u16>,
     summon_data: Option<Arc<crate::summon::SummonData>>,
+    area_runs: std::collections::HashMap<i32, (crate::area::AreaRun, Vec<(i32, i32)>)>,
     summons: std::collections::HashMap<i32, crate::summon::Summons>,
     limits: std::collections::HashMap<i32, crate::limit::Limits>,
     enemy_data: Option<Arc<crate::enemy::EnemyData>>,
@@ -182,7 +183,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, area_runs: Default::default(), summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
     0
 }
 
@@ -1298,6 +1299,11 @@ pub extern "C" fn kh2_enemies_tick(handle: i32) -> i32 {
         if let Some(en) = l.enemies.get_mut(&handle) {
             let before = en.events.len();
             en.tick(s, &l.world, fall);
+            // The area's own groups and waves (kh2-rs `spawn_waves`).
+            if let Some((run, raised)) = l.area_runs.get_mut(&handle) {
+                let r = std::mem::take(raised);
+                run.tick(en, &l.world, s.motor.pos, &r);
+            }
             // Sora's effective hits count for a running limit (FUN_001b3dc8).
             if let Some(lim) = l.limits.get_mut(&handle) {
                 for _ in en.events[before.min(en.events.len())..].iter().filter(|x| matches!(x, crate::enemy::EnemyEvent::Hit { .. })) {
@@ -2292,6 +2298,86 @@ pub unsafe extern "C" fn kh2_item_info(id: i32, out: *mut Kh2ItemInfo) -> i32 {
         unsafe {
             *out = Kh2ItemInfo { id: i.id, kind: i.kind, ap: i.ap, command: i.command, name: i.name, description: i.description, amount: i.amount, shop_buy: i.shop_buy, shop_sell: i.shop_sell, attack: i.attack, magic: i.magic, defense: i.defense, resist: i.resist, ability: i.ability }
         };
+        0
+    })
+}
+
+/// Runs area `area`'s battle program `program` for Sora `handle` (kh2-rs `spawn_waves`): the groups'
+/// members created at load appear now, the kind-2 groups create their waves while Sora stands in
+/// their volumes (in `kh2_enemies_tick`), the signals switch groups on the global events. Load the
+/// area's collision first. Returns the number of enemies created now.
+///
+/// # Safety
+/// `area` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_area_run(handle: i32, area: *const c_char, program: i32) -> i32 {
+    if area.is_null() {
+        return set_error("no area name");
+    }
+    let Ok(area) = unsafe { CStr::from_ptr(area) }.to_str().map(str::to_string) else { return set_error("area name is not UTF-8") };
+    let Ok(program) = u16::try_from(program) else { return set_error("program is 0..65535") };
+    with(-1, |l| {
+        if l.enemy_data.is_none() {
+            match l.disc.enemies() {
+                Ok(d) => l.enemy_data = Some(Arc::new(d)),
+                Err(e) => return set_error(e),
+            }
+        }
+        if usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref).is_none() {
+            return set_error(format!("no Sora with handle {handle}"));
+        }
+        let Some(data) = l.enemy_data.clone() else { return -1 };
+        let en = l.enemies.entry(handle).or_insert_with(|| crate::enemy::Enemies::new(data));
+        let before = en.list.len();
+        let run = crate::area::AreaRun::set_up(&mut l.disc, &area, program, en, &l.world);
+        let n = en.list.len() - before;
+        l.area_runs.insert(handle, (run, Vec::new()));
+        n as i32
+    })
+}
+
+/// Raises a global event (`FUN_00197b70`: id and argument, -1 any) on Sora `handle`'s area run: the
+/// groups its signals name are enabled or disabled.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_area_raise_event(handle: i32, event: i32, arg: i32) -> i32 {
+    with(-1, |l| match l.area_runs.get_mut(&handle) {
+        Some((_, raised)) => {
+            raised.push((event, arg));
+            0
+        }
+        None => set_error("no area run for this Sora"),
+    })
+}
+
+/// Takes the global events the area's groups raised (event 3: a group record's enemies are all
+/// gone, argument the record's id; event 2: all the groups' enemies are gone): writes up to `max`
+/// (id, argument) pairs into `out` (2 ints each), returns the count written.
+///
+/// # Safety
+/// `out` is NULL or points to `2 * max` ints.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_area_take_events(handle: i32, out: *mut i32, max: u32) -> i32 {
+    with(-1, |l| {
+        let Some((run, _)) = l.area_runs.get_mut(&handle) else { return 0 };
+        let n = run.raised.len().min(max as usize);
+        let taken: Vec<(u32, i32)> = run.raised.drain(..n).collect();
+        if !out.is_null() {
+            for (k, (id, arg)) in taken.iter().enumerate() {
+                unsafe {
+                    *out.add(2 * k) = *id as i32;
+                    *out.add(2 * k + 1) = *arg;
+                }
+            }
+        }
+        taken.len() as i32
+    })
+}
+
+/// Ends Sora `handle`'s area run (its enemies stay; `kh2_enemies_clear` removes them).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_area_end(handle: i32) -> i32 {
+    with(-1, |l| {
+        l.area_runs.remove(&handle);
         0
     })
 }

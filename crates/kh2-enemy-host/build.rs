@@ -157,7 +157,34 @@ fn summon_rules() {
     std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("shared_summon.rs"), out).unwrap();
 }
 
+/// kh2-rs `kh2-enemy/src/enemy.rs`'s area battle groups (from `Member` to `BattleGroups`: the groups, their
+/// records, signals, trigger table, kind-2 waves, defeated tables, ring placement, kind-6 groups, counters) and
+/// `shared/struggle.rs`'s `ORB_POOL_TYPE`, `mission_command`, `Trig`.
+fn area_groups() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates");
+    let read = |f: &str| {
+        let p = base.join(f);
+        println!("cargo:rerun-if-changed={}", p.display());
+        std::fs::read_to_string(&p).unwrap_or_else(|_| panic!("{f}"))
+    };
+    let e = read("kh2-enemy/src/enemy.rs");
+    let out = span(&e, "/// One enemy of an area's spawn group", "pub struct BattleGroups");
+    let s = read("kh2-game-core/src/shared/struggle.rs");
+    let mut st = String::new();
+    for (a, b) in [("/// `00objentry` (ObjectType, SubType) of the Struggle orb pool", "pub const ORB_POOL_TYPE"), ("/// A btl program's mission command", "pub fn mission_command"), ("/// An area trigger as the mission end looks it up", "pub struct Trig")] {
+        st.push_str(&span(&s, a, b));
+        st.push(char::from(10u8));
+    }
+    let i = s.find("impl Trig {").expect("impl Trig");
+    let end = close(s.as_bytes(), i + "impl Trig {".len());
+    st.push_str(&s[i..end]);
+    let dir = std::env::var("OUT_DIR").unwrap();
+    std::fs::write(Path::new(&dir).join("area_groups.rs"), out).unwrap();
+    std::fs::write(Path::new(&dir).join("struggle_bits.rs"), st).unwrap();
+}
+
 fn main() {
+    area_groups();
     summon_rules();
     friend_bits();
     player_reaction();

@@ -1608,3 +1608,74 @@ fn limits_hold_the_members_and_their_motions_carry_no_attacks() {
     }
     assert!(results.iter().all(|r| r.1 <= 2), "the members do not fight during a limit");
 }
+
+/// The areas' own set-up and waves (kh2-rs `spawn_waves`): tt04's programs and eh06's (M_EX870),
+/// Sora at the group's player entry; the kind-2 groups create their waves as their enemies fall.
+#[test]
+fn area_runs_set_up_groups_and_waves() {
+    use kh2::area::AreaRun;
+    use kh2::enemy::Enemies;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let mut any_wave = false;
+    for (area, program) in [("tt04", None), ("eh06", Some(1u16)), ("hb09", None)] {
+        let w = World::from_coct(&d.coct(area).expect("collision"));
+        let b = d.area_battle(area, None);
+        let programs: Vec<u16> = match program {
+            Some(p) => vec![p],
+            None => {
+                let mut v: Vec<u16> = b.enemies.iter().map(|e| e.program).collect();
+                v.dedup();
+                v.into_iter().take(4).collect()
+            }
+        };
+        for p in programs {
+            let mut en = Enemies::new(data.clone());
+            let mut run = AreaRun::set_up(&mut d, area, p, &mut en, &w);
+            let group = run.groups.iter().find(|g| g.program == p);
+            let start = group.and_then(|g| g.player).map(|v| v / kh2_enemy_host::SCALE).unwrap_or(w.spawn_point());
+            let mut s = Sora::new(game.clone(), start);
+            s.max_hp = 9999;
+            s.hp = 9999;
+            let at_load = en.list.len();
+            let (mut most, mut made) = (at_load, 0);
+            let mut moved: std::collections::HashMap<u32, f32> = Default::default();
+            let mut kinds_made = std::collections::BTreeSet::new();
+            let starts: std::collections::HashMap<u32, Vec3> = en.list.iter().map(|e| (e.id, e.pos())).collect();
+            for t in 0..2400 {
+                let before = en.next_id;
+                s.hp = 9999;
+                // Sora attacks the nearest enemy, so the groups' members fall and the waves come.
+                let near = en.list.iter().filter(|e| e.alive() && !e.removed).min_by(|a, b| a.pos().distance(s.motor.pos).total_cmp(&b.pos().distance(s.motor.pos))).map(|e| e.pos());
+                let stick = near.map_or([0.0, 0.0], |n| {
+                    let to = n - s.motor.pos;
+                    if to.length() > 150.0 { [to.x / to.length(), to.z / to.length()] } else { [0.0, 0.0] }
+                });
+                if let Some(n) = near {
+                    s.target = Some(kh2::sora::Target { pos: n + Vec3::Y * 80.0, radius: 40.0, half_height: 80.0 });
+                }
+                s.tick(&w, &Input { stick, cam_look: [0.0, 1.0], attack: t % 4 == 0, ..Default::default() });
+                en.tick(&mut s, &w, game.params.sstm.fall_max);
+                en.events.clear();
+                run.tick(&mut en, &w, s.motor.pos, &[]);
+                made += (en.next_id - before) as usize;
+                for e in en.list.iter().filter(|e| e.id >= before) {
+                    kinds_made.insert(e.data.kind.model);
+                }
+                en.prune();
+                most = most.max(en.list.len());
+                for e in &en.list {
+                    if let Some(st) = starts.get(&e.id) {
+                        let m = moved.entry(e.id).or_default();
+                        *m = m.max(e.pos().distance(*st));
+                    }
+                }
+            }
+            let acted = moved.values().filter(|&&m| m > 10.0).count();
+            eprintln!("{area} program {p}: {at_load} at load, {made} created by waves, at most {most} at once, {acted} of the first ones moved, kinds made {kinds_made:?}, kind-2 groups {}, raised {:?}, off {:?}", run.live.len(), run.raised, run.off);
+            any_wave |= made > 0;
+        }
+    }
+    assert!(any_wave, "some kind-2 group made a wave");
+}

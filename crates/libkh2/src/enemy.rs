@@ -327,6 +327,8 @@ pub struct Enemy {
     /// The spawn record's kind (host 1.110, -1 without one) and parameters (object +0x820 / +0x824).
     pub spawn_kind: i32,
     pub spawn_params: Option<[i32; 2]>,
+    /// The area group record and member serial it was created for (kh2-rs `Enemy::serial`).
+    pub group_serial: Option<(u16, u16)>,
 }
 
 impl Enemy {
@@ -451,6 +453,7 @@ impl Enemies {
             removed: false,
             spawn_kind,
             spawn_params,
+            group_serial: None,
             data: k,
             rt,
             obj,

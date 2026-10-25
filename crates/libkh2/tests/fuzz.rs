@@ -343,6 +343,15 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 if r.chance(10) {
                     kh2_area_spawn(h, if r.chance(4) { std::ptr::null() } else { a.as_ptr() }, r.int(), r.int());
                 }
+                if r.chance(12) {
+                    kh2_area_run(h, if r.chance(4) { std::ptr::null() } else { a.as_ptr() }, if r.chance(2) { 1 } else { r.int() });
+                }
+                kh2_area_raise_event(h, r.int(), r.int());
+                let mut ev = [0i32; 16];
+                kh2_area_take_events(h, if r.chance(4) { std::ptr::null_mut() } else { ev.as_mut_ptr() }, max(r, 8));
+                if r.chance(20) {
+                    kh2_area_end(h);
+                }
             }
             55 => {
                 let ids = [41u16, 499, r.next() as u16, 0, 526];

@@ -99,3 +99,158 @@ impl Disc {
         out
     }
 }
+
+use kh2_enemy_host::area::{self as kg, AreaGroup, EventPart, KindTwo, PartCount, PlaceRng, TriggerTable};
+
+/// kh2-rs `spawn_waves` and `fire_group_triggers` (enemy.rs), the area-driven battle for one Sora:
+/// the groups of the area's `btl` program `program` (kh2-rs `area_groups`, compiled from source) set
+/// up (the members created at load, the disabled records, the signals registered with the trigger
+/// table, the kind-2 groups that create their spawn-kind-2 members while Sora stands in one of
+/// their volumes, by their timers and waves, the kind-6 groups, the group counters whose removals
+/// raise the global events 2 / 3), every tick.
+///
+/// decided: the program is the host's choice (kh2-rs takes the one the story runs); entrance 0;
+/// the tables of the defeated start empty (no story across areas); no event or stopped fight
+/// blocks the groups (no mission is running in the library unless the host keeps one).
+#[derive(Default)]
+pub struct AreaRun {
+    pub area: String,
+    pub groups: Vec<AreaGroup>,
+    pub live: Vec<(AreaGroup, KindTwo, Vec<u16>)>,
+    pub events: Vec<EventPart>,
+    pub counts: Vec<PartCount>,
+    pub triggers: TriggerTable,
+    pub off: Vec<u16>,
+    rng: PlaceRng,
+    /// The global events the groups raised (id, argument), for the host.
+    pub raised: Vec<(u32, i32)>,
+}
+
+/// SCALE: the compiled group code works in metres (kh2-rs's Bevy space), the library in centimetres.
+const M: f32 = kh2_enemy_host::SCALE;
+
+impl AreaRun {
+    /// Sets up the groups of program `program` (FUN_00181148 -> the group set-up FUN_00198750).
+    pub fn set_up(disc: &mut Disc, area: &str, program: u16, en: &mut crate::enemy::Enemies, world: &kh2_game_core::world::World) -> AreaRun {
+        if let Some(w) = area.get(0..2) {
+            let _ = disc.0.apply_names([format!("000{w}.idx").as_str()]);
+        }
+        let shared = match disc.reopen() {
+            Ok(d) => kh2_enemy_host::assets::Disc(std::sync::Mutex::new(d.0)),
+            Err(_) => return AreaRun::default(),
+        };
+        if let Some(w) = area.get(0..2) {
+            let _ = shared.0.lock().map(|mut a| a.apply_names([format!("000{w}.idx").as_str()]));
+        }
+        let groups = kg::area_groups(&shared, area);
+        let signals = kg::area_signals(&shared, area);
+        let mut run = AreaRun { area: area.to_string(), groups: groups.clone(), ..Default::default() };
+        kh2_enemy_host::enemy_host::clear_shared_blocks();
+        for g in groups.iter().filter(|g| g.program == program) {
+            for m in g.members.iter().filter(|m| kg::created_at_load(m, &g.parts[m.part], 0)) {
+                spawn_member(en, world, m, g.parts[m.part].id, None);
+            }
+            let twos: Vec<usize> = (0..g.parts.len()).filter(|&k| g.parts[k].kind == 2 && g.members.iter().any(|m| m.part == k && m.spawn_kind == 2)).collect();
+            for part in g.parts.iter().filter(|p| p.disabled) {
+                run.off.push(part.id);
+            }
+            for sig in signals.iter().filter(|s| s.tag == g.name) {
+                run.triggers.register(sig.event, sig.arg, sig.id, sig.action);
+            }
+            for k in twos {
+                let two = KindTwo::new(g, k);
+                let there = g.members.iter().filter(|m| m.part == k && kg::created_at_load(m, &g.parts[k], 0)).map(|m| m.serial).collect();
+                run.live.push((g.clone(), two, there));
+            }
+            for (k, part) in g.parts.iter().enumerate() {
+                let count = kg::counted_at_load(part, 0, &[]);
+                run.counts.push(PartCount { id: part.id, count, disabled: part.disabled });
+                run.events.push(EventPart { group: g.clone(), part: k, present: Vec::new() });
+            }
+        }
+        run
+    }
+
+    /// One tick (kh2-rs `spawn_waves`' per-tick part and `fire_group_triggers`).
+    pub fn tick(&mut self, en: &mut crate::enemy::Enemies, world: &kh2_game_core::world::World, sora_pos: glam::Vec3, raised: &[(i32, i32)]) {
+        let at = [sora_pos.x, -sora_pos.y, -sora_pos.z];
+        let player = sora_pos * M;
+        let alive_serials = |en: &crate::enemy::Enemies, pid: u16| -> Vec<u16> { en.list.iter().filter(|e| e.alive() && !e.removed).filter_map(|e| e.group_serial.filter(|s| s.0 == pid).map(|s| s.1)).collect() };
+        for (g, two, prev) in self.live.iter_mut() {
+            let pid = g.parts[two.part].id;
+            if self.off.contains(&pid) {
+                continue;
+            }
+            let live = alive_serials(en, pid);
+            let tp = two.part;
+            for m in g.members.iter().filter(|m| m.part == tp && prev.contains(&m.serial) && !live.contains(&m.serial)) {
+                two.removed(g, m);
+            }
+            if two.timer > 0.0 {
+                two.timer -= 1.0;
+            }
+            let mut made = Vec::new();
+            if g.parts[two.part].activators.iter().any(|v| v.contains(at)) {
+                let alive = |i: usize| en.list.iter().any(|e| e.alive() && e.group_serial == Some((pid, g.members[i].serial)));
+                for i in two.run(g, alive) {
+                    let m = &g.members[i];
+                    let spot = kg::member_ring(m, player).map(|ring| kg::ring_place_in(&mut self.rng, &ring, world));
+                    spawn_member(en, world, m, pid, spot);
+                    made.push(m.serial);
+                }
+            }
+            *prev = live.into_iter().chain(made).collect();
+        }
+        for ep in &self.events {
+            let pid = ep.group.parts[ep.part].id;
+            for i in kg::kind_six_creates(&ep.group, ep.part, |v| v.contains(at), |s| en.list.iter().any(|e| !e.removed && e.group_serial == Some((pid, s)))) {
+                spawn_member(en, world, &ep.group.members[i], pid, None);
+            }
+        }
+        // Group events: a member of spawn kind 0, 1 or 3 removed lowers its record's counter (FUN_001993f8 -> FUN_00199518).
+        for i in 0..self.events.len() {
+            let (pid, part_idx) = (self.events[i].group.parts[self.events[i].part].id, self.events[i].part);
+            let now: Vec<u16> = alive_serials(en, pid).into_iter().filter(|s| self.events[i].group.members.iter().any(|m| m.part == part_idx && m.serial == *s && matches!(m.spawn_kind, 0 | 1 | 3))).collect();
+            let gone = self.events[i].present.iter().filter(|s| !now.contains(s)).count();
+            self.events[i].present = now;
+            for _ in 0..gone {
+                for (id, arg) in kg::removal_events(&mut self.counts, i) {
+                    self.raised.push((id, arg));
+                }
+            }
+        }
+        // FUN_00197b70 -> FUN_00197670: the raised events switch the groups their signals name.
+        let mut events: Vec<(i32, i32)> = raised.to_vec();
+        events.extend(self.raised.iter().map(|&(i, a)| (i as i32, a)));
+        kh2_enemy_host::enemy_host::set_group_enemy_sum(self.counts.iter().map(|c| c.count).sum());
+        for (event, arg) in events {
+            for (id, action) in self.triggers.fire(event, arg) {
+                if !self.counts.iter().any(|c| c.id == id) {
+                    continue;
+                }
+                match action {
+                    0 => self.off.retain(|i| *i != id),
+                    1 if !self.off.contains(&id) => self.off.push(id),
+                    _ => continue,
+                }
+                for c in self.counts.iter_mut().filter(|c| c.id == id) {
+                    c.disabled = action == 1;
+                }
+            }
+        }
+    }
+}
+
+/// kh2-rs `spawn_member` / `record_spot`: the member at its record's point on the floor (or the
+/// placement given), with its spawn kind, parameters and group serial.
+fn spawn_member(en: &mut crate::enemy::Enemies, world: &kh2_game_core::world::World, m: &kg::Member, part_id: u16, spot: Option<glam::Vec3>) -> Option<u32> {
+    let at = spot.unwrap_or_else(|| {
+        let y = world.ground_m(m.at.x, m.at.z, m.at.y + 1.0).unwrap_or(m.at.y);
+        m.at.with_y(y)
+    }) / M;
+    let id = en.spawn_with(m.kind.model, at, m.yaw, world, m.spawn_kind, Some(m.spawn_params))?;
+    if let Some(e) = en.list.iter_mut().find(|e| e.id == id) {
+        e.group_serial = Some((part_id, m.serial));
+    }
+    Some(id)
+}

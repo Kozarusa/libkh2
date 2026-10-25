@@ -124,6 +124,12 @@ pub mod shared {
     #[path = "../../../../../kh2-rs/crates/kh2-game-core/src/shared/reaction.rs"]
     #[allow(dead_code)]
     pub mod reaction;
+    /// `shared/struggle.rs`'s orb pool type, mission command and area trigger (span by `build.rs`).
+    #[allow(dead_code, clippy::all)]
+    pub mod struggle {
+        use bevy::prelude::*;
+        include!(concat!(env!("OUT_DIR"), "/struggle_bits.rs"));
+    }
     /// `shared/summon.rs`'s `KidOp` and `GENIE_NEO` (span by `build.rs`).
     pub mod summon {
         use bevy::prelude::*;
@@ -221,6 +227,32 @@ pub mod limit_script {
 
     use crate::limit::{LimitArg, LimitReceiver, LimitScriptEvent, LimitStarted, LimitTask};
     include!(concat!(env!("OUT_DIR"), "/limit_script.rs"));
+}
+
+/// kh2-rs `assets::Disc` for the compiled area code: the archive behind a lock, `read` answering a file.
+pub mod assets {
+    pub struct Disc(pub std::sync::Mutex<kh2_archive::Archive>);
+
+    impl Disc {
+        pub fn read(&self, name: &str) -> Option<Vec<u8>> {
+            self.0.lock().ok()?.read(name).ok()
+        }
+    }
+}
+
+/// kh2-rs `enemy.rs`'s area battle groups (span by `build.rs`).
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod area {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use bevy::prelude::*;
+
+    use crate::assets::Disc;
+    use crate::shared::enemy::Kind;
+    use crate::world::World;
+    use crate::{KINDS, SCALE};
+    include!(concat!(env!("OUT_DIR"), "/area_groups.rs"));
 }
 
 /// kh2-rs `summon.rs`'s pure modules (command ids, the summon AI object, Stitch's / Genie's / the scripted

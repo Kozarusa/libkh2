@@ -427,6 +427,17 @@ KH2_API int32_t kh2_enemy_spawn(int32_t handle, const char *kind, float x, float
  * Records waiting for a signal are skipped unless with_disabled. Returns the number spawned (at most
  * 256 enemies per Sora). The areas' signals, waves and triggers are not run: the host decides. */
 KH2_API int32_t kh2_area_spawn(int32_t handle, const char *area, int32_t program, int32_t with_disabled);
+/* Runs an area's battle program the way the game sets it up (kh2-rs spawn_waves: area_groups compiled
+ * from source): the members created at load appear now; each kh2_enemies_tick the kind-2 groups create
+ * their waves while Sora stands in their volumes, kind-6 groups their members, the group records count
+ * their enemies and raise global events 3 (a record's enemies gone) and 2 (all gone), the signals
+ * enable / disable groups on the events. Returns the number created now. */
+KH2_API int32_t kh2_area_run(int32_t handle, const char *area, int32_t program);
+/* A global event (id, argument; -1 any) for the area run's signals (e.g. 0x9b of the field objects). */
+KH2_API int32_t kh2_area_raise_event(int32_t handle, int32_t event, int32_t arg);
+/* Takes the events the groups raised: up to max (id, argument) pairs into out; returns the count. */
+KH2_API int32_t kh2_area_take_events(int32_t handle, int32_t *out, uint32_t max);
+KH2_API int32_t kh2_area_end(int32_t handle);
 /* Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load
  * on demand at their first spawn). Returns the number dropped. */
 KH2_API int32_t kh2_enemies_prune(int32_t handle);

@@ -16,6 +16,8 @@ bevy = { package = "libkh2-bevy-shim", path = "../bevy-shim" }
 kh2_game_core = { package = "libkh2-pure", path = "../kh2-pure" }
 kh2-bdx = { path = "../../../kh2-rs/crates/kh2-bdx" }
 kh2-bar = { path = "../../../kh2-rs/crates/kh2-bar" }
+kh2-ard = { path = "../../../kh2-rs/crates/kh2-ard" }
+kh2-archive = { path = "../../../kh2-rs/crates/kh2-archive" }
 kh2-anim = { path = "../../../kh2-rs/crates/kh2-anim" }
 kh2-model = { path = "../../../kh2-rs/crates/kh2-model" }
 kh2-tables = { path = "../../../kh2-rs/crates/kh2-tables" }

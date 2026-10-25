@@ -957,6 +957,36 @@ int32_t kh2_area_spawn(int32_t handle, const char *area, int32_t program, int32_
 
 Spawns the enemies of an area's battle program (`program` = the btl program id, -1 every program; kh2-rs area_groups: the area file's spawn records with their spawn kinds and parameters). Records waiting for a signal are skipped unless with_disabled. Returns the number spawned (at most 256 enemies per Sora). The areas' signals, waves and triggers are not run: the host decides.
 
+### `kh2_area_run`
+
+```c
+int32_t kh2_area_run(int32_t handle, const char *area, int32_t program);
+```
+
+Runs an area's battle program the way the game sets it up (kh2-rs spawn_waves: area_groups compiled from source): the members created at load appear now; each kh2_enemies_tick the kind-2 groups create their waves while Sora stands in their volumes, kind-6 groups their members, the group records count their enemies and raise global events 3 (a record's enemies gone) and 2 (all gone), the signals enable / disable groups on the events. Returns the number created now.
+
+### `kh2_area_raise_event`
+
+```c
+int32_t kh2_area_raise_event(int32_t handle, int32_t event, int32_t arg);
+```
+
+A global event (id, argument; -1 any) for the area run's signals (e.g. 0x9b of the field objects).
+
+### `kh2_area_take_events`
+
+```c
+int32_t kh2_area_take_events(int32_t handle, int32_t *out, uint32_t max);
+```
+
+Takes the events the groups raised: up to max (id, argument) pairs into out; returns the count.
+
+### `kh2_area_end`
+
+```c
+int32_t kh2_area_end(int32_t handle);
+```
+
 ### `kh2_enemies_prune`
 
 ```c
