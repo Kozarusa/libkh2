@@ -162,6 +162,13 @@ Round 3 step 4: `build.rs` extracts the pure spans of two more Bevy files (`item
 counts; level-up abilities and bonus levels are not given; HP and MP maxima stay the `plrp` values
 (kh2-rs's record bonuses need the save record).
 
+Round 3 step 5: `party_rules.rs` (pure, Bevy only for `Vec3`/`Vec4`) is compiled in place;
+`party.rs` transcribes `party.rs`'s field follow path. decided: no battle AI, attacks, limits,
+revive or the trail warp (a member beyond 30 m is put back beside Sora); the members are found by
+model name (kh2-rs takes them from the world's memt slots). Plan for attacks: port
+`party_battle.rs`'s approach step and its attack table choice (the same moveset selection as
+Sora's), about two days.
+
 ## 4b. Regression and drift (step 7)
 
 Drift has two sources: (1) the files compiled in place change (caught by the build and the

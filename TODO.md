@@ -4,7 +4,7 @@
 2. [x] Second keyblade and weapon bones for drive forms.
 3. [x] Ability system (Loadout set by the host).
 4. [x] Items, HP/MP/drive state, level and EXP.
-5. [ ] Party members (or the plan).
+5. [x] Party members: field following (attacks: plan in DESIGN.md).
 6. [ ] Golden-trace suite, docs/PORTING-BACK.md.
 7. [ ] Windowed sample host.
 

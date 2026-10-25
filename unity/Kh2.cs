@@ -127,6 +127,13 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_motion_slot_count(int handle, int which);
     [DllImport(Lib)] public static extern int kh2_motion_slot(int handle, int which, int motionId, int variant);
     [DllImport(Lib)] public static extern int kh2_sample_motion(int handle, int which, int slot, float frame, [Out] float[] outMatrices, uint maxBones, [Out] float[] root);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MemberState { public float posX, posY, posZ, yaw; public int member, motionSlot; public float frame; }
+
+    [DllImport(Lib)] public static extern int kh2_party_add(int handle, int member);
+    [DllImport(Lib)] public static extern int kh2_party_tick(int handle);
+    [DllImport(Lib)] public static extern int kh2_party_state(int handle, int slot, out MemberState state);
+    [DllImport(Lib)] public static extern int kh2_party_bones(int handle, int slot, int space, [Out] float[] outMatrices, uint maxBones);
     [DllImport(Lib)] public static extern int kh2_motion_tag(int handle, byte[] buf, uint len);
 
     public static string LastError()

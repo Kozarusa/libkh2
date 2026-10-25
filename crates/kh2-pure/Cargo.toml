@@ -17,3 +17,4 @@ kh2-map = { path = "../../../kh2-rs/crates/kh2-map" }
 kh2-model = { path = "../../../kh2-rs/crates/kh2-model" }
 kh2-tables = { path = "../../../kh2-rs/crates/kh2-tables" }
 kh2-archive = { path = "../../../kh2-rs/crates/kh2-archive" }
+kh2-ard = { path = "../../../kh2-rs/crates/kh2-ard" }

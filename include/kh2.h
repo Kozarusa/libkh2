@@ -259,6 +259,21 @@ KH2_API int32_t kh2_motion_info(int32_t handle, int32_t which, int32_t slot, kh2
 /* Bone matrices of `slot` at `frame` relative to the motion's root; root = (x, y, z, yaw) or NULL. */
 KH2_API int32_t kh2_sample_motion(int32_t handle, int32_t which, int32_t slot, float frame, float *out, uint32_t max_bones, float *root);
 
+/* ---- Party members (kh2-rs party_rules: field following only) ---- */
+typedef struct kh2_member_state {
+    float pos[3];
+    float yaw;
+    int32_t member;       /* 0 Donald, 1 Goofy */
+    int32_t motion_slot;
+    float frame;
+} kh2_member_state;
+/* Adds Donald (0) or Goofy (1) following Sora; returns the member's slot 0/1 or -1. */
+KH2_API int32_t kh2_party_add(int32_t handle, int32_t member);
+/* One tick of the followers (after kh2_tick). */
+KH2_API int32_t kh2_party_tick(int32_t handle);
+KH2_API int32_t kh2_party_state(int32_t handle, int32_t slot, kh2_member_state *out);
+KH2_API int32_t kh2_party_bones(int32_t handle, int32_t slot, int32_t space, float *out, uint32_t max_bones);
+
 /* ---- Field camera helper (kh2-rs camera_rules, oracle-tested there) ---- */
 #define KH2_CAM_RESET 1u   /* R3: behind Sora */
 #define KH2_CAM_SELECT 2u  /* look-around */

@@ -152,6 +152,10 @@ Items and growth: `kh2_use_item` plays the use motion and applies kh2-rs's oracl
 `kh2_report_defeat` pays experience (`defeat_payout`) and raises the level from `lvup`; HP, MP,
 drive, level and EXP are in `kh2_state` (disc test `items_heal_through_the_use_motion_and_defeats_raise_the_level`).
 
+Party members (`kh2_party_add`, `kh2_party_tick`): Donald and Goofy follow Sora in the field with
+kh2-rs's `party_rules` (follow points, follow step with the AI class's thresholds, steer), their
+own `prty` speeds and idle/walk/run motions; no battle AI or attacks (disc test `donald_and_goofy_follow_sora`).
+
 Not in v1: enemies, the spells' flight paths, summons, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits

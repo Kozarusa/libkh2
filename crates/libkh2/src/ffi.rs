@@ -84,6 +84,8 @@ struct Lib {
     soras: Vec<Option<Sora>>,
     forms: std::collections::HashMap<(u8, u16), Arc<crate::drive::FormAssets>>,
     cameras: Vec<Option<crate::camera::Camera>>,
+    party: Option<Arc<crate::party::PartyData>>,
+    followers: std::collections::HashMap<i32, Vec<crate::party::Follower>>,
 }
 
 static LIB: Mutex<Option<Lib>> = Mutex::new(None);
@@ -167,7 +169,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default() });
     0
 }
 
@@ -1072,4 +1074,82 @@ pub extern "C" fn kh2_use_item(handle: i32, item: i32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_report_defeat(handle: i32, lvpm_experience: i32, enmp_experience: i32) -> i32 {
     sora_do(handle, -1, |s, _| s.report_defeat(lvpm_experience.clamp(0, 65535) as u16, enmp_experience.clamp(0, 65535) as u16))
+}
+
+/// Adds a party member following Sora `handle`: 0 Donald, 1 Goofy (at most two). Returns the
+/// member's slot (0 or 1), or -1. The first call loads the party data from the disc.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_party_add(handle: i32, member: i32) -> i32 {
+    with(-1, |l| {
+        if l.party.is_none() {
+            match l.disc.party() {
+                Ok(p) => l.party = Some(Arc::new(p)),
+                Err(e) => return set_error(e),
+            }
+        }
+        let Some(p) = l.party.clone() else { return -1 };
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref) else { return set_error(format!("no Sora with handle {handle}")) };
+        if !(0..p.members.len() as i32).contains(&member) {
+            return set_error("member is 0 (Donald) or 1 (Goofy)");
+        }
+        let at = s.motor.pos - s.motor.forward() * 150.0 + Vec3::new(if member == 0 { -100.0 } else { 100.0 }, 0.0, 0.0);
+        let list = l.followers.entry(handle).or_default();
+        if list.len() >= 2 {
+            return set_error("two members already follow");
+        }
+        list.push(crate::party::Follower::new(&p, member as usize, at));
+        list.len() as i32 - 1
+    })
+}
+
+/// One field tick of Sora `handle`'s followers (call after `kh2_tick`).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
+    with(-1, |l| {
+        let (Some(p), Some(s)) = (l.party.clone(), usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref)) else { return -1 };
+        let (pos, yaw, fall, pose) = (s.motor.pos, s.motor.yaw, s.game.params.sstm.fall_max, s.pose);
+        if let Some(list) = l.followers.get_mut(&handle) {
+            crate::party::tick(&p, list, pos, yaw, &l.world, fall, pose);
+        }
+        0
+    })
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2MemberState {
+    pub pos: [f32; 3],
+    pub yaw: f32,
+    pub member: i32,
+    pub motion_slot: i32,
+    pub frame: f32,
+}
+
+/// The state of follower `slot` of Sora `handle`.
+///
+/// # Safety
+/// `out` points to a writable `kh2_member_state`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_party_state(handle: i32, slot: i32, out: *mut Kh2MemberState) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let Some(f) = l.followers.get(&handle).and_then(|v| v.get(usize::try_from(slot).ok()?)) else { return -1 };
+        unsafe { *out = Kh2MemberState { pos: f.motor.pos.to_array(), yaw: f.motor.yaw, member: f.member as i32, motion_slot: f.body.slot.map_or(-1, |x| x as i32), frame: f.body.frame } };
+        0
+    })
+}
+
+/// The follower's drawn pose (as `kh2_get_bones` for the body: `space` 0 model, 1 world).
+///
+/// # Safety
+/// `out` points to `16 * max` floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_party_bones(handle: i32, slot: i32, space: i32, out: *mut f32, max: u32) -> i32 {
+    with(-1, |l| {
+        let Some(f) = l.followers.get(&handle).and_then(|v| v.get(usize::try_from(slot).ok()?)) else { return -1 };
+        let root = if space == 1 { Mat4::from_rotation_translation(glam::Quat::from_rotation_y(f.motor.yaw), f.motor.pos) } else { Mat4::IDENTITY };
+        unsafe { write_mats(f.body.pose.iter().map(|m| root * *m), out, max) }
+    })
 }

@@ -638,3 +638,27 @@ fn items_heal_through_the_use_motion_and_defeats_raise_the_level() {
     eprintln!("level 2 after {paid} EXP (lvup row 1 needs {need}): strength {} magic {} defense {}", s.strength, s.magic, s.defense);
     assert!(up && paid >= need && s.level == 2);
 }
+
+#[test]
+fn donald_and_goofy_follow_sora() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let party = d.party().expect("party data");
+    let w = floor();
+    let mut s = standing(&game, &w);
+    let mut f = vec![kh2::party::Follower::new(&party, 0, Vec3::new(-200.0, 0.0, -100.0)), kh2::party::Follower::new(&party, 1, Vec3::new(200.0, 0.0, -100.0))];
+    for m in &party.members {
+        eprintln!("{}: walk {} run {} turn {} radius {}", m.model, m.walk, m.run, m.turn, m.radius);
+    }
+    let run = Input { stick: [0.0, 1.0], cam_look: [0.0, 1.0], ..Default::default() };
+    for t in 0..400 {
+        s.tick(&w, &if t < 300 { run } else { Input::default() });
+        kh2::party::tick(&party, &mut f, s.motor.pos, s.motor.yaw, &w, game.params.sstm.fall_max, true);
+    }
+    for x in &f {
+        let dist = x.motor.pos.distance(s.motor.pos);
+        eprintln!("member {}: at {:?}, {dist:.0} from Sora ({:?}), motion {}", x.member, x.motor.pos, s.motor.pos, x.body.tag());
+        assert!(dist < 600.0, "follows");
+        assert!(x.body.pose.len() > 1);
+    }
+}

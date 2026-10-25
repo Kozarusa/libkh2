@@ -57,3 +57,8 @@ pub mod items {
 pub mod abilities {
     include!(concat!(env!("OUT_DIR"), "/abilities.rs"));
 }
+
+/// The party members' field rules (`party_rules.rs`: follow points, follow step, steer, warp).
+#[path = "../../../../kh2-rs/crates/kh2-game-core/src/party_rules.rs"]
+#[allow(dead_code)]
+pub mod party_rules;

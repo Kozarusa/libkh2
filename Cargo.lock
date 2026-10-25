@@ -59,6 +59,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kh2-ard"
+version = "0.1.0"
+dependencies = [
+ "kh2-bar",
+]
+
+[[package]]
 name = "kh2-bar"
 version = "0.1.0"
 
@@ -134,6 +141,7 @@ name = "libkh2-pure"
 version = "0.3.0"
 dependencies = [
  "kh2-archive",
+ "kh2-ard",
  "kh2-map",
  "kh2-model",
  "kh2-tables",

@@ -10,6 +10,7 @@ pub mod camera;
 pub mod data;
 pub mod drive;
 pub mod ffi;
+pub mod party;
 pub mod replay;
 pub mod sora;
 
