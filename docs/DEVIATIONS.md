@@ -61,6 +61,7 @@ Enemies and reaction commands
   weapon objects, so the opponents only lose orbs (measured: `the_struggle_mission_runs_its_clock_orbs_and_result`).
 - No camera: every enemy counts as on screen. No clashes. Prize drops are reported as counts.
 - A defeat by a party member pays no experience (the event carries the values).
+- Talks are the host's to start (`kh2_talk_begin`: the library does the player's side, the camera and the lock; the dialogue, the target's motion and its facing after the talk are the host's). A talk record on a bone is read through the bones the host gives, else the rest pose (kh2-rs reads the last pose).
 - Reaction commands: talk, save, shop and limit rows through the reaction slot are refused;
   Mickey's Charge command is not consumed.
 

@@ -1761,3 +1761,64 @@ fn the_struggle_mission_runs_its_clock_orbs_and_result() {
     }
     assert!(ran > 0, "a tt04 program starts a mission");
 }
+
+/// A talk (kh2-rs `npc::talk_step`): townspeople models with a talk camera record (type 0x13);
+/// Sora faces the target and is held, the target faces him, the camera cuts to mode 4 at kh2-rs
+/// `talk_pose` of the shot `talk_shot` reads, the end releases him and the camera warps back; a
+/// lock-on target reports mode 2.
+#[test]
+fn a_talk_locks_sora_and_cuts_the_camera_to_the_talk_view() {
+    use kh2::camera::{CamInput, Camera};
+    use kh2_tables::tables as t;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let p = game.params.camera.clone().expect("camera constants");
+    let objs = kh2_tables::load::<t::Objentry>(&mut d.0, &t::OBJENTRY).expect("objentry").rows;
+    let _ = d.0.apply_names(["000tt.idx"]);
+    let w = floor();
+    let mut tested = 0;
+    // Twilight Town's townspeople (tt02's a72_ / b72_ / c72_ / b50_ in kh2-rs's own test).
+    for row in objs.iter().filter(|r| r.model_name.starts_with("H_") || r.model_name.starts_with("N_")) {
+        if tested >= 3 {
+            break;
+        }
+        let Ok(file) = d.read(&format!("obj/{}.mdlx", row.model_name)) else { continue };
+        let Some(parts) = kh2_game_core::reaction_parts::Table::from_mdlx(&file) else { continue };
+        let Some(cam_rec) = parts.recs.iter().find(|r| r.kind == kh2_enemy_host::npc::TYPE_TALK_CAMERA) else { continue };
+        let rest = kh2_model::rest_pose(&kh2_model::mdlx(&file).expect("model").bones);
+        let mut s = standing(&game, &w);
+        let mut cam = Camera::new(0);
+        let inp = CamInput { auto: true, step: 1.0, ..Default::default() };
+        cam.tick(&p, &mut s, &w, &inp);
+        let target = kh2::talk::Target { pos: s.motor.pos + Vec3::new(150.0, 0.0, 150.0), yaw: 0.0, part: cam_rec.part, talk_id: 7, ..Default::default() };
+        let talk = kh2::talk::begin(&mut s, Some(&parts), &rest, &target);
+        let shot = talk.req.shot.expect("talk shot");
+        cam.start_talk(&p, shot);
+        let v = cam.tick(&p, &mut s, &w, &inp);
+        let want = kh2_game_core::camera_rules::talk_pose(&shot, s.motor.pos);
+        eprintln!("{}: part {}, shot {shot:?}, view {:?} (mode {}), want {want:?}, Sora yaw {:.2}, target yaw {:.2}", row.model_name, cam_rec.part, v.pos, v.mode, talk.req.sora_yaw, talk.req.target_yaw);
+        assert_eq!(v.mode, 4, "the talk camera");
+        assert!(v.pos.distance(want) < 1.0 && v.look.distance(shot.look) < 1.0, "the cut to talk_pose");
+        assert!((talk.req.sora_yaw - std::f32::consts::FRAC_PI_4).abs() < 1e-3, "Sora faces the target");
+        assert!((talk.req.target_yaw - (-3.0 * std::f32::consts::FRAC_PI_4)).abs() < 1e-3, "the target faces Sora");
+        assert_eq!(talk.req.target_motion, Some(kh2_enemy_host::npc::MOTION_TALK));
+        let at = s.motor.pos;
+        for _ in 0..30 {
+            s.tick(&w, &Input { stick: [0.0, 1.0], cam_look: [0.0, 1.0], ..Default::default() });
+            cam.tick(&p, &mut s, &w, &inp);
+        }
+        assert!(s.motor.pos.distance(at) < 1.0, "held during the talk");
+        kh2::talk::end(&mut s);
+        cam.end_talk();
+        let v = cam.tick(&p, &mut s, &w, &inp);
+        assert_eq!(v.mode, 0, "back to the follow camera");
+        for _ in 0..30 {
+            s.tick(&w, &Input { stick: [0.0, 1.0], cam_look: [0.0, 1.0], ..Default::default() });
+        }
+        assert!(s.motor.pos.distance(at) > 10.0, "released");
+        s.target = Some(kh2::sora::Target { pos: s.motor.pos + Vec3::new(300.0, 100.0, 0.0), radius: 30.0, half_height: 50.0 });
+        assert_eq!(cam.tick(&p, &mut s, &w, &inp).mode, kh2::camera::MODE_LOCK_ON);
+        tested += 1;
+    }
+    assert!(tested > 0, "a townsperson with a talk camera record");
+}

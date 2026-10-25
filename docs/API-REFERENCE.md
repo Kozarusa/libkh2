@@ -1190,3 +1190,24 @@ int32_t kh2_lock_on_pick(int32_t handle, const float *points, uint32_t count);
 ```
 
 Index of the nearest of `count` xyz points within the lock-on range, or -1.
+
+### `kh2_talk_begin`, `kh2_talk_end`
+
+```c
+int32_t kh2_talk_begin(int32_t handle, const char *model, const kh2_talk_target *target,
+                       const float *bones, uint32_t bone_count, kh2_talk_request *out);
+int32_t kh2_talk_end(int32_t handle);
+```
+
+The host keeps its townspeople and their dialogue; when Sora interacts with one (the host's
+interact button on its NPC, or an accepted talk command), `kh2_talk_begin` does the player's side
+of kh2-rs `npc::talk_step` (`FUN_001a5728`, examine `FUN_001a5510`): Sora's velocity is cleared and
+he faces the target; the target faces him unless `keep_facing` (script array bit 4); the talk
+camera (`kh2_camera_tick` mode 4) cuts in at `talk_pose` of the shot read from the target's
+type-0x13 record of `obj/<model>.mdlx` (kh2-rs `talk_shot`: else its type-3 record); Sora's control
+is locked (his input reads as untouched) until `kh2_talk_end`, which also sends the camera back
+(warp) to the follow or lock-on view. The request (`out`) hands back the talk id, both facings,
+the target's motion (0x32) and the shot. An examine (`examine` = 1) only turns Sora and locks him.
+
+`kh2_cam_view.mode` is the game's camera mode: 0 follow, 1 look-around, 2 lock-on (a
+`kh2_set_target` point is held), 4 talk, 5 overhead, 8 always-behind.

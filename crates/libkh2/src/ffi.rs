@@ -2506,3 +2506,128 @@ pub unsafe extern "C" fn kh2_mission_take_sounds(handle: i32, out: *mut f32, max
         taken.len() as i32
     })
 }
+
+/// A townsperson Sora interacts with (the host's NPC).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2TalkTarget {
+    pub pos: [f32; 3],
+    pub yaw: f32,
+    /// The talk part of the offer (reaction part index).
+    pub part: i32,
+    /// Script array bit 4 (keeps its facing, camera in its own frame) / bit 6 (camera in its frame).
+    pub keep_facing: i32,
+    pub own_frame: i32,
+    /// 1: Execute 0x1e (Examine): no camera, no turn, no talk motion.
+    pub examine: i32,
+    /// The spawn record's talk id, handed back.
+    pub talk_id: u32,
+}
+
+/// The talk request the library hands the host.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2TalkRequest {
+    pub talk_id: u32,
+    pub examine: i32,
+    /// The target's new facing and Sora's.
+    pub target_yaw: f32,
+    pub sora_yaw: f32,
+    /// The motion the target plays (0x32), -1 for none.
+    pub target_motion: i32,
+    /// 1 when the talk camera started; its look-at point, distance and height.
+    pub camera: i32,
+    pub look: [f32; 3],
+    pub dist: f32,
+    pub height: f32,
+}
+
+fn talk_parts(l: &mut Lib, model: &str) -> (Option<kh2_game_core::reaction_parts::Table>, Vec<glam::Mat4>) {
+    let Ok(file) = l.disc.read(&format!("obj/{model}.mdlx")) else { return (None, Vec::new()) };
+    let parts = kh2_game_core::reaction_parts::Table::from_mdlx(&file);
+    let rest = kh2_model::mdlx(&file).map(|m| kh2_model::rest_pose(&m.bones)).unwrap_or_default();
+    (parts, rest)
+}
+
+/// The host reports that Sora interacts with a townsperson (kh2-rs `npc::talk_step`, Execute 0x1f
+/// talk / 0x1e examine): Sora stops and faces it, it faces Sora (unless `keep_facing`), the talk
+/// camera (mode 4) starts from its type-0x13 record of `obj/<model>.mdlx` (on a bone: through
+/// `bones`, `bone_count` column-major 4x4 matrices of its pose in model space, else the rest pose),
+/// and Sora's control is locked until `kh2_talk_end`. Writes the request into `out`; returns 0.
+///
+/// # Safety
+/// `model` is NULL or NUL-terminated; `target` points to a `kh2_talk_target`; `bones` is NULL or
+/// points to `16 * bone_count` floats; `out` is NULL or points to a `kh2_talk_request`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_talk_begin(handle: i32, model: *const c_char, target: *const Kh2TalkTarget, bones: *const f32, bone_count: u32, out: *mut Kh2TalkRequest) -> i32 {
+    if target.is_null() {
+        return set_error("no talk target");
+    }
+    let t = unsafe { *target };
+    let model = if model.is_null() { None } else { unsafe { CStr::from_ptr(model) }.to_str().ok().map(str::to_string) };
+    let given: Vec<glam::Mat4> = if bones.is_null() {
+        Vec::new()
+    } else {
+        let f = unsafe { std::slice::from_raw_parts(bones, 16 * bone_count.min(1024) as usize) };
+        f.as_chunks::<16>().0.iter().map(glam::Mat4::from_cols_array).collect()
+    };
+    with(-1, |l| {
+        if usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref).is_none() {
+            return set_error(format!("no Sora with handle {handle}"));
+        }
+        let (parts, rest) = match &model {
+            Some(m) => talk_parts(l, m),
+            None => (None, Vec::new()),
+        };
+        let bones = if given.is_empty() { rest } else { given };
+        let target = crate::talk::Target {
+            pos: Vec3::from(t.pos),
+            yaw: t.yaw,
+            part: t.part.clamp(0, 255) as u8,
+            keep_facing: t.keep_facing != 0,
+            own_frame: t.own_frame != 0,
+            examine: t.examine != 0,
+            talk_id: t.talk_id,
+        };
+        let Some(s) = l.soras.get_mut(handle as usize).and_then(Option::as_mut) else { return -1 };
+        let talk = crate::talk::begin(s, parts.as_ref(), &bones, &target);
+        if let (Some(shot), Some(p)) = (talk.req.shot, l.game.params.camera.as_ref()) {
+            let k = handle as usize;
+            if l.cameras.len() <= k {
+                l.cameras.resize_with(k + 1, || None);
+            }
+            l.cameras[k].get_or_insert_with(|| crate::camera::Camera::new(0)).start_talk(p, shot);
+        }
+        let r = talk.req;
+        if !out.is_null() {
+            unsafe {
+                *out = Kh2TalkRequest {
+                    talk_id: r.talk_id,
+                    examine: r.examine.into(),
+                    target_yaw: r.target_yaw,
+                    sora_yaw: r.sora_yaw,
+                    target_motion: r.target_motion.map_or(-1, |m| m as i32),
+                    camera: i32::from(r.shot.is_some() && l.game.params.camera.is_some()),
+                    look: r.shot.map_or([0.0; 3], |s| s.look.to_array()),
+                    dist: r.shot.map_or(0.0, |s| s.dist),
+                    height: r.shot.map_or(0.0, |s| s.height),
+                }
+            };
+        }
+        0
+    })
+}
+
+/// The talk ends (`FUN_00189ff0`, `FUN_00159768`, `FUN_001b7d18`): the camera warps back to the
+/// follow (or lock-on) view and Sora's control is released.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_talk_end(handle: i32) -> i32 {
+    with(-1, |l| {
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return set_error(format!("no Sora with handle {handle}")) };
+        crate::talk::end(s);
+        if let Some(Some(c)) = l.cameras.get_mut(handle as usize) {
+            c.end_talk();
+        }
+        0
+    })
+}

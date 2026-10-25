@@ -214,6 +214,18 @@ fn struggle() {
     let dir = std::env::var("OUT_DIR").unwrap();
     std::fs::write(Path::new(&dir).join("struggle.rs"), out).unwrap();
     std::fs::write(Path::new(&dir).join("prize.rs"), pr).unwrap();
+    // kh2-event npc.rs's talk constants and the talk camera's record (`talk_shot`).
+    let n = read("kh2-event/src/npc.rs");
+    let mut talk = String::new();
+    for (a, b) in [
+        ("/// The motion the talked-to object plays", "pub const MOTION_TALK"),
+        ("/// `DAT_0037ab84`: added to +0xb18 when a talk ends", "pub const TALK_END_TIMER"),
+        ("/// The collision record type the talk camera reads", "pub fn talk_shot"),
+    ] {
+        talk.push_str(&span(&n, a, b));
+        talk.push_str("\n\n");
+    }
+    std::fs::write(Path::new(&dir).join("talk.rs"), talk).unwrap();
 }
 
 fn main() {

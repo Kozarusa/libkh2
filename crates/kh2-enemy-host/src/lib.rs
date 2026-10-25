@@ -290,3 +290,13 @@ pub mod struggle {
     pub use crate::shared::struggle::{exe_word, parse_header, Active, Clock, Counter, EV_CLOCK_END, EV_COUNTER_EMPTY, EV_COUNTER_FULL, EV_PLAYER_KO, EV_PLAYER_LOST, EV_PLAYER_WON, Element, Finish, GameOverExits, GameOverRequest, GlobalEvent, Layout, Mission, MissionStart, Orb};
     include!(concat!(env!("OUT_DIR"), "/struggle.rs"));
 }
+
+/// kh2-rs `kh2-event/src/npc.rs`'s talk constants and the talk camera's record (`talk_shot`, span by `build.rs`).
+#[allow(dead_code, clippy::all)]
+pub mod npc {
+    use bevy::prelude::*;
+
+    use kh2_game_core::reaction_parts as parts;
+    pub use crate::shared::reaction::{EXECUTE_EXAMINE, EXECUTE_TALK};
+    include!(concat!(env!("OUT_DIR"), "/talk.rs"));
+}

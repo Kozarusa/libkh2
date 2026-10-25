@@ -89,7 +89,13 @@ pub struct Camera {
     pub rig: Option<Rig>,
     pub row: usize,
     prev_pos: Vec3,
+    /// A talk camera asked for before the rig existed (started on its first tick), or its end.
+    pending: Option<Option<rules::TalkShot>>,
 }
+
+/// The mode number the view reports for the lock-on camera (`FUN_0015a0f0`, the game's mode 2;
+/// the rig takes it from the lock-on target, kh2-rs `camera_rules::Mode`).
+pub const MODE_LOCK_ON: i32 = 2;
 
 fn stick(x: f32, y_down: f32) -> (Vec2, f32) {
     let v = Vec2::new(x, y_down);
@@ -99,7 +105,23 @@ fn stick(x: f32, y_down: f32) -> (Vec2, f32) {
 
 impl Camera {
     pub fn new(row: usize) -> Camera {
-        Camera { rig: None, row: row.min(3), prev_pos: Vec3::ZERO }
+        Camera { rig: None, row: row.min(3), prev_pos: Vec3::ZERO, pending: None }
+    }
+
+    /// kh2-rs `Rig::start_talk` (`FUN_00159688`): the talk camera (mode 4) cuts in on the next tick.
+    pub fn start_talk(&mut self, p: &Params, shot: rules::TalkShot) {
+        match self.rig.as_mut() {
+            Some(r) => r.start_talk(p, shot),
+            None => self.pending = Some(Some(shot)),
+        }
+    }
+
+    /// kh2-rs `Rig::end_talk` (`FUN_00159768`): back to the follow (or lock-on) camera with a warp.
+    pub fn end_talk(&mut self) {
+        match self.rig.as_mut() {
+            Some(r) => r.end_talk(),
+            None => self.pending = None,
+        }
     }
 
     /// One camera tick after Sora's (kh2-rs `camera::tick`, field modes).
@@ -119,6 +141,9 @@ impl Camera {
         let row = p.rows[self.row];
         let rig = self.rig.get_or_insert_with(|| Rig::new(p, row, &subject, &cast));
         rig.row = row;
+        if let Some(Some(shot)) = self.pending.take() {
+            rig.start_talk(p, shot);
+        }
         let li = sora.last_input();
         let (left, left_mag) = stick(li.stick[0], -li.stick[1]);
         let (right, right_mag) = stick(input.stick[0], -input.stick[1]);
@@ -135,7 +160,8 @@ impl Camera {
         let lock = sora.target.map(|t| t.pos);
         let blockers: [Blocker; 0] = [];
         rig.tick(p, &TickIn { sticks, reset: input.reset, select: input.select, subject, lock, zoom: input.zoom, auto: input.auto, warp, step, cast: &cast, blockers: &blockers });
-        CamView { pos: rig.pos, look: rig.look, fov: rig.fov, roll: rig.roll, yaw: rig.yaw, mode: rig.mode as i32 }
+        let mode = if rig.mode == Mode::Follow && lock.is_some() { MODE_LOCK_ON } else { rig.mode as i32 };
+        CamView { pos: rig.pos, look: rig.look, fov: rig.fov, roll: rig.roll, yaw: rig.yaw, mode }
     }
 }
 

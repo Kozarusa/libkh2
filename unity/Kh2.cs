@@ -181,6 +181,13 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_mission_state(int handle, out Mission state);
     [DllImport(Lib)] public static extern int kh2_mission_orbs(int handle, [Out] float[] outOrbs, uint max);
     [DllImport(Lib)] public static extern int kh2_mission_take_sounds(int handle, [Out] float[] outSounds, uint max);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TalkTarget { public float posX, posY, posZ, yaw; public int part, keepFacing, ownFrame, examine; public uint talkId; }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TalkRequest { public uint talkId; public int examine; public float targetYaw, soraYaw; public int targetMotion, camera; public float lookX, lookY, lookZ, dist, height; }
+    [DllImport(Lib)] public static extern int kh2_talk_begin(int handle, string model, ref TalkTarget target, float[] bones, uint boneCount, out TalkRequest request);
+    [DllImport(Lib)] public static extern int kh2_talk_end(int handle);
+    public const int CamModeFollow = 0, CamModeLook = 1, CamModeLockOn = 2, CamModeTalk = 4, CamModeOverhead = 5, CamModeBehind = 8;
     [DllImport(Lib)] public static extern int kh2_area_spawn(int handle, string area, int program, int withDisabled);
     [DllImport(Lib)] public static extern int kh2_enemy_count(int handle);
     [DllImport(Lib)] public static extern int kh2_enemy_state(int handle, int index, out EnemyState state);

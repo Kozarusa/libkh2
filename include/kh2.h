@@ -466,6 +466,37 @@ KH2_API int32_t kh2_mission_state(int32_t handle, kh2_mission *out);
 KH2_API int32_t kh2_mission_orbs(int32_t handle, float *out, uint32_t max);
 /* Takes up to max sounds as (number, has place, x, y, z) 5 floats each (the last 256 are kept). */
 KH2_API int32_t kh2_mission_take_sounds(int32_t handle, float *out, uint32_t max);
+
+/* Talks (kh2-rs npc.rs talk_step): the host owns its townspeople and their dialogue. When Sora
+ * interacts with one, kh2_talk_begin stops Sora and turns him to it, turns it to him (unless
+ * keep_facing), starts the talk camera (kh2_camera_tick reports mode 4) from its type-0x13 record
+ * of obj/<model>.mdlx, locks Sora's control and fills the request (the talk id back, the target's
+ * motion 0x32). kh2_talk_end releases him and the camera warps back. bones: NULL (the model's rest
+ * pose) or bone_count column-major 4x4 matrices of its pose in model space. */
+typedef struct kh2_talk_target {
+    float pos[3];
+    float yaw;
+    int32_t part;        /* the talk part of the offer */
+    int32_t keep_facing; /* script array bit 4 */
+    int32_t own_frame;   /* script array bit 6: the camera in the target's frame */
+    int32_t examine;     /* Execute 0x1e: no camera, no turn, no motion */
+    uint32_t talk_id;
+} kh2_talk_target;
+typedef struct kh2_talk_request {
+    uint32_t talk_id;
+    int32_t examine;
+    float target_yaw;
+    float sora_yaw;
+    int32_t target_motion; /* 0x32, -1 none */
+    int32_t camera;        /* 1: the talk camera started */
+    float look[3];
+    float dist;
+    float height;
+} kh2_talk_request;
+KH2_API int32_t kh2_talk_begin(int32_t handle, const char *model, const kh2_talk_target *target, const float *bones, uint32_t bone_count, kh2_talk_request *out);
+KH2_API int32_t kh2_talk_end(int32_t handle);
+/* kh2_cam_view.mode: 0 follow, 1 look-around, 2 lock-on (a kh2_set_target point), 4 talk,
+ * 5 overhead, 8 always-behind. */
 /* Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load
  * on demand at their first spawn). Returns the number dropped. */
 KH2_API int32_t kh2_enemies_prune(int32_t handle);

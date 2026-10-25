@@ -357,6 +357,15 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 let mut fl = [0f32; 40];
                 kh2_mission_orbs(h, if r.chance(4) { std::ptr::null_mut() } else { fl.as_mut_ptr() }, max(r, 10));
                 kh2_mission_take_sounds(h, if r.chance(4) { std::ptr::null_mut() } else { fl.as_mut_ptr() }, max(r, 8));
+                if r.chance(8) {
+                    let tg = Kh2TalkTarget { pos: [r.float(), r.float(), r.float()], yaw: r.float(), part: r.int(), keep_facing: r.int(), own_frame: r.int(), examine: r.int(), talk_id: r.int() as u32 };
+                    let mut rq = Kh2TalkRequest::default();
+                    let m = CString::new(["N_BB010_RTN", "", "zz"][r.below(3) as usize]).unwrap();
+                    kh2_talk_begin(h, if r.chance(4) { std::ptr::null() } else { m.as_ptr() }, if r.chance(6) { std::ptr::null() } else { &tg }, if r.chance(2) { std::ptr::null() } else { fl.as_ptr() }, max(r, 2), if r.chance(4) { std::ptr::null_mut() } else { &mut rq });
+                }
+                if r.chance(4) {
+                    kh2_talk_end(h);
+                }
             }
             55 => {
                 let ids = [41u16, 499, r.next() as u16, 0, 526];
