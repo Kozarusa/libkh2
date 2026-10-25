@@ -15,3 +15,4 @@ doctest = false
 bevy = { package = "libkh2-bevy-shim", path = "../bevy-shim" }
 kh2-map = { path = "../../../kh2-rs/crates/kh2-map" }
 kh2-model = { path = "../../../kh2-rs/crates/kh2-model" }
+kh2-tables = { path = "../../../kh2-rs/crates/kh2-tables" }

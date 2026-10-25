@@ -59,6 +59,10 @@ typedef struct kh2_inputs {
 #define KH2_STATE_GUARD 4
 #define KH2_STATE_QUICK_RUN 5
 #define KH2_STATE_GLIDE 6
+#define KH2_STATE_HURT 7
+#define KH2_STATE_BLOWN 8
+#define KH2_STATE_DOWN 9      /* knocked out: kh2_revive */
+#define KH2_STATE_COUNTER 10  /* the guard repelled a hit */
 
 typedef struct kh2_state {
     float pos[3];
@@ -81,6 +85,7 @@ typedef struct kh2_state {
     int32_t weapon_out;    /* the battle variant of the motion set is in use (keyblade out) */
     int32_t ground_material; /* material of the floor under Sora, -1 airborne */
     int32_t invulnerable;  /* invincibility ticks are running */
+    int32_t hp, max_hp;
 } kh2_state;
 
 /* A live attack capsule in world units: segment a-b, radius. */
@@ -124,6 +129,14 @@ KH2_API int32_t kh2_set_target(int32_t handle, float x, float y, float z, float 
 KH2_API int32_t kh2_clear_target(int32_t handle);
 /* The host found that the current swing touched something: lets the combo chain go on. */
 KH2_API int32_t kh2_report_hit(int32_t handle);
+
+/* A hit taken: atkp = attack row id of the disc's atkp table (its reaction class decides flinch,
+ * push or blow), damage = HP taken (the host computes it), dir = from the attacker toward Sora.
+ * Returns 0 ignored (invincible / down), 1 guarded, 2 no flinch, 3 flinch, 4 blown, -1 unknown row. */
+KH2_API int32_t kh2_hit_taken(int32_t handle, int32_t atkp, int32_t damage, float dir_x, float dir_y, float dir_z);
+KH2_API int32_t kh2_set_hp(int32_t handle, int32_t hp, int32_t max_hp);
+/* Stands up from KH2_STATE_DOWN with full HP; auto != 0: stand up by itself after 180 ticks. */
+KH2_API int32_t kh2_revive(int32_t handle, int32_t automatic);
 
 /* Ability bits 0..127 (bit 1 = Guard) and combo lengths; defaults Guard, 3, 3, 1. */
 KH2_API int32_t kh2_set_abilities(int32_t handle, uint64_t lo, uint64_t hi, uint8_t max_ground, uint8_t max_air, uint8_t max_finishers);

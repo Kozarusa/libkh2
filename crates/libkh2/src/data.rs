@@ -7,7 +7,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use kh2_anim::moveset::{self, Action, Moveset};
-use kh2_tables::tables::{self as t, PrefFmab, PrefPlyr, PrefPrty, PrefSstm};
+use kh2_game_core::reaction_rules::{self as rules, ExeConsts, PatnRow, ReactionDefaults};
+use kh2_tables::tables::{self as t, Atkp, PrefFmab, PrefPlyr, PrefPrty, PrefSstm};
 
 use crate::anim::Rig;
 
@@ -44,12 +45,34 @@ pub struct Params {
     /// Growth-ability rows, row = level - 1.
     pub fmab: Vec<PrefFmab>,
     pub swing: Option<SwingConsts>,
+    /// The reaction rules' data (kh2-rs `combat::ReactionData`); `None` without the executable.
+    pub reaction: Option<Reaction>,
+    /// The attack rows (`atkp` of `00battle.bin`).
+    pub atkp: Vec<Atkp>,
+    /// Sora's maximum HP at level 1 (`plrp` HP of character 1, kh2-rs `GameData::sora_max_hp`).
+    pub max_hp: i32,
+    /// Sora's maximum MP (`plrp` MP).
+    pub max_mp: i32,
+}
+
+/// kh2-rs `combat::ReactionData`: the executable's constants, the `sstm` defaults, the `patn` table.
+#[derive(Clone, Debug)]
+pub struct Reaction {
+    pub consts: ExeConsts,
+    pub defaults: ReactionDefaults,
+    pub patn: Vec<PatnRow>,
 }
 
 impl Params {
     /// kh2-rs `GameData::fmab`.
     pub fn fmab(&self, level: u8) -> Option<&PrefFmab> {
         (level > 0).then(|| self.fmab.get(level as usize - 1)).flatten()
+    }
+
+    /// kh2-rs `GameData::atkp`: sub-id 0 first.
+    pub fn atkp(&self, id: i16) -> Option<&Atkp> {
+        let id = id as u16;
+        self.atkp.iter().find(|a| a.id == id && a.sub_id >> 8 == 0).or_else(|| self.atkp.iter().find(|a| a.id == id))
     }
 }
 
@@ -166,8 +189,15 @@ impl Disc {
         let plyr = pick(self.table::<PrefPlyr>(&t::PREF_PLYR)?, SORA_PREF, "pref plyr")?;
         let sstm = pick(self.table::<PrefSstm>(&t::PREF_SSTM)?, 0, "pref sstm")?;
         let fmab = self.table::<PrefFmab>(&t::PREF_FMAB)?;
-        let swing = self.exe().and_then(|e| SwingConsts::from_exe(&e));
-        Ok(Params { prty, plyr, sstm, fmab, swing })
+        let exe = self.exe();
+        let swing = exe.as_deref().and_then(SwingConsts::from_exe);
+        let patn = kh2_tables::subfile(&mut self.0, &t::PATN).ok().and_then(|b| rules::parse_patn(&b)).unwrap_or_default();
+        let reaction = exe.as_deref().and_then(ExeConsts::from_exe).map(|consts| Reaction { consts, defaults: ReactionDefaults::from(&sstm), patn });
+        let atkp = self.table::<Atkp>(&t::ATKP)?;
+        let plrp = self.table::<t::Plrp>(&t::PLRP)?;
+        let sora = plrp.iter().find(|p| p.character == 1);
+        let (max_hp, max_mp) = (sora.map_or(20, |p| p.hp as i32), sora.map_or(100, |p| p.mp as i32));
+        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp })
     }
 
     /// Everything Sora needs.

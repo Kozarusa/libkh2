@@ -5,6 +5,11 @@
 //! the `Resource` derive. This crate provides exactly those names so the files compile unchanged,
 //! without pulling Bevy into the library. Bevy 0.19 re-exports glam 0.32, the same types.
 
+/// `bevy::math` (glam).
+pub mod math {
+    pub use glam::*;
+}
+
 pub mod prelude {
     pub use glam::*;
     pub use libkh2_bevy_shim_derive::Resource;

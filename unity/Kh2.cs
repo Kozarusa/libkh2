@@ -52,7 +52,7 @@ public static class Kh2
         public int grounded, state, motionSlot, motionId;
         public float frame, gframe;
         public int motionFinished, blending, combo, attackActive, attackId, attackGroup;
-        public int comboWindow, finisherWindow, weaponOut, groundMaterial, invulnerable;
+        public int comboWindow, finisherWindow, weaponOut, groundMaterial, invulnerable, hp, maxHp;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -76,6 +76,9 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_set_target(int handle, float x, float y, float z, float radius, float halfHeight);
     [DllImport(Lib)] public static extern int kh2_clear_target(int handle);
     [DllImport(Lib)] public static extern int kh2_report_hit(int handle);
+    [DllImport(Lib)] public static extern int kh2_hit_taken(int handle, int atkp, int damage, float dirX, float dirY, float dirZ);
+    [DllImport(Lib)] public static extern int kh2_set_hp(int handle, int hp, int maxHp);
+    [DllImport(Lib)] public static extern int kh2_revive(int handle, int automatic);
     [DllImport(Lib)] public static extern int kh2_set_high_jump(int handle, byte level);
     [DllImport(Lib)] public static extern int kh2_set_growth(int handle, byte highJump, byte quickRun, byte aerialDodge, byte glide);
     [DllImport(Lib)] public static extern int kh2_bone_count(int handle, int which);

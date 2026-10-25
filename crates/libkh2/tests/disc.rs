@@ -233,3 +233,55 @@ fn growth_abilities_use_the_fmab_rows() {
     eprintln!("glide sink {} (GlideFallMax {})", y - s.motor.pos.y, f.glide_fall_max);
     assert!(y - s.motor.pos.y <= f.glide_fall_max + 1e-3);
 }
+
+#[test]
+fn hits_flinch_blow_knock_out_and_guard() {
+    use kh2::sora::HitResult;
+    use kh2_game_core::reaction_rules::reaction_class;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    assert!(game.params.reaction.is_some(), "reaction data from the executable");
+    let w = floor();
+    let row = |class: u8| game.params.atkp.iter().find(|a| reaction_class(a.enemy_reaction) == class && a.sub_id >> 8 == 0).map(|a| a.id as i16).expect("a row of the class");
+    let (flinch, blow) = (row(3), row(4));
+    let back = Vec3::new(0.0, 0.0, -1.0); // Sora faces +z: a hit along -z comes from the front
+    let run_out = |s: &mut Sora, n: usize| {
+        let mut seen = Vec::new();
+        for _ in 0..n {
+            s.tick(&w, &Input::default());
+            if seen.last() != Some(&s.state) {
+                seen.push(s.state);
+            }
+        }
+        seen
+    };
+    // Flinch, invincible for a while, back to the ground state.
+    let mut s = standing(&game, &w);
+    let hp = s.hp;
+    assert_eq!(s.hit(flinch, 1, back), HitResult::Flinched);
+    assert_eq!((s.state, s.hp), (State::Hurt, hp - 1));
+    assert_eq!(s.hit(flinch, 1, back), HitResult::Ignored, "invulnerability frames");
+    let seen = run_out(&mut s, 200);
+    eprintln!("flinch (atkp {flinch}): {seen:?}");
+    assert_eq!(s.state, State::Ground);
+    // Blow: launched, lands, gets up.
+    let mut s = standing(&game, &w);
+    assert_eq!(s.hit(blow, 1, back), HitResult::Blown);
+    let seen = run_out(&mut s, 300);
+    eprintln!("blow (atkp {blow}): {seen:?}");
+    assert!(seen.contains(&State::Blown) && seen.contains(&State::Hurt) && s.state == State::Ground);
+    // A lethal hit always launches and knocks out; revive stands him up.
+    let mut s = standing(&game, &w);
+    s.hit(flinch, 10_000, back);
+    run_out(&mut s, 300);
+    assert_eq!((s.state, s.hp), (State::Down, 0));
+    s.revive();
+    run_out(&mut s, 300);
+    assert_eq!((s.state, s.hp), (State::Ground, s.max_hp));
+    // Guard from the front repels; an attack then plays the counter if the ability is set.
+    let mut s = standing(&game, &w);
+    s.tick(&w, &Input { guard: true, ..Default::default() });
+    assert_eq!(s.state, State::Guard);
+    assert_eq!(s.hit(blow, 1, back), HitResult::Guarded);
+    assert_eq!(s.state, State::Counter);
+}

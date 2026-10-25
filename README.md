@@ -90,7 +90,11 @@ picked by the disc's attack table with the motions' own windows, guard, root mot
 Growth abilities (`kh2_set_growth`): High Jump, Quick Run, Aerial Dodge, Glide with the disc's `fmab`
 rows (disc test `growth_abilities_use_the_fmab_rows`).
 
-Not in v1: enemies, damage and reactions, magic, drive forms, summons, the camera, sounds and effects, moving platforms. See `DESIGN.md`.
+Hit reactions (`kh2_hit_taken`): the disc's `atkp` row through kh2-rs's `reaction_rules`
+(compiled in place): flinch, push, blow and landing, knock-out (`kh2_revive`), guard and counter,
+invulnerability ticks (disc test `hits_flinch_blow_knock_out_and_guard`).
+
+Not in v1: enemies, magic, drive forms, summons, the camera, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits
 

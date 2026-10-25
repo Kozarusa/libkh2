@@ -135,6 +135,7 @@ version = "0.1.0"
 dependencies = [
  "kh2-map",
  "kh2-model",
+ "kh2-tables",
  "libkh2-bevy-shim",
 ]
 

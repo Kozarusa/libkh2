@@ -48,6 +48,8 @@ pub struct Kh2State {
     pub weapon_out: i32,
     pub ground_material: i32,
     pub invulnerable: i32,
+    pub hp: i32,
+    pub max_hp: i32,
 }
 
 #[repr(C)]
@@ -281,6 +283,8 @@ fn state_of(s: &Sora) -> Kh2State {
         weapon_out: (s.battle_ticks > 0.0) as i32,
         ground_material: s.motor.ground.map_or(-1, |g| i32::from(g.material)),
         invulnerable: (s.invuln > 0.0) as i32,
+        hp: s.hp,
+        max_hp: s.max_hp,
     }
 }
 
@@ -377,6 +381,37 @@ pub extern "C" fn kh2_clear_target(handle: i32) -> i32 {
 pub extern "C" fn kh2_report_hit(handle: i32) -> i32 {
     sora_do(handle, -1, |s, _| {
         s.connected = true;
+        0
+    })
+}
+
+/// A hit taken: `atkp` the attack row id (from the disc's `atkp` table), `damage` the HP it takes,
+/// (dir_x, dir_y, dir_z) the hit direction from the attacker toward Sora. Returns 0 ignored
+/// (invincible or down), 1 guarded, 2 damage without flinch, 3 flinch, 4 blown, -1 unknown row.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_hit_taken(handle: i32, atkp: i32, damage: i32, dir_x: f32, dir_y: f32, dir_z: f32) -> i32 {
+    sora_do(handle, -1, |s, _| s.hit(atkp as i16, damage, Vec3::new(dir_x, dir_y, dir_z)) as i32)
+}
+
+/// Sets HP and maximum HP (defaults: the disc's level 1 values).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_set_hp(handle: i32, hp: i32, max_hp: i32) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        s.max_hp = max_hp.max(1);
+        s.hp = hp.clamp(0, s.max_hp);
+        0
+    })
+}
+
+/// Stands Sora up from the knock-out (full HP). `auto` != 0 makes him stand up by himself after
+/// 180 ticks down, as kh2-rs does where no game over runs.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_revive(handle: i32, auto: i32) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        s.auto_revive = auto != 0;
+        if s.state == crate::sora::State::Down {
+            s.revive();
+        }
         0
     })
 }

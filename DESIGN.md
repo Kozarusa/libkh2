@@ -112,7 +112,13 @@ the guard (key 11); host-supplied target; posed skeleton and attack volumes.
 Step 1 (decided: USA rules, no dodge roll): Quick Run, Glide, Aerial Dodge and High Jump, transcribed
 from `sora::tick`'s QuickRun/Glide/Air branches with the `fmab` row of each level.
 
-Not covered: enemies and damage (no hurt/blow states, no HP), magic, drive forms, summons, items,
+Step 2: `reaction_rules.rs` (pure, Bevy only for `Vec3`) is compiled in place too; `Sora::hit` is a
+transcription of `sora::receive_hits`. decided: the host computes the damage (it owns the attacker's
+stats); Sora's resistances are taken as 100 (no equipment); Second Chance / Once More / Leaf Bracer
+and Aerial Recovery / Retaliating Slash are not ported; knock-out waits for `kh2_revive` unless
+auto-revive is set (kh2-rs stands up after 180 ticks).
+
+Not covered: enemies, magic, drive forms, summons, items,
 the dodge roll, reaction commands, the camera (only the look
 direction comes in; no lock-on camera), the auto-target, sounds and effects (frame triggers are
 reported, not played), the game's exact COCT walker (`Oct`, unwired in kh2-rs too), weapon

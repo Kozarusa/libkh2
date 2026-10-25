@@ -71,6 +71,14 @@ pub enum State {
     Guard,
     QuickRun,
     Glide,
+    /// A flinch (hit reaction motion) plays.
+    Hurt,
+    /// Launched by a blow, until landing.
+    Blown,
+    /// Knocked out (HP 0): stays down until `revive`.
+    Down,
+    /// The guard repelled a hit; an attack press answers with the counter.
+    Counter,
 }
 
 impl State {
@@ -84,6 +92,10 @@ impl State {
             State::Guard => 4,
             State::QuickRun => 5,
             State::Glide => 6,
+            State::Hurt => 7,
+            State::Blown => 8,
+            State::Down => 9,
+            State::Counter => 10,
         }
     }
 }
@@ -264,6 +276,14 @@ pub struct Sora {
     pub aerial_dodge_ready: bool,
     /// Invincible ticks left (Quick Run's AirSlideStarTime, hurt reactions).
     pub invuln: f32,
+    pub hp: i32,
+    pub max_hp: i32,
+    /// Decaying push (kh2-rs `reaction_rules::Push`) and a blow's flight.
+    pub push: Option<kh2_game_core::reaction_rules::Push>,
+    pub blow: Option<kh2_game_core::reaction_rules::Blow>,
+    pub blown_back: bool,
+    /// Stand up by itself after 180 ticks down (kh2-rs's stand-in where no game over runs).
+    pub auto_revive: bool,
     pub target: Option<Target>,
     pub body: Anim,
     pub weapon: Option<Anim>,
@@ -279,6 +299,7 @@ impl Sora {
     pub fn new(game: Arc<Game>, at: Vec3) -> Sora {
         let body = Anim::new(game.sora.clone());
         let weapon = game.keyblade.clone().map(Anim::new);
+        let max_hp = game.params.max_hp;
         // The capsule stays kh2-rs's `Capsule::default()` (radius 35, Sora's body shape).
         Sora {
             game,
@@ -301,6 +322,12 @@ impl Sora {
             dash_brake: 0.0,
             aerial_dodge_ready: false,
             invuln: 0.0,
+            hp: max_hp,
+            max_hp,
+            push: None,
+            blow: None,
+            blown_back: false,
+            auto_revive: false,
             target: None,
             body,
             weapon,
@@ -677,18 +704,72 @@ impl Sora {
                     }
                 }
             }
-            State::Guard => {
+            // Handled after this match (no input reaches them).
+            State::Hurt | State::Blown | State::Down => {}
+            State::Guard | State::Counter => {
                 self.motor.vel = Vec3::ZERO;
                 if !self.motor.grounded {
                     airborne_dy = Some(self.motor.jump_dy(fall_max));
                 }
-                if self.body.finished || (self.body.trigger(range::BLEND_TO_IDLE) && (dir != Vec3::ZERO || attack)) {
+                // An attack after a guard hit answers with the counter action (key 39, its ability).
+                let counter = (self.state == State::Counter && attack)
+                    .then(|| game.moves.by_key(key::COUNTER).filter(|c| self.abilities.chain(self.hits, self.finishers, false, false).check(c).is_ok()).cloned())
+                    .flatten()
+                    .and_then(|c| motion(c.motion as usize).map(|slot| (c, slot)));
+                if let Some((_, slot)) = counter {
+                    self.body.restart(Some(slot), false, BLEND_ATTACK);
+                    self.state = State::Attack { air: false, finisher: false };
+                    self.timer = 0.0;
+                    self.hits = 1;
+                    self.finishers = 1;
+                    self.queued_attack = false;
+                    self.connected = false;
+                } else if self.body.finished || (self.body.trigger(range::BLEND_TO_IDLE) && (dir != Vec3::ZERO || attack)) {
                     self.state = if self.motor.grounded { State::Ground } else { State::Air };
                     if attack && self.motor.grounded {
                         self.request(world, false, Windows { free: true, combo: false }, false, &c, &mut keep_out);
                     }
                 }
             }
+        }
+        match self.state {
+            State::Hurt => {
+                self.motor.vel *= 0.85;
+                if !self.motor.grounded {
+                    airborne_dy = Some(self.motor.jump_dy(fall_max));
+                }
+                if self.body.finished {
+                    self.state = if self.motor.grounded { State::Ground } else { State::Air };
+                }
+            }
+            State::Blown => {
+                // The flight of a blow (FUN_0019e4d8); without the reaction data the jump model.
+                if let (Some(b), Some(r)) = (self.blow.as_mut(), game.params.reaction.as_ref()) {
+                    let (h, vy) = b.step(&r.defaults, &r.consts);
+                    self.motor.vel = b.dir * h;
+                    airborne_dy = Some(vy);
+                } else {
+                    airborne_dy = (!self.motor.grounded).then(|| self.motor.jump_dy(fall_max));
+                }
+                if self.motor.grounded && self.timer > 2.0 {
+                    self.blow = None;
+                    self.motor.vel = Vec3::ZERO;
+                    if self.hp <= 0 {
+                        self.state = State::Down;
+                        self.timer = 0.0;
+                    } else {
+                        self.state = State::Hurt;
+                        self.body.restart(motion(if self.blown_back { id::DAMAGE_BLOW_BACK_LAND } else { id::DAMAGE_BLOW_FRONT_LAND }), false, 3.0);
+                    }
+                }
+            }
+            State::Down => {
+                self.motor.vel = Vec3::ZERO;
+                if self.auto_revive && self.timer > 180.0 {
+                    self.revive();
+                }
+            }
+            _ => {}
         }
         if keep_out {
             self.battle_ticks = BATTLE_TICKS;
@@ -703,7 +784,13 @@ impl Sora {
         self.motor.yaw = wrap_angle(self.motor.yaw + root_yaw);
         let start_yaw = self.motor.yaw - self.body.root.yaw;
         let root_move = Quat::from_rotation_y(start_yaw) * root_t;
-        let delta = self.motor.vel + root_move.with_y(0.0) + lunge_move;
+        let mut delta = self.motor.vel + root_move.with_y(0.0) + lunge_move;
+        if let (Some(p), Some(r)) = (self.push.as_mut(), game.params.reaction.as_ref()) {
+            delta += p.step(&r.consts);
+            if p.finished() {
+                self.push = None;
+            }
+        }
         let dy = airborne_dy.map(|d| d + root_move.y);
         let was_air = airborne_dy.is_some();
         let before = self.motor.pos;
@@ -752,6 +839,95 @@ impl Sora {
             if self.pose {
                 w.pose_now();
             }
+        }
+    }
+
+    /// Stands up from the knock-out with full HP (kh2-rs `State::Down` stand-up: 120 invincible
+    /// ticks, motion 40 with blend 6).
+    pub fn revive(&mut self) {
+        self.hp = self.max_hp;
+        self.invuln = 120.0;
+        self.state = State::Hurt;
+        let slot = self.game.sora.mset.slot(id::DAMAGE_BLOW_RECOV, PlayerState::BattleWeapon);
+        self.body.restart(slot, false, 6.0);
+    }
+
+    /// A hit taken (kh2-rs `sora::receive_hits`): `atkp` is the attack row id, `damage` the HP it
+    /// takes (the host computes it, it knows the attacker's stats), `dir` the hit direction (from
+    /// the attacker toward Sora). Guard from the front repels it; otherwise the victim reaction of
+    /// the row (`reaction_rules::victim_outcome`) plays.
+    pub fn hit(&mut self, atkp: i16, damage: i32, dir: Vec3) -> HitResult {
+        if self.invuln > 0.0 || self.state == State::Down {
+            return HitResult::Ignored;
+        }
+        let game = self.game.clone();
+        let facing = self.motor.forward();
+        let from_front = facing.dot(-dir) > 0.0;
+        if self.state == State::Guard && !self.body.trigger(range::BLEND_TO_IDLE) && from_front {
+            let slot = game.sora.mset.slot(id::AUTOGUARD, PlayerState::BattleWeapon);
+            self.body.restart(slot, false, 2.0);
+            self.state = State::Counter;
+            self.invuln = 18.0;
+            return HitResult::Guarded;
+        }
+        let (Some(atk), Some(reaction)) = (game.params.atkp(atkp), game.params.reaction.as_ref()) else { return HitResult::NoRow };
+        use kh2_game_core::reaction_rules::{self as rules, Blow, Push, VictimAction, VictimCtx};
+        let useless = rules::is_ineffective(100, 100);
+        self.hp = (self.hp - damage.max(0)).max(0);
+        let ctx = VictimCtx { status: 0, grounded: self.motor.grounded, attacker_flag_4000: false, from_front, hit_part_plain: true };
+        let out = rules::victim_outcome(&rules::HitRow::from_atkp(atk), useless, &ctx, &reaction.patn, &reaction.defaults, &reaction.consts);
+        let d = &reaction.defaults;
+        let action = match out.action {
+            a @ VictimAction::Blow { .. } => a,
+            _ if self.hp == 0 => VictimAction::Blow { motion: rules::blow_motion(from_front), up: d.blow_up, horiz: d.blow_speed, face_attacker: from_front },
+            a => a,
+        };
+        let pstate = PlayerState::BattleWeapon;
+        let rig = game.sora.clone();
+        let first_slot = |ids: &[usize]| ids.iter().find_map(|&i| rig.mset.slot(i, pstate));
+        let away = dir.with_y(0.0).normalize_or_zero();
+        match action {
+            VictimAction::None | VictimAction::NotDecoded { .. } => {}
+            VictimAction::Push { strength } => self.push = Push::new(away, strength, 0.0, &reaction.consts),
+            VictimAction::Flinch { motion, fallback } | VictimAction::FlinchPush { motion, fallback, .. } => {
+                if let VictimAction::FlinchPush { strength, .. } = action {
+                    self.push = Push::new(away, strength, 0.0, &reaction.consts);
+                }
+                self.body.restart(first_slot(&[motion as usize, fallback as usize]), false, 2.0);
+                self.state = State::Hurt;
+                self.motor.vel = Vec3::ZERO;
+            }
+            VictimAction::Class14 { motion, strength, face_attacker } => {
+                let to = if face_attacker { -away } else { away };
+                self.motor.yaw = to.x.atan2(to.z);
+                self.push = Push::new(away, strength, 0.0, &reaction.consts);
+                self.body.restart(first_slot(&[motion as usize, id::DAMAGE_S_FRONT_HIGH]), false, 2.0);
+                self.state = State::Hurt;
+                self.motor.vel = Vec3::ZERO;
+            }
+            VictimAction::Blow { motion, up, horiz, face_attacker } => {
+                let to = if face_attacker { -away } else { away };
+                self.motor.yaw = to.x.atan2(to.z);
+                self.blow = Some(Blow::new(away, up, horiz, d));
+                self.push = None;
+                self.motor.vel = Vec3::ZERO;
+                self.motor.start_fall();
+                self.state = State::Blown;
+                self.timer = 0.0;
+                self.blown_back = !from_front;
+                self.body.restart(rig.mset.slot(motion as usize, pstate), false, 2.0);
+            }
+        }
+        if !matches!(action, VictimAction::None | VictimAction::NotDecoded { .. } | VictimAction::Push { .. }) {
+            self.hits = 0;
+            self.finishers = 1;
+        }
+        // kh2-rs: the game's invulnerability after a hit was not found; the app's own timer.
+        self.invuln = 36.0;
+        match action {
+            VictimAction::Blow { .. } => HitResult::Blown,
+            VictimAction::None | VictimAction::NotDecoded { .. } | VictimAction::Push { .. } => HitResult::NoFlinch,
+            _ => HitResult::Flinched,
         }
     }
 
@@ -827,6 +1003,21 @@ impl Sora {
     pub fn moves(&self) -> &moveset::Moveset {
         &self.game.moves
     }
+}
+
+/// What a hit did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HitResult {
+    /// Invincible or knocked out: nothing happened.
+    Ignored = 0,
+    /// The guard repelled it.
+    Guarded = 1,
+    /// Damage, at most a push.
+    NoFlinch = 2,
+    Flinched = 3,
+    Blown = 4,
+    /// No such attack row, or no reaction data (the executable could not be read).
+    NoRow = -1,
 }
 
 /// An attack capsule in world units.
