@@ -894,6 +894,14 @@ int32_t kh2_enemy_spawn(int32_t handle, const char *kind, float x, float y, floa
 
 Spawns an enemy by model ("M_EX020" Shadow, "M_EX010" Soldier, "M_EX990" Dusk, ...) fighting Sora `handle`; returns its id (> 0) or -1.
 
+### `kh2_area_spawn`
+
+```c
+int32_t kh2_area_spawn(int32_t handle, const char *area, int32_t program, int32_t with_disabled);
+```
+
+Spawns the enemies of an area's battle program (`program` = the btl program id, -1 every program; kh2-rs area_groups: the area file's spawn records with their spawn kinds and parameters). Records waiting for a signal are skipped unless with_disabled. Returns the number spawned (at most 256 enemies per Sora). The areas' signals, waves and triggers are not run: the host decides.
+
 ### `kh2_enemies_tick`
 
 ```c

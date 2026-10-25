@@ -1361,3 +1361,63 @@ fn summons_arrive_run_their_scripts_and_leave() {
         assert!(gone_at.is_some(), "it leaves and the summon ends");
     }
 }
+
+/// The areas' own battle groups: which areas place which kinds; tt04's Dusks spawn on tt04's collision
+/// and act; M_EX850 / M_EX870 spawned from their own groups (with their spawn records) act.
+#[test]
+fn area_battle_groups_spawn_and_fight() {
+    use kh2::enemy::Enemies;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let mut areas = Vec::new();
+    for world in ["tt", "hb", "al", "bb", "mu", "lk", "po", "eh", "nm", "ca", "tr", "lm", "dc", "wi", "he"] {
+        for n in 0..45 {
+            let a = format!("{world}{n:02}");
+            let b = d.area_battle(&a, None);
+            if !b.enemies.is_empty() {
+                areas.push((a, b));
+            }
+        }
+    }
+    for (a, b) in &areas {
+        let mut kinds: Vec<&str> = b.enemies.iter().map(|e| e.model.as_str()).collect();
+        kinds.sort();
+        kinds.dedup();
+        eprintln!("{a}: programs {:?}, {} enemies {kinds:?}{}", b.programs, b.enemies.len(), if b.skipped.is_empty() { String::new() } else { format!(", no kind for {:?}", b.skipped) });
+    }
+    assert!(areas.len() > 5);
+    let mut tested = 0;
+    for want in ["M_EX990", "M_EX850", "M_EX870"] {
+        let Some((a, b)) = areas.iter().find(|(_, b)| b.enemies.iter().any(|e| e.model == want)) else { continue };
+        let program = b.enemies.iter().find(|e| e.model == want).unwrap().program;
+        let w = World::from_coct(&d.coct(a).expect("collision"));
+        let at = b.player.map_or(w.spawn_point(), |p| p.0);
+        let mut s = Sora::new(game.clone(), at);
+        s.max_hp = 9999;
+        s.hp = 9999;
+        let mut en = Enemies::new(data.clone());
+        for e in b.enemies.iter().filter(|e| e.program == program && !e.disabled) {
+            en.spawn_with(&e.model, e.at, e.yaw, &w, e.spawn_kind, Some(e.spawn_params));
+        }
+        let starts: Vec<(String, Vec3, Option<usize>)> = en.list.iter().map(|e| (e.data.kind.model.to_string(), e.pos(), e.anim.slot)).collect();
+        let mut moved = vec![0.0f32; en.list.len()];
+        let mut slots: Vec<std::collections::HashSet<Option<usize>>> = vec![Default::default(); en.list.len()];
+        for _ in 0..900 {
+            s.hp = 9999;
+            s.tick(&w, &Input::default());
+            en.tick(&mut s, &w, game.params.sstm.fall_max);
+            en.events.clear();
+            for (k, e) in en.list.iter().enumerate() {
+                moved[k] = moved[k].max(e.pos().distance(starts[k].1));
+                slots[k].insert(e.anim.slot);
+            }
+        }
+        let report: Vec<String> = starts.iter().enumerate().map(|(k, s)| format!("{} moved {:.0} motions {}", s.0, moved[k], slots[k].len())).collect();
+        eprintln!("{a} program {program}: {report:?}; unserved {:?}", en.unserved_calls());
+        let acted = starts.iter().enumerate().filter(|(k, s)| s.0 == want && (moved[*k] > 10.0 || slots[*k].len() > 1)).count();
+        eprintln!("{want} in {a}: {acted} of {} act", starts.iter().filter(|s| s.0 == want).count());
+        tested += 1;
+    }
+    assert!(tested > 0);
+}

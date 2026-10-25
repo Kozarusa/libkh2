@@ -13,6 +13,7 @@ pub mod enemy;
 pub mod ffi;
 pub mod party;
 pub mod replay;
+pub mod area;
 pub mod friend;
 pub mod limit;
 pub mod save;

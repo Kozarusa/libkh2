@@ -82,7 +82,7 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
     let max = |r: &mut Rng, cap: usize| if r.chance(3) { cap as u32 } else { r.below(cap as u64 + 1) as u32 };
     let kinds = ["M_EX020", "M_EX010", "M_EX990", "", "P_EX100", "nonsense"];
     unsafe {
-        let arm = r.below(62);
+        let arm = r.below(63);
         if std::env::var_os("KH2_FUZZ_TRACE").is_some() {
             eprintln!("arm {arm} handle {h}");
         }
@@ -335,6 +335,12 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 if r.chance(8) {
                     kh2_surfaces_load_map(if r.chance(4) { std::ptr::null() } else { a.as_ptr() });
                     floor();
+                }
+            }
+            53 => {
+                let a = CString::new(["tt04", "", "zz99", "tt03"][r.below(4) as usize]).unwrap();
+                if r.chance(10) {
+                    kh2_area_spawn(h, if r.chance(4) { std::ptr::null() } else { a.as_ptr() }, r.int(), r.int());
                 }
             }
             49 => {

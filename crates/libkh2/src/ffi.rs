@@ -2129,3 +2129,42 @@ pub unsafe extern "C" fn kh2_poll_summon_event(handle: i32, out: *mut Kh2SummonE
         1
     })
 }
+
+/// Spawns the enemies of area `area`'s battle program `program` (the groups its `btl` program loads,
+/// from the area file's spawn records with their spawn kinds and parameters; -1: every program) for
+/// Sora `handle`. Disabled records (waiting for a signal) are skipped unless `with_disabled`.
+/// Returns the number spawned. Load the area's collision first (`kh2_surfaces_load_map`).
+///
+/// # Safety
+/// `area` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_area_spawn(handle: i32, area: *const c_char, program: i32, with_disabled: i32) -> i32 {
+    if area.is_null() {
+        return set_error("no area name");
+    }
+    let Ok(area) = unsafe { CStr::from_ptr(area) }.to_str().map(str::to_string) else { return set_error("area name is not UTF-8") };
+    with(-1, |l| {
+        if l.enemy_data.is_none() {
+            match l.disc.enemies() {
+                Ok(d) => l.enemy_data = Some(Arc::new(d)),
+                Err(e) => return set_error(e),
+            }
+        }
+        if usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref).is_none() {
+            return set_error(format!("no Sora with handle {handle}"));
+        }
+        let b = l.disc.area_battle(&area, u16::try_from(program).ok());
+        let Some(data) = l.enemy_data.clone() else { return -1 };
+        let en = l.enemies.entry(handle).or_insert_with(|| crate::enemy::Enemies::new(data));
+        let mut n = 0;
+        for e in b.enemies.iter().filter(|e| with_disabled != 0 || !e.disabled) {
+            if en.list.len() >= 256 {
+                break;
+            }
+            if en.spawn_with(&e.model, e.at, e.yaw, &l.world, e.spawn_kind, Some(e.spawn_params)).is_some() {
+                n += 1;
+            }
+        }
+        n
+    })
+}

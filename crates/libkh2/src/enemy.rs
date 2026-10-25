@@ -289,6 +289,9 @@ pub struct Enemy {
     /// Hits landed by this enemy's attacks: (trigger start) of the motion slot that landed them.
     pub landed: HashSet<(Option<usize>, i16)>,
     pub removed: bool,
+    /// The spawn record's kind (host 1.110, -1 without one) and parameters (object +0x820 / +0x824).
+    pub spawn_kind: i32,
+    pub spawn_params: Option<[i32; 2]>,
 }
 
 impl Enemy {
@@ -349,6 +352,11 @@ impl Enemies {
     /// kh2-rs `enemy::spawn_enemy` + `enemy_ai::ai_attach`: the kind by its name (`M_EX020` Shadow,
     /// `M_EX010` Soldier, `M_EX990` Dusk, ...) at `at`, facing `yaw`. Returns its id.
     pub fn spawn(&mut self, kind: &str, at: Vec3, yaw: f32, world: &World) -> Option<u32> {
+        self.spawn_with(kind, at, yaw, world, -1, None)
+    }
+
+    /// `spawn` with the spawn record's kind and parameters (an area's battle group, `area::AreaEnemy`).
+    pub fn spawn_with(&mut self, kind: &str, at: Vec3, yaw: f32, world: &World, spawn_kind: i32, spawn_params: Option<[i32; 2]>) -> Option<u32> {
         let k = self.data.kinds.get(kind)?.clone();
         let stats = self.data.stats(k.kind.enmp, self.world_level);
         self.serial += 1;
@@ -393,6 +401,8 @@ impl Enemies {
             hits: Vec::new(),
             landed: HashSet::new(),
             removed: false,
+            spawn_kind,
+            spawn_params,
             data: k,
             rt,
             obj,
@@ -443,6 +453,8 @@ impl Enemies {
                 obj.blend_left = blend.max(0.0);
             }
             obj.blend_left = (obj.blend_left - 1.0).max(0.0);
+            obj.spawn_kind = e.spawn_kind;
+            obj.spawn_params = e.spawn_params;
             obj.trigger_bits = trigger_bits(&e.anim);
             let motion_events = motion_events(&e.anim);
             obj.hp_max = e.stats.max_hp;

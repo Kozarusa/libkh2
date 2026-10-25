@@ -74,6 +74,17 @@ Reading the table:
 | N_EX570_BTL | Seifer | yes | 370 | 11 | 2 | yes | 0 |
 | N_EX600_BTL | N_EX600 | yes | 9929 | 13 | 5 | no (10 hits) | 0 |
 
+## Area battle groups (round 6)
+
+`kh2_area_spawn(handle, "<area>", program, with_disabled)` spawns an area's own battle groups (the
+spawn records its `btl` program loads, with each record's spawn kind and parameters; kh2-rs
+`area_groups`). The disc test `area_battle_groups_spawn_and_fight` lists them for the tt, hb, al, bb,
+mu, lk, po, eh, nm, ca, tr, lm, dc, wi and he areas (Twilight Town alone: tt03 to tt41) and runs
+tt03's Dusks (all act) and eh06's group with M_EX870: with its spawn record one of the four acts
+(the others wait for a signal or a group counter the library does not run; 2 host calls unserved).
+M_EX850 is in none of the areas scanned. Enemies hit Donald and Goofy when their attacks reach them
+(since round 5); no enemy script picks a member as its target (they aim at the player).
+
 ## Areas
 
 `kh2_surfaces_load_map("<area>")` loads an area's own collision (COCT). The disc test
