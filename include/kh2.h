@@ -399,11 +399,15 @@ typedef struct kh2_summon_state {
 } kh2_summon_state_t;
 typedef struct kh2_summon_event {
     int32_t kind;         /* 1 started (value = command), 2 arrived (value = segments, timer, text = model),
-                             3 script mode (text), 4 level up (value), 5 leaving (value = dismissed), 6 gone */
+                             3 script mode (text), 4 level up (value), 5 leaving (value = dismissed), 6 gone,
+                             7 class record (value = index), 8 blast hit (value = enemy id), 9 MP refill,
+                             10 heal (value = Sora's HP), 11 potion */
     int32_t value;
     float timer;
     char text[32];
 } kh2_summon_event;
+/* The Summon Effects option: 1 plays the arrival as an event. */
+KH2_API int32_t kh2_summon_set_arrival_event(int32_t handle, int32_t on);
 KH2_API int32_t kh2_summon_set_owned(int32_t handle, const uint16_t *items, uint32_t count);
 /* Writes up to max command ids and status codes (0 available, 1 not a summon, 2 charm not owned,
  * 3 busy, 4 party missing, 5 in a form, 6 not enough drive points, 7 airborne); returns the count. */

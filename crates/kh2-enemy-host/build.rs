@@ -121,7 +121,44 @@ fn friend_bits() {
     std::fs::write(Path::new(&dir).join("hit_rotation.rs"), span(&read("kh2-game-core/src/fx.rs"), "pub fn hit_rotation", "pub fn hit_rotation")).unwrap();
 }
 
+/// kh2-rs `kh2-party/src/summon.rs`'s pure modules: from `pub mod cmd {` to the end of `pub mod rules`
+/// (the command ids, motions, the summon AI object `ai`, Stitch's, Genie's and the scripted classes,
+/// the rules); the Bevy systems after them are left out.
+fn summon_rules() {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-party/src/summon.rs");
+    println!("cargo:rerun-if-changed={}", p.display());
+    let s = std::fs::read_to_string(&p).expect("summon.rs");
+    let a = s.find("pub mod cmd {").expect("summon.rs cmd");
+    let r = s.find("pub mod rules {").expect("summon.rs rules");
+    let end = close(s.as_bytes(), r + "pub mod rules {".len());
+    let mut doc_start = a;
+    // Keep the doc comment lines above `pub mod cmd`.
+    while let Some(prev) = s[..doc_start.saturating_sub(1)].rfind('\n') {
+        if s[prev + 1..doc_start].trim_start().starts_with("///") {
+            doc_start = prev + 1;
+        } else {
+            break;
+        }
+    }
+    let mut text = s[doc_start..end].to_string();
+    // FUN_002f6320's locomotion choice (a free function after the modules).
+    text.push_str("\n\n");
+    text.push_str(&span(&s, "fn locomotion_want", "fn locomotion_want").replacen("fn locomotion_want", "pub fn locomotion_want", 1));
+    std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("summon_rules.rs"), text).unwrap();
+    // `shared/summon.rs`'s two pure names the modules use: `KidOp` and `GENIE_NEO`.
+    let q = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-game-core/src/shared/summon.rs");
+    println!("cargo:rerun-if-changed={}", q.display());
+    let t = std::fs::read_to_string(&q).expect("shared/summon.rs");
+    let mut out = span(&t, "pub enum KidOp", "pub enum KidOp");
+    let k = t[..t.find("pub enum KidOp").unwrap()].rfind("#[derive").unwrap();
+    out = format!("{}{}", &t[k..t.find("pub enum KidOp").unwrap()], out);
+    out.push(char::from(10u8));
+    out.push_str(&span(&t, "pub const GENIE_NEO", "pub const GENIE_NEO"));
+    std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("shared_summon.rs"), out).unwrap();
+}
+
 fn main() {
+    summon_rules();
     friend_bits();
     player_reaction();
     limits();

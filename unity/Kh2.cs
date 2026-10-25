@@ -194,6 +194,7 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_summon_set_owned(int handle, ushort[] items, uint count);
     [DllImport(Lib)] public static extern int kh2_summon_status(int handle, [Out] ushort[] cmds, [Out] int[] status, uint max);
     [DllImport(Lib)] public static extern int kh2_summon(int handle, int cmd);
+    [DllImport(Lib)] public static extern int kh2_summon_set_arrival_event(int handle, int on);
     [DllImport(Lib)] public static extern int kh2_summon_state(int handle, out SummonState state);
     [DllImport(Lib)] public static extern int kh2_summon_bones(int handle, int space, [Out] float[] outMatrices, uint maxBones);
     [DllImport(Lib)] public static extern int kh2_poll_summon_event(int handle, out SummonEvent ev);

@@ -45,7 +45,18 @@ pub struct SummonData {
     pub table: Option<kh2_bdx::HostTable>,
     pub free: Option<kh2_game_core::party_rules::FreePointConsts>,
     pub atkp: kh2_enemy_host::data::GameData,
+    /// Stitch's and Genie's classes (kh2-rs `stitch` / `genie`, compiled from summon.rs): constants
+    /// and records from the executable; the members' follow rules Genie runs; FUN_0017da30's orders.
+    pub stitch: Option<(stitch::Consts, Vec<kh2_game_core::party_battle::Record>)>,
+    pub genie: Option<(genie::Consts, Vec<kh2_game_core::party_battle::Record>)>,
+    pub follow: Option<kh2_game_core::party_rules::Consts>,
+    pub orders: Option<[[u8; 4]; 4]>,
+    /// `prty` rows and their offsets (walk, run, turn of a NeoMoveset).
+    pub prty: Vec<t::PrefPrty>,
+    pub prty_offsets: Vec<u32>,
 }
+
+use kh2_enemy_host::summon::{genie, stitch};
 
 impl Disc {
     pub fn summons(&mut self) -> Result<SummonData, LoadError> {
@@ -56,7 +67,26 @@ impl Disc {
         let d = crate::drive::DriveData::load(self)?;
         let exe = self.exe();
         let atkp = kh2_enemy_host::data::GameData { atkp: kh2_tables::load::<t::Atkp>(&mut self.0, &t::ATKP).map(|d| d.rows).unwrap_or_default() };
+        let prty = kh2_tables::load::<t::PrefPrty>(&mut self.0, &t::PREF_PRTY).map(|d| d.rows).unwrap_or_default();
+        let prty_offsets: Vec<u32> = self
+            .read("03system.bin")
+            .ok()
+            .and_then(|sys| {
+                let top = kh2_bar::parse(&sys).ok()?;
+                let inner = kh2_bar::parse(kh2_bar::find(&top, "pref")?.data).ok()?;
+                let b = kh2_bar::find(&inner, "prty")?.data;
+                let n = u32::from_le_bytes(b.get(0..4)?.try_into().ok()?) as usize;
+                (0..n).map(|i| b.get(4 + 4 * i..8 + 4 * i).map(|x| u32::from_le_bytes(x.try_into().unwrap()))).collect::<Option<Vec<u32>>>()
+            })
+            .unwrap_or_default();
+        let e = exe.as_deref();
         Ok(SummonData {
+            stitch: e.and_then(|e| Some((stitch::Consts::from_exe(e)?, stitch::records(e)?))),
+            genie: e.and_then(|e| Some((genie::Consts::from_exe(e)?, genie::records(e)?))),
+            follow: e.and_then(kh2_game_core::party_rules::Consts::from_exe),
+            orders: e.and_then(kh2_game_core::party_battle::motion_orders),
+            prty,
+            prty_offsets,
             rows,
             cmds,
             tuning: SummonTuning::from_sstm(&sstm),
@@ -88,6 +118,13 @@ pub struct SummonObject {
     pub neo: u16,
     /// The mode asked of the object's script on its next update.
     pub pending: Option<String>,
+    /// The class AI's state (kh2-rs `ai::SummonAi`: Stitch's and Genie's parts), the object's walk /
+    /// run / turn / radius, and the enemies the running blast hit.
+    pub stitch: stitch::StitchAi,
+    pub genie: genie::GenieAi,
+    pub moves: (f32, f32, f32, f32),
+    pub blast_hit: std::collections::HashSet<u32>,
+    pub using: bool,
     /// The script's current mode.
     pub mode: Option<String>,
 }
@@ -106,6 +143,14 @@ pub enum SummonEvent {
     Arrived { model: String, timer: f32, segments: u8 },
     /// The script switched mode (`appear_skip`, `idle`, `leave` ...).
     Mode(String),
+    /// The class AI started record `index` (Stitch: stand, move, blast, refill, link ...; Genie:
+    /// follow, potion).
+    Record { index: usize },
+    /// Stitch's blast hit enemy `id`; his MP refill; his heal of Sora; Genie's potion on Sora.
+    Blast { id: u32 },
+    Refill,
+    Heal { hp: i32 },
+    Potion,
     LevelUp(u8),
     /// The end: timer or dismiss; then the object is gone and the companions are back.
     Leaving { dismissed: bool },
@@ -143,6 +188,10 @@ pub struct Summons {
     pub events: Vec<SummonEvent>,
     /// The companions are away while the summon runs.
     pub companions_away: bool,
+    /// The Summon Effects option: the arrival plays as an event (`appear`, `sstm` 0x84 wait, state 1).
+    pub arrival_event: bool,
+    /// Genie's byte 7 (a random owned form, FUN_001c6a88) and Peter Pan's.
+    pub extra: u8,
 }
 
 impl Summons {
@@ -189,7 +238,13 @@ impl Summons {
         self.index = data.index_of(c).unwrap_or(0);
         self.sequence = true;
         self.state = 2;
-        self.arrival = Some(data.tuning.wait);
+        self.arrival = Some(if self.arrival_event { data.tuning.wait_event } else { data.tuning.wait });
+        if self.arrival_event {
+            self.state = 1;
+        }
+        // Peter Pan's byte 7 is 1 (kh2-rs `summon::tick`); Genie's is a random owned form, here form 1
+        // (decided: the forms the player owns are the host's).
+        self.extra = if c == kh2_enemy_host::summon::cmd::PETER_PAN || c == kh2_enemy_host::summon::cmd::GENIE { 1 } else { 0 };
         self.companions_away = true;
         self.events.push(SummonEvent::Started { command: c, index: self.index, cost: cmd.cost });
         Ok(())
@@ -233,7 +288,7 @@ impl Summons {
     }
 
     /// One tick (kh2-rs `summon::tick` and the object's script).
-    pub fn tick(&mut self, data: &SummonData, disc: &mut Disc, sora: &mut Sora, world: &kh2_game_core::world::World, battle: bool) {
+    pub fn tick(&mut self, data: &SummonData, disc: &mut Disc, sora: &mut Sora, world: &kh2_game_core::world::World, battle: bool, enemies: Option<&mut crate::enemy::Enemies>) {
         // The arrival thread: the wait, then gauge mode 3 and the object.
         if let Some(w) = self.arrival.as_mut() {
             *w -= rules::FRAME_UNIT;
@@ -254,7 +309,26 @@ impl Summons {
                     let pos = sora.motor.pos + sora.motor.forward() * 250.0;
                     if let Some(rig) = rig {
                         let brain = prog.map(|p| FriendBrain::new(p, obj.flags & 8 != 0, data.table.as_ref(), 8, &obj.model_name));
-                        self.object = Some(SummonObject { model: obj.model_name.clone(), body: Anim::new(rig), brain, trace: Default::default(), pos, yaw: sora.motor.yaw + std::f32::consts::PI, neo: obj.neo_status, pending: Some("appear_skip".into()), mode: None });
+                        let p = kh2_game_core::party_battle::pref_row(&data.prty_offsets, obj.neo_moveset as usize, 1).and_then(|k| data.prty.get(k));
+                        let radius = rig.model.shapes.iter().find(|s| s.kind == 0 || s.kind == 4).map_or(35.0, |s| s.radius.abs());
+                        let moves = (p.map_or(0.0, |p| p.walk_speed), p.map_or(0.0, |p| p.run_speed), p.map_or(0.0, |p| p.turn_speed), radius);
+                        let mode = if self.arrival_event { "appear" } else { "appear_skip" };
+                        self.object = Some(SummonObject {
+                            model: obj.model_name.clone(),
+                            body: Anim::new(rig),
+                            brain,
+                            trace: Default::default(),
+                            pos,
+                            yaw: sora.motor.yaw + std::f32::consts::PI,
+                            neo: obj.neo_status,
+                            pending: Some(mode.into()),
+                            mode: None,
+                            stitch: Default::default(),
+                            genie: Default::default(),
+                            moves,
+                            blast_hit: Default::default(),
+                            using: false,
+                        });
                         self.events.push(SummonEvent::Arrived { model: obj.model_name.clone(), timer: timer.left, segments });
                     }
                 }
@@ -278,7 +352,8 @@ impl Summons {
                 let sw = crate::friend::ScriptWorld { player: sora.motor.pos, player_yaw: sora.motor.yaw, world, in_battle: battle, victims: &[], targets: &[], atkp: &data.atkp, free: data.free.as_ref() };
                 let want = o.pending.take().map(|m| (m, 0));
                 let out = crate::friend::update(b, &o.body, o.pos, o.yaw, [2, 3, 1, 0], None, want, &mut o.trace, &sw);
-                if let Some(slot) = out.slot {
+                // Stitch's class drives his body (the script's own requests are not applied, kh2-rs).
+                if let Some(slot) = out.slot.filter(|_| o.neo != stitch::NEO) {
                     let looping = o.body.rig.mset.get(slot).and_then(|s| s.motion.as_ref()).is_some_and(|m| m.frame_return < m.frame_end);
                     o.body.restart(Some(slot), looping, 4.0);
                 }
@@ -297,6 +372,9 @@ impl Summons {
                 // The script hides the object at its leave's end (host 1.63 / the hidden bit).
                 gone = b.obj.hidden;
             }
+            if o.mode.as_deref() != Some("leave") {
+                class_tick(data, o, sora, battle, enemies, &mut self.events, self.extra);
+            }
             o.body.step(true);
             if self.leaving && (gone || o.brain.is_none() || o.body.finished) {
                 gone = true;
@@ -311,6 +389,153 @@ impl Summons {
             self.state = 0;
             self.companions_away = false;
             self.events.push(SummonEvent::Gone);
+        }
+    }
+}
+
+/// The slot a class motion request plays (kh2-rs: the number when the set has it, else FUN_0017da30's order).
+fn class_slot(data: &SummonData, rig: &Rig, m: i32, battle: bool) -> Option<usize> {
+    if m >= 0 && rig.mset.has(m as usize) {
+        return Some(m as usize);
+    }
+    let order = data.orders?[kh2_game_core::party_battle::motion_state(battle, false)];
+    kh2_game_core::party_battle::remap(m, order, |x| rig.mset.has(x))
+}
+
+/// kh2-rs `summon::objects`'s class part for Stitch (FUN_001155e0 and its records) and Genie (the
+/// members' update with his two records). decided: Stitch's camera-space plane is placed in the
+/// frame of a camera behind Sora (450 cm back, 250 cm up, looking at him; the host's real camera is
+/// not known to the library); his blast (atkp 0x4ba, FUN_00118110) hits every living enemy once per
+/// attack object with Sora's status as the attacker's.
+fn class_tick(data: &SummonData, o: &mut SummonObject, sora: &mut Sora, battle: bool, mut enemies: Option<&mut crate::enemy::Enemies>, events: &mut Vec<SummonEvent>, extra: u8) {
+    let motion_done = o.body.finished;
+    if o.neo == stitch::NEO
+        && let Some((k, recs)) = data.stitch.as_ref()
+    {
+        let in_view = enemies.as_ref().map_or(0, |e| e.list.iter().filter(|x| x.alive() && !x.removed).count());
+        let now = stitch::Now { battle, limit: false, hp: (sora.hp, sora.max_hp), mp: (sora.mp, sora.max_mp), in_view, motion_done };
+        let st = &mut o.stitch;
+        let out = stitch::tick(k, recs, st, &now);
+        if let Some((i, _)) = out.started {
+            events.push(SummonEvent::Record { index: i });
+        }
+        if out.heal {
+            sora.hp = kh2_game_core::magic_rules::healed(sora.hp, sora.max_hp, 1);
+            events.push(SummonEvent::Heal { hp: sora.hp });
+        }
+        if out.refill {
+            sora.mp = sora.max_mp;
+            sora.charge = Default::default();
+            events.push(SummonEvent::Refill);
+        }
+        if st.attack.is_none() {
+            o.blast_hit.clear();
+        }
+        if out.blast
+            && let Some(en) = enemies.as_mut()
+            && let Some(atk) = sora.game.params.atkp(stitch::BLAST_ATKP).cloned()
+        {
+            let from = kh2_enemy_host::data::Stats { level: sora.level, max_hp: sora.max_hp, strength: sora.strength, magic: sora.magic, defense: sora.defense, max_taken: i32::MAX, min_taken: 1, max_dealt: i32::MAX, weakness: [100; 7], ..Default::default() };
+            let cam = sora.motor.pos - sora.motor.forward() * 450.0 + Vec3::Y * 250.0;
+            for e in en.list.iter_mut().filter(|e| e.alive() && !e.removed && e.data.kind.status) {
+                if !o.blast_hit.insert(e.id) {
+                    continue;
+                }
+                let dmg = crate::enemy::damage(&atk, &from, &e.stats);
+                let dir = (e.pos() - cam).with_y(0.0).normalize_or_zero();
+                if let Some(r) = sora.game.params.reaction.as_ref() {
+                    crate::enemy::Enemies::receive(e, &atk, dmg, dir, r);
+                }
+                en.events.push(crate::enemy::EnemyEvent::Hit { id: e.id, atkp: atk.id as i16, damage: dmg, hp: e.hp });
+                events.push(SummonEvent::Blast { id: e.id });
+            }
+        }
+        if std::mem::take(&mut st.motion_new)
+            && let Some(m) = st.motion
+        {
+            let rig = o.body.rig.clone();
+            if let Some(slot) = class_slot(data, &rig, m as i32, battle) {
+                let looping = rig.mset.get(slot).and_then(|x| x.motion.as_ref()).is_some_and(|mo| mo.frame_return < mo.frame_end);
+                o.body.play(Some(slot), looping, 0.0);
+            }
+        }
+        if st.parent {
+            // FUN_00117320 in the camera's frame (game camera axes x right, y down, z forward).
+            let p = stitch::camera_point(k, st.pos);
+            let fwd = sora.motor.forward();
+            let cam = sora.motor.pos - fwd * 450.0 + Vec3::Y * 250.0;
+            let look = (sora.motor.pos + Vec3::Y * 100.0 - cam).normalize_or_zero();
+            let right = look.cross(Vec3::Y).normalize_or_zero();
+            let up = right.cross(look);
+            o.pos = cam + right * p[0] - up * p[1] + look * p[2];
+            o.yaw = sora.motor.yaw + std::f32::consts::PI - st.pos[3];
+        }
+        return;
+    }
+    if o.neo == genie::NEO
+        && let (Some((k, recs)), Some(fc)) = (data.genie.as_ref(), data.follow.as_ref())
+    {
+        use kh2_game_core::party_rules as pr;
+        let g = &mut o.genie;
+        if !g.init {
+            g.init = true;
+            g.cmd = genie::start_command(k, extra);
+            g.form = Some(genie::form(k, g.cmd));
+        }
+        g.form = None;
+        if o.using && motion_done {
+            o.using = false;
+        }
+        if o.using {
+            return;
+        }
+        let now = genie::Now { battle, hp: (sora.hp, sora.max_hp) };
+        let out = genie::decide(k, recs, g, &now);
+        if let Some((i, _)) = out.started {
+            events.push(SummonEvent::Record { index: i });
+        }
+        let (walk, run, turn, radius) = o.moves;
+        let (pos, player) = (o.pos, sora.motor.pos);
+        let facing = Vec3::new(o.yaw.sin(), 0.0, o.yaw.cos());
+        let t = fc.thresholds(genie::CLASS);
+        let to_player = player - pos;
+        let ground_dir = to_player.with_y(0.0).normalize_or_zero();
+        let (mut dir, mut speed) = (facing, 0.0);
+        if out.follow {
+            let d = pr::follow_distance(&t, radius, fc);
+            let point = pr::follow_points(player, sora.motor.yaw, [Some((pos, d)), None], fc)[0].unwrap_or(player);
+            let input = pr::FollowIn { to_point: point - pos, to_player: to_player.normalize_or_zero(), dist: to_player.length(), ground_dir, facing, walk, run };
+            let row = if battle { pr::ROW_BATTLE_PLAYER } else { pr::ROW_FIELD };
+            (dir, speed) = pr::follow_step_row(&mut g.follow, &input, &t, row, fc);
+            speed = genie::follow_speed(k, speed, walk, sora.motor.vel.length());
+        }
+        let rig = o.body.rig.clone();
+        if out.potion {
+            g.follow.mode = 0;
+            if let Some(slot) = class_slot(data, &rig, genie::M_USE as i32, true) {
+                o.body.play(Some(slot), false, 0.0);
+                o.using = true;
+            }
+            // decided: the potion's effect lands at once (the game waits for trigger 6 of motion 9).
+            sora.apply_item_mult(genie::POTION_ITEM, 100);
+            events.push(SummonEvent::Potion);
+        }
+        let (d, sp) = pr::steer(&mut g.follow, dir, speed, walk, run, fc);
+        let sp = if out.potion { 0.0 } else { sp };
+        let delta = d.with_y(0.0).normalize_or_zero() * sp;
+        o.pos = (pos + delta).with_y(player.y);
+        if delta != Vec3::ZERO {
+            o.yaw = kh2_game_core::motor::wrap_angle(o.yaw + kh2_game_core::motor::wrap_angle(delta.x.atan2(delta.z) - o.yaw).clamp(-turn, turn));
+        } else if g.follow.turning {
+            o.yaw = kh2_game_core::motor::wrap_angle(o.yaw + kh2_game_core::motor::wrap_angle(ground_dir.x.atan2(ground_dir.z) - o.yaw).clamp(-turn, turn));
+        }
+        if !out.potion
+            && let Some(want) = kh2_enemy_host::summon::locomotion_want(&k.loco, o.body.slot.map_or(0, |c| c as i32), o.body.finished, sp, walk, run)
+            && let Some(sl) = class_slot(data, &rig, want, battle)
+            && o.body.slot != Some(sl)
+        {
+            let looping = rig.mset.get(sl).and_then(|x| x.motion.as_ref()).is_some_and(|mo| mo.frame_return < mo.frame_end);
+            o.body.play(Some(sl), looping, 8.0);
         }
     }
 }

@@ -1325,8 +1325,11 @@ fn summons_arrive_run_their_scripts_and_leave() {
     let Some(mut d) = disc() else { return };
     let game = Arc::new(d.game().expect("Sora loads"));
     let data = d.summons().expect("summon tables");
+    let edata = Arc::new(d.enemies().expect("enemy data"));
     let w = floor();
+    eprintln!("classes: stitch {} genie {} follow {}", data.stitch.is_some(), data.genie.is_some(), data.follow.is_some());
     for r in &data.rows {
+        eprintln!("  neo {:?}", data.objs.iter().find(|o| o.object_id == r.entity1).map(|o| (o.model_name.clone(), o.neo_status)));
         eprintln!("sumn: command {} item {} entity1 {} limit {}", r.command, r.item, r.entity1, r.limit_command);
     }
     for (k, row) in data.rows.iter().enumerate().take(4) {
@@ -1337,19 +1340,39 @@ fn summons_arrive_run_their_scripts_and_leave() {
         sm.owned = data.rows.iter().map(|r| r.item).collect();
         assert_eq!(sm.summon(&data, &mut s, false, row.command), Err(SummonRefusal::PartyMissing));
         sm.summon(&data, &mut s, true, row.command).expect("summoned");
+        let mut en = kh2::enemy::Enemies::new(edata.clone());
+        for k in 0..3 {
+            en.spawn("M_EX990", Vec3::new(-200.0 + 200.0 * k as f32, 0.0, 400.0), 3.0, &w);
+        }
+        for e in en.list.iter_mut() {
+            e.rt = None;
+            e.hp = 100000;
+        }
         let (mut arrived_at, mut modes, mut dismissed, mut gone_at) = (None, Vec::new(), false, None);
+        let (mut records, mut blasts, mut heals) = (std::collections::BTreeSet::new(), 0, 0);
         for t in 0..4000 {
+            // Sora low now and then: the classes' heal / blast / potion records want it.
+            if t % 300 == 0 {
+                s.hp = 3;
+            }
             s.tick(&w, &Input::default());
-            sm.tick(&data, &mut d, &mut s, &w, true);
+            sm.tick(&data, &mut d, &mut s, &w, true, Some(&mut en));
+            en.tick(&mut s, &w, game.params.sstm.fall_max);
+            en.events.clear();
             for e in sm.events.drain(..) {
                 match e {
                     SummonEvent::Arrived { .. } => arrived_at = Some(t),
                     SummonEvent::Mode(m) => modes.push(m),
                     SummonEvent::Gone => gone_at = Some(t),
+                    SummonEvent::Record { index } => {
+                        records.insert(index);
+                    }
+                    SummonEvent::Blast { .. } => blasts += 1,
+                    SummonEvent::Heal { .. } | SummonEvent::Potion | SummonEvent::Refill => heals += 1,
                     _ => {}
                 }
             }
-            if arrived_at.is_some_and(|a| t == a + 600) {
+            if arrived_at.is_some_and(|a| t == a + 1500) {
                 dismissed = sm.dismiss();
             }
             if gone_at.is_some() {
@@ -1357,7 +1380,11 @@ fn summons_arrive_run_their_scripts_and_leave() {
             }
         }
         let unserved: Vec<_> = sm.object.as_ref().map(|o| o.trace.missing()).unwrap_or_default();
-        eprintln!("summon {k} (command {}): arrived at {arrived_at:?}, modes {modes:?}, dismissed {dismissed}, gone at {gone_at:?}, points left {}, unserved {unserved:?}", row.command, s.drive.points.whole);
+        eprintln!("summon {k} (command {}): arrived at {arrived_at:?}, modes {modes:?}, class records {records:?}, blast hits {blasts}, heals {heals}, dismissed {dismissed}, gone at {gone_at:?}, points left {}, unserved {unserved:?}", row.command, s.drive.points.whole);
+        // Rows: Peter Pan, Genie, Stitch, Chicken Little; Genie and Stitch run their classes.
+        if matches!(k, 1 | 2) {
+            assert!(!records.is_empty(), "Stitch / Genie choose their records");
+        }
         assert!(arrived_at.is_some(), "the object appears");
         assert!(!modes.is_empty(), "its script runs");
         assert!(gone_at.is_some(), "it leaves and the summon ends");

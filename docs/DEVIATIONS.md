@@ -43,8 +43,9 @@ Limits
 
 Summons
 - The command, arrival (no event), timer, level, dismiss and leave run, and the object's own
-  script; the summons' class AI (Stitch's moves and blast, Genie's records, Chicken Little's and
-  Peter Pan's classes) does not: the object stands and plays what its script asks.
+  script; Stitch's and Genie's classes run (Stitch's camera plane is placed in a stand-in camera
+  frame behind Sora), Chicken Little's and Peter Pan's classes do not (they stand and play their
+  scripts).
 
 Enemies and reaction commands
 - An area's battle groups spawn on request (`kh2_area_spawn`), but its signals, waves, triggers,

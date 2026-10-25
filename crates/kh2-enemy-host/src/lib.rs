@@ -9,7 +9,12 @@
 //! the pure modules of kh2-game-core (from `libkh2-pure`) and small stand-ins for the parts of
 //! kh2-rs that are Bevy systems (the trace, the voice queue, the story flags, `Stats`, `Rig`).
 
-pub use kh2_game_core::{magic_rules, motor, party_battle, party_rules, reaction_rules, world};
+pub use kh2_game_core::{magic_rules, motor, party_battle, party_rules, reaction_rules, rng, world};
+
+/// kh2-rs `camera::rules` (the summon classes read its angle helpers).
+pub mod camera {
+    pub use kh2_game_core::camera_rules as rules;
+}
 
 /// kh2-rs `party::SpecialOn` (span by `build.rs`).
 pub mod party {
@@ -119,6 +124,11 @@ pub mod shared {
     #[path = "../../../../../kh2-rs/crates/kh2-game-core/src/shared/reaction.rs"]
     #[allow(dead_code)]
     pub mod reaction;
+    /// `shared/summon.rs`'s `KidOp` and `GENIE_NEO` (span by `build.rs`).
+    pub mod summon {
+        use bevy::prelude::*;
+        include!(concat!(env!("OUT_DIR"), "/shared_summon.rs"));
+    }
 }
 
 #[path = "../../../../kh2-rs/crates/kh2-enemy/src/enemy_obj.rs"]
@@ -211,4 +221,12 @@ pub mod limit_script {
 
     use crate::limit::{LimitArg, LimitReceiver, LimitScriptEvent, LimitStarted, LimitTask};
     include!(concat!(env!("OUT_DIR"), "/limit_script.rs"));
+}
+
+/// kh2-rs `summon.rs`'s pure modules (command ids, the summon AI object, Stitch's / Genie's / the scripted
+/// classes, the rules), cut by `build.rs`.
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod summon {
+    use bevy::prelude::*;
+    include!(concat!(env!("OUT_DIR"), "/summon_rules.rs"));
 }

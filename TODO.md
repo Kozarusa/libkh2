@@ -1,7 +1,7 @@
 # TODO (round 7)
 
 1. [~] Limits that deal damage: not reachable from kh2-rs's rules. Measured on the disc (`limits_hold_the_members_and_their_motions_carry_no_attacks`): the LIMI sub-motions played on Sora and the members carry no attack windows; the limit scripts ask only for motions (2.47), effects (2.50) and PAX elements (2.59); the damage comes from the limit's own objects (the kind 5000 objects of the type 0x14 entry, made by the limit task) which kh2-rs does not port or document. Done instead: the members are in the limit state for the whole limit (kh2-rs `LimitMembers { away: true }`), so they no longer fight on their own during it.
-2. [ ] Summons' AI, arrival event, summon limits.
+2. [x] Summon classes: kh2-rs summon.rs's pure modules compiled from source (ai, stitch, genie, scripted, rules + locomotion_want); Stitch's class (moves in a camera plane, blast atkp 0x4ba hits every enemy once per attack, MP refill, heal) and Genie's (follow with the members' rules, Potion) run; the arrival event option (appear, sstm 0x84 wait). Test summons_arrive_run_their_scripts_and_leave: Stitch's blast 33 hits, Genie's potion. Not done: Chicken Little's / Peter Pan's classes (scripted needs their per-tick pre pass and the target search wiring), summon limits (the limit task's summon branch), the camera frame is a stand-in behind Sora.
 3. [ ] Area signals and waves.
 4. [ ] Struggle mission manager.
 5. [ ] Talk / event hooks, camera modes.

@@ -283,6 +283,7 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
             }
             52 => {
                 let items = [383u16, 159, 25, 160, r.next() as u16];
+                kh2_summon_set_arrival_event(h, r.int());
                 kh2_summon_set_owned(h, if r.chance(4) { std::ptr::null() } else { items.as_ptr() }, r.below(6) as u32);
                 let mut c = [0u16; 8];
                 let mut st = [0i32; 8];

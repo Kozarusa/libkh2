@@ -1169,7 +1169,7 @@ pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
         // The summon (kh2-rs `summon::tick`): its arrival, timer and object.
         if let (Some(sm), Some(d)) = (l.summons.get_mut(&handle), l.summon_data.clone()) {
             let battle = l.enemies.get(&handle).is_some_and(|e| e.list.iter().any(|x| x.alive()));
-            sm.tick(&d, &mut l.disc, s, &l.world, battle);
+            sm.tick(&d, &mut l.disc, s, &l.world, battle, l.enemies.get_mut(&handle));
         }
         // The limit task's countdown and script (after the party).
         if let Some(lim) = l.limits.get_mut(&handle) {
@@ -1997,6 +1997,15 @@ pub unsafe extern "C" fn kh2_summon_status(handle: i32, cmds: *mut u16, status: 
     })
 }
 
+/// The Summon Effects option: 1 plays the arrival as an event (the script's `appear`, the longer wait).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_summon_set_arrival_event(handle: i32, on: i32) -> i32 {
+    with(-1, |l| {
+        l.summons.entry(handle).or_default().arrival_event = on != 0;
+        0
+    })
+}
+
 /// Summon command `cmd` (Execute 72): 0, or minus the status code. `KH2_SUMMON_DISMISS` (0x13c)
 /// dismisses the summon that is out.
 #[unsafe(no_mangle)]
@@ -2129,6 +2138,11 @@ pub unsafe extern "C" fn kh2_poll_summon_event(handle: i32, out: *mut Kh2SummonE
             E::LevelUp(lv) => Kh2SummonEvent { kind: 4, value: lv.into(), ..Default::default() },
             E::Leaving { dismissed } => Kh2SummonEvent { kind: 5, value: dismissed as i32, ..Default::default() },
             E::Gone => Kh2SummonEvent { kind: 6, ..Default::default() },
+            E::Record { index } => Kh2SummonEvent { kind: 7, value: index as i32, ..Default::default() },
+            E::Blast { id } => Kh2SummonEvent { kind: 8, value: id as i32, ..Default::default() },
+            E::Refill => Kh2SummonEvent { kind: 9, ..Default::default() },
+            E::Heal { hp } => Kh2SummonEvent { kind: 10, value: hp, ..Default::default() },
+            E::Potion => Kh2SummonEvent { kind: 11, ..Default::default() },
         };
         unsafe { *out = v };
         1
