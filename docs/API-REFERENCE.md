@@ -918,6 +918,14 @@ int32_t kh2_enemies_clear(int32_t handle);
 
 Removes every enemy of Sora `handle` and frees the kinds no other enemies use.
 
+### `kh2_enemies_set_mission`
+
+```c
+int32_t kh2_enemies_set_mission(int32_t handle, int32_t on, int32_t c0, int32_t c1, int32_t c2);
+```
+
+The mission counters the scripts read (host 4.29; Struggle: slot 0 Sora's orbs, slot 1 the opponent's); on = 0 removes the mission. The host keeps them (docs/STRUGGLE.md).
+
 ### `kh2_enemies_tick`
 
 ```c

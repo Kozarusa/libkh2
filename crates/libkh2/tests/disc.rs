@@ -1421,3 +1421,64 @@ fn area_battle_groups_spawn_and_fight() {
     }
     assert!(tested > 0);
 }
+
+/// A Struggle-style fight: tt04's program with Seifer (N_EX570_BTL) and the other Struggle
+/// opponents, on tt04's collision, the mission counters kept by the test host (orbs: each hit Sora
+/// lands takes one from the opponent, each hit he takes loses one, as the Struggle's rule).
+#[test]
+fn struggle_opponents_fight_with_mission_counters() {
+    use kh2::enemy::{EnemyEvent, Enemies};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let b = d.area_battle("tt04", None);
+    let w = World::from_coct(&d.coct("tt04").expect("collision"));
+    let mut fights = 0;
+    for opponent in ["N_EX570_BTL", "N_EX500_BTL", "N_EX600_BTL"] {
+        let Some(e0) = b.enemies.iter().find(|e| e.model == opponent) else { continue };
+        let mut s = Sora::new(game.clone(), e0.at + Vec3::new(0.0, 0.0, -300.0));
+        s.max_hp = 999;
+        s.hp = 999;
+        let mut en = Enemies::new(data.clone());
+        en.mission = Some([100, 100, 0]);
+        let id = en.spawn_with(&e0.model, e0.at, e0.yaw, &w, e0.spawn_kind, Some(e0.spawn_params)).unwrap();
+        let (mut hits, mut taken, mut lowest, mut moved) = (0, 0, i32::MAX, 0.0f32);
+        let start = en.list[0].pos();
+        for t in 0..3600 {
+            let Some(e) = en.list.iter().find(|e| e.id == id) else { break };
+            let to = e.pos() - s.motor.pos;
+            s.target = Some(kh2::sora::Target { pos: e.pos() + Vec3::Y * 80.0, radius: 40.0, half_height: 80.0 });
+            let stick = if to.length() > 150.0 { [to.x / to.length(), to.z / to.length()] } else { [0.0, 0.0] };
+            s.hp = 999;
+            s.tick(&w, &Input { stick, cam_look: [0.0, 1.0], attack: t % 4 == 0, ..Default::default() });
+            en.tick(&mut s, &w, game.params.sstm.fall_max);
+            for ev in en.events.drain(..) {
+                match ev {
+                    EnemyEvent::Hit { .. } => {
+                        hits += 1;
+                        if let Some(m) = en.mission.as_mut() {
+                            m[1] = (m[1] - 1).max(0);
+                            m[0] += 1;
+                        }
+                    }
+                    EnemyEvent::HitSora { .. } => {
+                        taken += 1;
+                        if let Some(m) = en.mission.as_mut() {
+                            m[0] = (m[0] - 1).max(0);
+                            m[1] += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(e) = en.list.iter().find(|e| e.id == id) {
+                lowest = lowest.min(e.hp);
+                moved = moved.max(e.pos().distance(start));
+            }
+        }
+        eprintln!("{opponent} (program {}): Sora hit it {hits} times, it hit Sora {taken} times, its lowest HP {lowest}, moved {moved:.0}, counters {:?}, unserved {:?}", e0.program, en.mission, en.unserved_calls());
+        assert!(hits > 0 && moved > 10.0, "{opponent} fights");
+        fights += 1;
+    }
+    assert!(fights > 0);
+}

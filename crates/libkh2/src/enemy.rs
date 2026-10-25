@@ -367,6 +367,11 @@ pub struct Enemies {
     pub reactions: Vec<(u32, u16, i16)>,
     /// Use counters by `ReactionCount` slot (kh2-rs `ReactionUses`, capped at 999).
     pub uses: HashMap<u16, u16>,
+    /// The mission manager's counters the scripts read (host 4.29; kh2-rs `struggle::Mission`: slot 0
+    /// the player's orbs, slot 1 the opponent's), None without a mission. The host keeps them.
+    pub mission: Option<[i32; 3]>,
+    /// A mission layout event plays (host 1.34).
+    pub event_active: bool,
 }
 
 /// An offered reaction command (kh2-rs `reaction_cmd::Active`).
@@ -381,7 +386,7 @@ pub struct ReactionOffer {
 
 impl Enemies {
     pub fn new(data: Arc<EnemyData>) -> Enemies {
-        Enemies { data, list: Vec::new(), serial: 0, next_id: 1, trace: AiTrace::default(), mail: Vec::new(), seed: 1, events: Vec::new(), sora_landed: HashSet::new(), world_level: 1, spells: Default::default(), offer: None, fake_offer: None, reactions: Vec::new(), uses: HashMap::new() }
+        Enemies { data, list: Vec::new(), serial: 0, next_id: 1, trace: AiTrace::default(), mail: Vec::new(), seed: 1, events: Vec::new(), sora_landed: HashSet::new(), world_level: 1, spells: Default::default(), offer: None, fake_offer: None, reactions: Vec::new(), uses: HashMap::new(), mission: None, event_active: false }
     }
 
     /// Drops the enemies that are gone (`removed`) and frees the kinds no enemy uses any more.
@@ -515,8 +520,8 @@ impl Enemies {
                 player_motion_done,
                 paired: &paired,
                 player_model: self.data.player_model,
-                mission_counters: None,
-                event_active: false,
+                mission_counters: self.mission,
+                event_active: self.event_active,
             };
             let handle = obj.handle;
             if let Some(rt) = e.rt.as_mut() {

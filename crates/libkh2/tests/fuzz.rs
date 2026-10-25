@@ -344,6 +344,7 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 }
             }
             54 => {
+                kh2_enemies_set_mission(h, r.int(), r.int(), r.int(), r.int());
                 if r.chance(3) {
                     kh2_enemies_prune(h);
                 } else if r.chance(6) {

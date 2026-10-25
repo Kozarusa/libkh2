@@ -2188,3 +2188,16 @@ pub extern "C" fn kh2_enemies_clear(handle: i32) -> i32 {
         l.enemy_data.as_ref().map_or(0, |d| d.release_unused() as i32)
     })
 }
+
+/// The mission counters the enemies' scripts read (host 4.29: slot 0 the player's orbs, slot 1 the
+/// opponent's in the Struggle); `on` 0 removes the mission. The host keeps the counters.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_enemies_set_mission(handle: i32, on: i32, c0: i32, c1: i32, c2: i32) -> i32 {
+    with(-1, |l| match l.enemies.get_mut(&handle) {
+        Some(en) => {
+            en.mission = (on != 0).then_some([c0, c1, c2]);
+            0
+        }
+        None => set_error("no enemies for this Sora (spawn one first)"),
+    })
+}
