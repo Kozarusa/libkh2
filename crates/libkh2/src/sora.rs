@@ -40,6 +40,25 @@ const BLEND_ATTACK: f32 = 0.0;
 const TICK_STEP: f32 = 1.0;
 /// Motion id of the High Jump (kh2-rs `sora::mid::HIGH_JUMP`).
 const HIGH_JUMP_MOTION: usize = 201;
+/// Growth motion ids (kh2-rs `sora::mid`).
+const AERIAL_DODGE_MOTION: usize = 202;
+const QUICK_RUN_MOTION: usize = 203;
+const QUICK_RUN_END_MOTION: usize = 204;
+const GLIDE_MOTION: usize = 205;
+const GLIDE_LEFT_MOTION: usize = 206;
+const GLIDE_RIGHT_MOTION: usize = 207;
+const GLIDE_HOVER_MOTION: usize = 208;
+const BLEND_GLIDE: f32 = 16.0;
+
+/// Growth-ability levels (kh2-rs `sora::Growth`; 0 = not learned, 5 = MAX). The USA rules: no
+/// dodge roll (Final Mix only).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Growth {
+    pub high_jump: u8,
+    pub quick_run: u8,
+    pub aerial_dodge: u8,
+    pub glide: u8,
+}
 /// The bone the keyblade hangs from (kh2-rs `shared::sora::HAND_BONES[0]`).
 pub const HAND_BONE: usize = 178;
 
@@ -50,6 +69,8 @@ pub enum State {
     Air,
     Attack { air: bool, finisher: bool },
     Guard,
+    QuickRun,
+    Glide,
 }
 
 impl State {
@@ -61,6 +82,8 @@ impl State {
             State::Attack { air: false, .. } => 2,
             State::Attack { air: true, .. } => 3,
             State::Guard => 4,
+            State::QuickRun => 5,
+            State::Glide => 6,
         }
     }
 }
@@ -234,8 +257,13 @@ pub struct Sora {
     pub wanted_yaw: f32,
     pub battle_ticks: f32,
     pub abilities: Abilities,
-    /// High Jump level (0 = not learned; `fmab` row).
-    pub high_jump: u8,
+    /// Growth-ability levels (`fmab` rows).
+    pub growth: Growth,
+    pub dash_time: f32,
+    pub dash_brake: f32,
+    pub aerial_dodge_ready: bool,
+    /// Invincible ticks left (Quick Run's AirSlideStarTime, hurt reactions).
+    pub invuln: f32,
     pub target: Option<Target>,
     pub body: Anim,
     pub weapon: Option<Anim>,
@@ -268,7 +296,11 @@ impl Sora {
             wanted_yaw: 0.0,
             battle_ticks: 0.0,
             abilities: Abilities::default(),
-            high_jump: 0,
+            growth: Growth::default(),
+            dash_time: 0.0,
+            dash_brake: 0.0,
+            aerial_dodge_ready: false,
+            invuln: 0.0,
             target: None,
             body,
             weapon,
@@ -287,7 +319,7 @@ impl Sora {
     /// FUN_0016be20).
     pub fn jump_height(&self) -> f32 {
         let p = &self.game.params;
-        p.fmab(self.high_jump).map_or(p.prty.jump_height, |f| f.high_jump_height)
+        p.fmab(self.growth.high_jump).map_or(p.prty.jump_height, |f| f.high_jump_height)
     }
 
     /// The body's world matrix (kh2-rs `sora::place`: position and yaw; poses are root-relative).
@@ -405,10 +437,11 @@ impl Sora {
 
     fn start_jump(&mut self, c: &Ctx, move_speed: f32) {
         let p = &self.game.params;
-        let high = p.fmab(self.high_jump);
+        let high = p.fmab(self.growth.high_jump);
         let h = high.map_or(p.prty.jump_height, |f| f.high_jump_height);
         self.motor.vel = c.dir * move_speed;
         self.motor.start_jump(h);
+        self.aerial_dodge_ready = true;
         self.state = State::Air;
         self.timer = 0.0;
         let slot = if high.is_some() { self.motion(HIGH_JUMP_MOTION, c.pstate).or(self.motion(id::JUMP, c.pstate)) } else { self.motion(id::JUMP, c.pstate) };
@@ -424,6 +457,7 @@ impl Sora {
         let square = input.guard && !self.prev.guard;
         self.prev = *input;
         self.timer += 1.0;
+        self.invuln = (self.invuln - 1.0).max(0.0);
         let game = self.game.clone();
         let prty = &game.params.prty;
 
@@ -490,7 +524,19 @@ impl Sora {
                 } else if square {
                     // FUN_00177ea0's order: the explicit actions, then (no growth abilities in v1)
                     // the guard (FUN_00178080, key 11).
+                    // USA rule (kh2-rs `square_ground_for` without the roll): moving with Quick Run
+                    // learned = Quick Run at the press (FUN_00178108), else the guard.
+                    let quick = move_speed > 0.0 && self.growth.quick_run >= 1;
                     if self.square_explicit(false, Windows { free: true, combo: false }, false, &c, &mut keep_out) {
+                    } else if quick && let Some(f) = game.params.fmab(self.growth.quick_run) {
+                        self.state = State::QuickRun;
+                        self.timer = 0.0;
+                        self.motor.yaw = dir.x.atan2(dir.z);
+                        self.motor.vel = dir * f.air_slide_speed;
+                        self.dash_time = f.air_slide_time;
+                        self.dash_brake = f.air_slide_brake;
+                        self.invuln = f.air_slide_star_time;
+                        self.body.restart(motion(QUICK_RUN_MOTION), false, 0.0);
                     } else if let Some(g) = game.moves.by_key(key::GUARD).filter(|g| self.abilities.chain(self.hits, self.finishers, false, false).check(g).is_ok()).cloned()
                         && let Some(slot) = motion(g.motion as usize)
                     {
@@ -513,7 +559,22 @@ impl Sora {
                     self.body.play(motion(id::FALL), true, BLEND_FALL);
                     self.fall_motion = true;
                 }
-                if square && self.square_explicit(true, Windows { free: true, combo: false }, false, &c, &mut keep_out) {
+                let can_air_act = self.motor.jump.t > self.motor.jump.rise.max(0.0) + 6.0 || (self.motor.jump.rise == 0.0 && self.motor.jump.t > 15.0);
+                let dodge = game.params.fmab(self.growth.aerial_dodge).filter(|_| self.aerial_dodge_ready || self.growth.aerial_dodge >= 5);
+                let glide = game.params.fmab(self.growth.glide).filter(|f| can_air_act && height_above_ground(world, &self.motor) > f.glide_start_height);
+                if jump && let Some(f) = dodge {
+                    // Aerial Dodge: a second jump of AirDodgeHeight at AirDodgeSpeed.
+                    self.aerial_dodge_ready = false;
+                    if move_speed > 0.0 {
+                        self.motor.vel = dir * f.air_dodge_speed;
+                    }
+                    self.motor.start_jump(f.air_dodge_height);
+                    self.body.restart(motion(AERIAL_DODGE_MOTION), false, 0.0);
+                } else if square && glide.is_some() {
+                    self.state = State::Glide;
+                    self.timer = 0.0;
+                    self.body.play(motion(if move_speed > 0.0 { GLIDE_MOTION } else { GLIDE_HOVER_MOTION }), true, BLEND_GLIDE);
+                } else if square && self.square_explicit(true, Windows { free: true, combo: false }, false, &c, &mut keep_out) {
                 } else if attack {
                     self.request(world, true, Windows { free: true, combo: false }, false, &c, &mut keep_out);
                 }
@@ -573,6 +634,49 @@ impl Sora {
                     }
                 }
             }
+            State::QuickRun => {
+                // FUN_001c1660: the clock runs while Square is held; a release or the end stops.
+                if input.guard {
+                    self.dash_time -= 1.0;
+                }
+                let end = motion(QUICK_RUN_END_MOTION);
+                if self.body.slot != end && (!input.guard || self.dash_time <= 0.0) {
+                    if let Some(f) = game.params.fmab(self.growth.quick_run.max(1)) {
+                        self.dash_brake = f.air_slide_stop_brake;
+                    }
+                    self.body.restart(end, false, 0.0);
+                }
+                self.motor.vel *= self.dash_brake;
+                if self.body.slot == end && (self.body.finished || self.motor.vel.length() < prty.walk_speed) {
+                    self.state = State::Ground;
+                }
+            }
+            State::Glide => {
+                let f = game.params.fmab(self.growth.glide.max(1)).cloned();
+                let h = height_above_ground(world, &self.motor);
+                match f {
+                    Some(f) if input.guard && h >= f.glide_end_height => {
+                        if move_speed > 0.0 {
+                            self.motor.turn_to(dir, f.glide_turn_speed);
+                            let speed = self.motor.vel.length() * f.glide_acceleration + f.glide_speed * (1.0 - f.glide_acceleration);
+                            self.motor.vel = self.motor.forward() * speed;
+                            let facing = self.motor.forward();
+                            let m = if facing.dot(dir) < 0.98 { if facing.cross(dir).y > 0.0 { GLIDE_LEFT_MOTION } else { GLIDE_RIGHT_MOTION } } else { GLIDE_MOTION };
+                            self.body.play(motion(m), true, BLEND_GLIDE);
+                        } else {
+                            self.motor.vel *= 0.9;
+                            self.body.play(motion(GLIDE_HOVER_MOTION), true, BLEND_GLIDE);
+                        }
+                        let sink = ((h - f.glide_fall_height).max(0.0) * f.glide_fall_ratio).min(f.glide_fall_max);
+                        airborne_dy = Some(-sink);
+                    }
+                    _ => {
+                        self.state = State::Air;
+                        self.motor.start_fall();
+                        self.body.play(motion(id::FALL), true, BLEND_GLIDE);
+                    }
+                }
+            }
             State::Guard => {
                 self.motor.vel = Vec3::ZERO;
                 if !self.motor.grounded {
@@ -622,7 +726,7 @@ impl Sora {
             // kh2-rs `sora::land`.
             self.hits = 0;
             self.finishers = 1;
-            if self.state == State::Air {
+            if matches!(self.state, State::Air | State::Glide) {
                 self.state = State::Ground;
                 if dir == Vec3::ZERO {
                     self.body.restart(motion(id::LAND), false, 0.0);

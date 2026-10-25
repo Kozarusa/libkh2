@@ -47,6 +47,7 @@ pub struct Kh2State {
     pub finisher_window: i32,
     pub weapon_out: i32,
     pub ground_material: i32,
+    pub invulnerable: i32,
 }
 
 #[repr(C)]
@@ -279,6 +280,7 @@ fn state_of(s: &Sora) -> Kh2State {
         finisher_window: s.finisher_window() as i32,
         weapon_out: (s.battle_ticks > 0.0) as i32,
         ground_material: s.motor.ground.map_or(-1, |g| i32::from(g.material)),
+        invulnerable: (s.invuln > 0.0) as i32,
     }
 }
 
@@ -393,7 +395,16 @@ pub extern "C" fn kh2_set_abilities(handle: i32, lo: u64, hi: u64, max_ground: u
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_set_high_jump(handle: i32, level: u8) -> i32 {
     sora_do(handle, -1, |s, _| {
-        s.high_jump = level.min(5);
+        s.growth.high_jump = level.min(5);
+        0
+    })
+}
+
+/// All growth-ability levels (0..5): High Jump, Quick Run, Aerial Dodge, Glide.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_set_growth(handle: i32, high_jump: u8, quick_run: u8, aerial_dodge: u8, glide: u8) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        s.growth = crate::sora::Growth { high_jump: high_jump.min(5), quick_run: quick_run.min(5), aerial_dodge: aerial_dodge.min(5), glide: glide.min(5) };
         0
     })
 }

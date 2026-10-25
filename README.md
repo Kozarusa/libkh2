@@ -87,8 +87,10 @@ early release, fall capped at `sstm` FallMax, landing, walking off ledges, wall 
 wall filter, mesh group switching, ground combo A300 → A302 → A304 and air combo A330 → A331 → A332
 picked by the disc's attack table with the motions' own windows, guard, root motion.
 
-Not in v1: enemies, damage and reactions, magic, drive forms, summons, Quick Run / Glide / Aerial
-Dodge, the camera, sounds and effects, moving platforms. See `DESIGN.md`.
+Growth abilities (`kh2_set_growth`): High Jump, Quick Run, Aerial Dodge, Glide with the disc's `fmab`
+rows (disc test `growth_abilities_use_the_fmab_rows`).
+
+Not in v1: enemies, damage and reactions, magic, drive forms, summons, the camera, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits
 

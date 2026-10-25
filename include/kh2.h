@@ -57,6 +57,8 @@ typedef struct kh2_inputs {
 #define KH2_STATE_ATTACK 2
 #define KH2_STATE_AIR_ATTACK 3
 #define KH2_STATE_GUARD 4
+#define KH2_STATE_QUICK_RUN 5
+#define KH2_STATE_GLIDE 6
 
 typedef struct kh2_state {
     float pos[3];
@@ -78,6 +80,7 @@ typedef struct kh2_state {
     int32_t finisher_window; /* range trigger 50 (allow finisher) */
     int32_t weapon_out;    /* the battle variant of the motion set is in use (keyblade out) */
     int32_t ground_material; /* material of the floor under Sora, -1 airborne */
+    int32_t invulnerable;  /* invincibility ticks are running */
 } kh2_state;
 
 /* A live attack capsule in world units: segment a-b, radius. */
@@ -126,6 +129,9 @@ KH2_API int32_t kh2_report_hit(int32_t handle);
 KH2_API int32_t kh2_set_abilities(int32_t handle, uint64_t lo, uint64_t hi, uint8_t max_ground, uint8_t max_air, uint8_t max_finishers);
 /* High Jump level 0..5. */
 KH2_API int32_t kh2_set_high_jump(int32_t handle, uint8_t level);
+/* Growth abilities 0..5 (fmab rows): High Jump, Quick Run (Square while moving), Aerial Dodge
+ * (jump in the air), Glide (hold Square while falling). */
+KH2_API int32_t kh2_set_growth(int32_t handle, uint8_t high_jump, uint8_t quick_run, uint8_t aerial_dodge, uint8_t glide);
 /* Skeleton evaluation each tick (default on). Off: no bones, no attack volumes. */
 KH2_API int32_t kh2_set_pose_enabled(int32_t handle, int32_t on);
 

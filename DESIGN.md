@@ -109,8 +109,11 @@ the ground combo (A300, A302, A304 on the USA disc) and the air combo (A330, A33
 own combo/finisher windows, air attack leaps, root motion, gravity hold triggers, the landing cut;
 the guard (key 11); host-supplied target; posed skeleton and attack volumes.
 
+Step 1 (decided: USA rules, no dodge roll): Quick Run, Glide, Aerial Dodge and High Jump, transcribed
+from `sora::tick`'s QuickRun/Glide/Air branches with the `fmab` row of each level.
+
 Not covered: enemies and damage (no hurt/blow states, no HP), magic, drive forms, summons, items,
-Quick Run, Glide, Aerial Dodge, the dodge roll, reaction commands, the camera (only the look
+the dodge roll, reaction commands, the camera (only the look
 direction comes in; no lock-on camera), the auto-target, sounds and effects (frame triggers are
 reported, not played), the game's exact COCT walker (`Oct`, unwired in kh2-rs too), weapon
 switching, moving platforms.

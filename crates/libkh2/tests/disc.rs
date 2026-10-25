@@ -66,7 +66,7 @@ fn movement_matches_the_disc_values() {
     assert_eq!(s.state, State::Ground);
     // High Jump level 1: the fmab row's height.
     let mut s = standing(&game, &w);
-    s.high_jump = 1;
+    s.growth.high_jump = 1;
     let mut top: f32 = 0.0;
     for _ in 0..200 {
         s.tick(&w, &hold);
@@ -172,4 +172,64 @@ fn an_area_collision_loads_and_sora_stands_on_it() {
     eprintln!("tt00: {} triangles; after 120 ticks of running -z: {:?} grounded {}", w.tris.len(), s.motor.pos, s.motor.grounded);
     assert!(s.motor.grounded);
     assert!(s.motor.pos.z > -1000.0 - 50.0, "the box wall stopped him: {:?}", s.motor.pos);
+}
+
+#[test]
+fn growth_abilities_use_the_fmab_rows() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let f = game.params.fmab(1).unwrap().clone();
+    // Quick Run: Square while moving starts at AirSlideSpeed along the stick, invincible for
+    // AirSlideStarTime, braking by AirSlideBrake per tick.
+    let mut s = standing(&game, &w);
+    s.growth.quick_run = 1;
+    let run = Input { stick: [0.0, 1.0], cam_look: [0.0, 1.0], ..Default::default() };
+    for _ in 0..10 {
+        s.tick(&w, &run);
+    }
+    let a = s.motor.pos;
+    s.tick(&w, &Input { guard: true, ..run });
+    assert_eq!(s.state, State::QuickRun);
+    let step = (s.motor.pos - a).length();
+    eprintln!("quick run first step {step}, AirSlideSpeed {} brake {} star {}", f.air_slide_speed, f.air_slide_brake, f.air_slide_star_time);
+    assert!((step - f.air_slide_speed * f.air_slide_brake).abs() < 1e-2 || (step - f.air_slide_speed).abs() < 1e-2);
+    assert_eq!(s.invuln > 0.0, f.air_slide_star_time > 1.0);
+    for _ in 0..200 {
+        s.tick(&w, &run);
+    }
+    assert_eq!(s.state, State::Ground, "released: the dash ends");
+    // Aerial Dodge: a second jump of AirDodgeHeight from the height where it is pressed.
+    let mut s = standing(&game, &w);
+    s.growth.aerial_dodge = 1;
+    let hold = Input { jump: true, ..Default::default() };
+    for _ in 0..30 {
+        s.tick(&w, &hold);
+    }
+    s.tick(&w, &Input::default());
+    let y0 = s.motor.pos.y;
+    let mut top = y0;
+    for _ in 0..100 {
+        s.tick(&w, &hold);
+        top = top.max(s.motor.pos.y);
+    }
+    eprintln!("aerial dodge from {y0}: apex {top} (AirDodgeHeight {})", f.air_dodge_height);
+    assert!((top - y0 - f.air_dodge_height).abs() < 2.0);
+    // Glide: from a high fall, Square glides; the sink per tick is at most GlideFallMax.
+    let mut s = standing(&game, &w);
+    s.growth.glide = 1;
+    s.motor.pos.y = 2000.0;
+    s.motor.grounded = false;
+    s.state = State::Air;
+    s.motor.start_fall();
+    for _ in 0..20 {
+        s.tick(&w, &Input::default());
+    }
+    s.tick(&w, &Input { guard: true, ..run });
+    s.tick(&w, &Input { guard: true, ..run });
+    assert_eq!(s.state, State::Glide);
+    let y = s.motor.pos.y;
+    s.tick(&w, &Input { guard: true, ..run });
+    eprintln!("glide sink {} (GlideFallMax {})", y - s.motor.pos.y, f.glide_fall_max);
+    assert!(y - s.motor.pos.y <= f.glide_fall_max + 1e-3);
 }
