@@ -21,3 +21,9 @@ pub mod reaction_rules;
 /// oracle-tested in kh2-rs, `tests/orig_l2_p2.rs`).
 #[path = "../../../../kh2-rs/crates/kh2-game-core/src/camera_rules.rs"]
 pub mod camera_rules;
+
+/// Sora's magic rules (`magic_rules.rs`: `magc` row choice, availability, cast motion and kind,
+/// MP payment and charge).
+#[path = "../../../../kh2-rs/crates/kh2-game-core/src/magic_rules.rs"]
+#[allow(dead_code)]
+pub mod magic_rules;

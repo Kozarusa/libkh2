@@ -334,3 +334,52 @@ fn the_field_camera_follows_collides_and_locks_on() {
     eprintln!("lock-on: yaw {yaw0} -> {}", v.yaw);
     assert!(kh2_game_core::camera_rules::wrap(v.yaw - yaw0).abs() > 0.3);
 }
+
+#[test]
+fn level_one_spells_cast_pay_and_charge() {
+    use kh2::sora::Event;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    for slot in 0..4u8 {
+        let mut s = standing(&game, &w);
+        let (row, cost) = s.spell(slot).expect("level 1 spell row");
+        let mp0 = s.mp;
+        s.tick(&w, &Input::default());
+        s.cast_request = Some((slot, 30));
+        let mut fired = None;
+        let mut states = Vec::new();
+        for _ in 0..400 {
+            s.tick(&w, &Input::default());
+            if states.last() != Some(&s.state) {
+                states.push(s.state);
+            }
+            for e in s.events.drain(..) {
+                if let Event::SpellFired { charge, .. } = e {
+                    fired = Some((charge, s.mp));
+                }
+            }
+        }
+        eprintln!("slot {slot} {} (cost {cost}, motion {}): states {states:?}, fired {fired:?}, MP {mp0} -> {}", row.file_name, row.ground_motion, s.mp);
+        let (charge, mp) = fired.expect("frame trigger 17 fired");
+        if cost == kh2_game_core::magic_rules::COST_ALL {
+            assert!(charge && mp == 0);
+        } else {
+            assert_eq!(mp, mp0 - cost as i32);
+        }
+        assert!(states.contains(&State::Magic) && s.state == State::Ground);
+    }
+    // Cure's charge refills MP at its end (prty MpDrive frames).
+    let mut s = standing(&game, &w);
+    s.cast_request = Some((3, 30));
+    let mut restored = None;
+    for t in 0..20000 {
+        s.tick(&w, &Input::default());
+        if s.events.drain(..).any(|e| e == Event::MpRestored) {
+            restored = Some(t);
+            break;
+        }
+    }
+    eprintln!("MP charge ended after {restored:?} ticks (MpDrive {})", game.params.prty.mp_drive);
+    assert!(restored.is_some() && s.mp == s.max_mp);
+}

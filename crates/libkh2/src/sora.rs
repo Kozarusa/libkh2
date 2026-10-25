@@ -79,6 +79,8 @@ pub enum State {
     Down,
     /// The guard repelled a hit; an attack press answers with the counter.
     Counter,
+    /// A spell's cast motion plays.
+    Magic,
 }
 
 impl State {
@@ -96,6 +98,7 @@ impl State {
             State::Blown => 8,
             State::Down => 9,
             State::Counter => 10,
+            State::Magic => 11,
         }
     }
 }
@@ -284,6 +287,15 @@ pub struct Sora {
     pub blown_back: bool,
     /// Stand up by itself after 180 ticks down (kh2-rs's stand-in where no game over runs).
     pub auto_revive: bool,
+    pub mp: i32,
+    pub max_mp: i32,
+    pub charge: kh2_game_core::magic_rules::Charge,
+    /// Spell levels per magic slot (0 = not owned): Fire, Blizzard, Thunder, Cure, Magnet, Reflect.
+    pub magic_levels: [u8; 6],
+    /// A cast request: (slot, ticks it is still tried).
+    pub cast_request: Option<(u8, u8)>,
+    pub cast: Option<Cast>,
+    pub events: Vec<Event>,
     pub target: Option<Target>,
     pub body: Anim,
     pub weapon: Option<Anim>,
@@ -300,6 +312,7 @@ impl Sora {
         let body = Anim::new(game.sora.clone());
         let weapon = game.keyblade.clone().map(Anim::new);
         let max_hp = game.params.max_hp;
+        let max_mp = game.params.max_mp;
         // The capsule stays kh2-rs's `Capsule::default()` (radius 35, Sora's body shape).
         Sora {
             game,
@@ -328,6 +341,13 @@ impl Sora {
             blow: None,
             blown_back: false,
             auto_revive: false,
+            mp: max_mp,
+            max_mp,
+            charge: Default::default(),
+            magic_levels: [1, 1, 1, 1, 0, 0],
+            cast_request: None,
+            cast: None,
+            events: Vec::new(),
             target: None,
             body,
             weapon,
@@ -522,6 +542,17 @@ impl Sora {
         }
         self.hover = hover_now;
         self.fall_motion = false;
+        // The MP charge (FUN_00175f48): at its end MP is refilled.
+        if self.charge.tick(1.0) {
+            self.mp = self.max_mp;
+            self.events.push(Event::MpRestored);
+        }
+        if let Some((slot, left)) = self.cast_request.take()
+            && !self.try_cast(slot, &c)
+            && left > 1
+        {
+            self.cast_request = Some((slot, left - 1));
+        }
         match self.state {
             State::Ground => {
                 self.hits = 0;
@@ -706,6 +737,26 @@ impl Sora {
             }
             // Handled after this match (no input reaches them).
             State::Hurt | State::Blown | State::Down => {}
+            State::Magic => {
+                // kh2-rs `sora::tick` State::Magic: gravity unless the motion suspends it; control
+                // comes back when it ends or its blend-to-idle range opens with a press or a direction.
+                let hover = self.body.trigger(range::NO_GRAVITY) || self.body.trigger(range::NO_GRAVITY_KEEP_KINETICS);
+                if !self.motor.grounded {
+                    airborne_dy = Some(if hover { 0.0 } else { self.motor.jump_dy(fall_max) });
+                    if hover {
+                        self.motor.jump = Jump::fall(0.0, self.motor.pos.y);
+                    }
+                }
+                if self.body.finished || (self.body.trigger(range::BLEND_TO_IDLE) && (dir != Vec3::ZERO || attack || jump)) {
+                    self.state = if self.motor.grounded { State::Ground } else { State::Air };
+                    if self.state == State::Air {
+                        self.motor.start_fall();
+                        self.body.play(motion(id::FALL), true, BLEND_FALL);
+                    } else if attack {
+                        self.request(world, false, Windows { free: true, combo: false }, false, &c, &mut keep_out);
+                    }
+                }
+            }
             State::Guard | State::Counter => {
                 self.motor.vel = Vec3::ZERO;
                 if !self.motor.grounded {
@@ -833,13 +884,113 @@ impl Sora {
         // The pose step of the same tick (kh2-rs `Sim::Pose` runs after `Sim::Sora`), then the
         // keyblade follows the body's slot and frame (kh2-rs `sync_weapon`, run before the next
         // controller tick there).
+        let before = (self.body.slot, self.body.frame);
         self.body.step(self.pose);
+        self.magic_trigger(before);
         if let Some(w) = self.weapon.as_mut() {
             w.follow(&self.body);
             if self.pose {
                 w.pose_now();
             }
         }
+    }
+
+    /// The `magc` row and command cost of a magic slot at its level (kh2-rs `MagicData::slots`,
+    /// `magic_rules::pick_row` with world 0).
+    pub fn spell(&self, slot: u8) -> Option<(kh2_tables::tables::Magc, u8)> {
+        let p = &self.game.params;
+        let row = kh2_game_core::magic_rules::pick_row(&p.magc, slot, *self.magic_levels.get(slot as usize)?, 0)?.clone();
+        let cost = p.cmd.iter().find(|c| c.id == row.command).map_or(0, |c| c.cost);
+        Some((row, cost))
+    }
+
+    /// Accepts a cast now if the state allows it (kh2-rs `magic.rs`: FUN_00174cf8 with the hit latch
+    /// forced, then FUN_00179400 / FUN_001a4798). True when it started.
+    fn try_cast(&mut self, slot: u8, c: &Ctx) -> bool {
+        use kh2_game_core::magic_rules as rules;
+        let airborne = !self.motor.grounded || self.body.trigger(range::NO_GRAVITY);
+        let (free, combo, fin) = match self.state {
+            State::Ground | State::Air => (true, false, false),
+            State::Attack { .. } | State::Magic => (
+                self.body.trigger(range::GROUNDED) || self.body.trigger(range::AIR) || self.body.trigger(range::BLEND_TO_IDLE),
+                self.body.trigger(range::ALLOW_COMBO),
+                self.body.trigger(range::ALLOW_FINISHER),
+            ),
+            _ => (false, false, false),
+        };
+        let Some((row, cost)) = self.spell(slot) else { return false };
+        let status = rules::availability(cost, self.mp, self.charge.active(), false, false);
+        let pending = self.cast.is_some_and(|k| !k.paid);
+        let mut chain = self.abilities.chain(self.hits, self.finishers, airborne, fin);
+        let pressed = (free || combo || fin).then(|| chain.press(Windows { free, combo }, true)).flatten();
+        if !status.usable() || pending || pressed.is_none() {
+            return false;
+        }
+        self.hits = chain.combo;
+        self.finishers = chain.finishers;
+        let finisher = rules::is_finisher(chain.combo, airborne, self.abilities.max_ground, self.abilities.max_air);
+        let (motion_id, blend, fin_motion) = rules::cast_motion(&row, airborne, finisher);
+        let kind = rules::script_kind(row.id, rules::cast_kind(row.level, fin_motion, 0));
+        self.battle_ticks = self.battle_ticks.max(BATTLE_TICKS);
+        let mslot = self.game.sora.mset.slot(motion_id as usize, PlayerState::BattleWeapon);
+        self.body.restart(mslot, false, blend);
+        self.state = State::Magic;
+        self.timer = 0.0;
+        self.motor.vel = Vec3::ZERO;
+        self.queued_attack = false;
+        self.push = None;
+        if airborne {
+            // The mover's method +0xc with sstm MagicJump (FUN_001a4798) [kh2-rs: inferred].
+            self.motor.start_jump(self.game.params.sstm.magic_jump);
+        }
+        let _ = c;
+        let voice = rules::cast_voice(&row, fin_motion, row.id == 3);
+        self.cast = Some(Cast { slot: row.id, kind, motion_id, motion: mslot, cost, paid: false });
+        self.events.push(Event::CastStarted { slot: row.id, kind, motion: motion_id, voice });
+        true
+    }
+
+    /// Frame trigger 17 crossed by this tick's motion step pays the cast (kh2-rs `magic.rs`,
+    /// FUN_00188498 case 0x11 -> FUN_001a4a60 -> FUN_001769e0); a cast whose motion changed first ends.
+    fn magic_trigger(&mut self, (slot_before, frame_before): (Option<usize>, f32)) {
+        use kh2_game_core::magic_rules as rules;
+        let Some(mut cast) = self.cast else { return };
+        if cast.paid {
+            if self.state != State::Magic || self.body.slot != cast.motion {
+                self.cast = None;
+            }
+            return;
+        }
+        if self.state != State::Magic || self.body.slot != cast.motion {
+            self.events.push(Event::CastCancelled { slot: cast.slot });
+            self.cast = None;
+            return;
+        }
+        let Some((m, t)) = self.body.motion().zip(self.body.triggers()) else { return };
+        let g = |f: f32| f * crate::anim::LOGIC_HZ / m.fps.max(1.0);
+        let from = if slot_before == self.body.slot { g(frame_before) } else { g(self.body.prev_frame) };
+        let to = g(self.body.frame);
+        if from == to {
+            return;
+        }
+        let fires = t.crossed(from, to).filter(|f| f.id == kh2_anim::triggers::frame::MAGIC_CAST).any(|f| f.params.first().is_none_or(|&p| p as u16 == cast.motion_id));
+        if !fires {
+            return;
+        }
+        let charge = match rules::pay(self.mp, self.max_mp, cast.cost, self.game.params.prty.mp_drive) {
+            rules::Paid::Mp(v) => {
+                self.mp = v;
+                false
+            }
+            rules::Paid::Charge { total } => {
+                self.mp = 0;
+                self.charge = rules::Charge { left: total, total };
+                true
+            }
+        };
+        cast.paid = true;
+        self.cast = Some(cast);
+        self.events.push(Event::SpellFired { slot: cast.slot, kind: cast.kind, charge });
     }
 
     /// The input of the last tick.
@@ -1008,6 +1159,32 @@ impl Sora {
     pub fn moves(&self) -> &moveset::Moveset {
         &self.game.moves
     }
+}
+
+/// Something the host may want to react to (spawn an effect, play a sound).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Event {
+    /// A cast started: magic slot (0 Fire, 1 Blizzard, 2 Thunder, 3 Cure), the cast kind (the
+    /// `atkp` sub-row key and `magi` row of the spell), the motion id, the voice (-1 none).
+    CastStarted { slot: u8, kind: u32, motion: u16, voice: i8 },
+    /// The cast motion reached frame trigger 17: the MP is paid and the spell object should spawn
+    /// (event 21 of the spell's script). `charge` is true when the MP charge started.
+    SpellFired { slot: u8, kind: u32, charge: bool },
+    /// A cast ended before its trigger: no spell, no cost.
+    CastCancelled { slot: u8 },
+    /// The MP charge ended and MP is full again.
+    MpRestored,
+}
+
+/// A running cast (kh2-rs `magic::Cast`, the parts without the effect files and the script VM).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cast {
+    pub slot: u8,
+    pub kind: u32,
+    pub motion_id: u16,
+    pub motion: Option<usize>,
+    pub cost: u8,
+    pub paid: bool,
 }
 
 /// What a hit did.

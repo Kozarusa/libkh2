@@ -98,7 +98,12 @@ Field camera (`kh2_camera_tick`): kh2-rs's oracle-tested `camera_rules` (follow,
 and zoom, auto-camera, lock-on, look-around, wall collision, springs) with the executable's camera
 table; `kh2_lock_on_pick` is the lock-on choice (disc test `the_field_camera_follows_collides_and_locks_on`).
 
-Not in v1: enemies, magic, drive forms, summons, sounds and effects, moving platforms. See `DESIGN.md`.
+Magic (`kh2_cast`, `kh2_poll_event`): Fire, Blizzard, Thunder, Cure at level 1 (and higher rows by
+`kh2_set_magic_levels`) through `magic_rules`: the `magc` row, the `cmd` cost, cast motion and kind,
+MP paid at frame trigger 17, MP charge (Cure takes all MP); the host spawns the spell on the event
+(disc test `level_one_spells_cast_pay_and_charge`).
+
+Not in v1: enemies, spell objects and their damage, drive forms, summons, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits
 

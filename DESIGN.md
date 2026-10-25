@@ -123,6 +123,11 @@ Step 3: `camera_rules.rs` (pure, oracle-tested in kh2-rs `orig_l2_p2.rs`) is com
 no talk/event/overhead cameras; the lock-on point is the host's target point (kh2-rs uses the
 enemy position + 100); the camera ray tests the static collision (kh2-rs can use render meshes).
 
+Step 4: `magic_rules.rs` compiled in place; `Sora::try_cast` / `magic_trigger` transcribe
+`magic.rs`'s cast acceptance and trigger-17 payment. decided: world 0 for the row choice, no spell
+scripts (VM), effects or spell attacks (the host spawns them on `SpellFired`), no Magic Lock-On
+or Leaf Bracer, the MP regeneration factor 1.0, a request is retried for 30 ticks.
+
 Not covered: enemies, magic, drive forms, summons, items,
 the dodge roll, reaction commands, the auto-target, sounds and effects (frame triggers are
 reported, not played), the game's exact COCT walker (`Oct`, unwired in kh2-rs too), weapon

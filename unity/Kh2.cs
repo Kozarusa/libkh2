@@ -52,7 +52,8 @@ public static class Kh2
         public int grounded, state, motionSlot, motionId;
         public float frame, gframe;
         public int motionFinished, blending, combo, attackActive, attackId, attackGroup;
-        public int comboWindow, finisherWindow, weaponOut, groundMaterial, invulnerable, hp, maxHp;
+        public int comboWindow, finisherWindow, weaponOut, groundMaterial, invulnerable, hp, maxHp, mp, maxMp;
+        public float mpCharge;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -93,6 +94,13 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_camera_tick(int handle, ref CamInput input, out CamView view);
     [DllImport(Lib)] public static extern int kh2_camera_reset(int handle, int row);
     [DllImport(Lib)] public static extern int kh2_lock_on_pick(int handle, float[] points, uint count);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Event { public int kind, slot, castKind, motion, voice, charge; }
+
+    [DllImport(Lib)] public static extern int kh2_cast(int handle, int slot);
+    [DllImport(Lib)] public static extern int kh2_set_magic_levels(int handle, byte[] levels);
+    [DllImport(Lib)] public static extern int kh2_set_mp(int handle, int mp, int maxMp);
+    [DllImport(Lib)] public static extern int kh2_poll_event(int handle, out Event ev);
     [DllImport(Lib)] public static extern int kh2_motion_tag(int handle, byte[] buf, uint len);
 
     public static string LastError()

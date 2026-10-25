@@ -60,7 +60,7 @@ fn game() -> Arc<Game> {
     let prty = PrefPrty { walk_speed: WALK, run_speed: RUN, jump_height: JUMP, turn_speed: 0.25, ..zeroed() };
     let sstm = PrefSstm { fall_max: FALL_MAX, lock_on_range: 1000.0, ..zeroed() };
     let plyr: PrefPlyr = zeroed();
-    let params = Params { prty, plyr, sstm, fmab: Vec::new(), swing: None, reaction: None, atkp: Vec::new(), max_hp: 20, max_mp: 100, camera: None };
+    let params = Params { prty, plyr, sstm, fmab: Vec::new(), swing: None, reaction: None, atkp: Vec::new(), max_hp: 20, max_mp: 100, camera: None, magc: Vec::new(), cmd: Vec::new() };
     Arc::new(Game { params, sora: Arc::new(Rig { model, mset: Mset { slots } }), keyblade: None, moves: Arc::new(moves), leaps: AttackLeaps::default() })
 }
 

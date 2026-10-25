@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use kh2_anim::moveset::{self, Action, Moveset};
 use kh2_game_core::reaction_rules::{self as rules, ExeConsts, PatnRow, ReactionDefaults};
-use kh2_tables::tables::{self as t, Atkp, PrefFmab, PrefPlyr, PrefPrty, PrefSstm};
+use kh2_tables::tables::{self as t, Atkp, Cmd, Magc, PrefFmab, PrefPlyr, PrefPrty, PrefSstm};
 
 use crate::anim::Rig;
 
@@ -55,6 +55,9 @@ pub struct Params {
     pub max_mp: i32,
     /// The field camera's numbers from the executable (`camera_rules::Params::from_exe`).
     pub camera: Option<kh2_game_core::camera_rules::Params>,
+    /// The spell rows (`magc` of `00battle.bin`) and the commands (`cmd` of `03system.bin`).
+    pub magc: Vec<Magc>,
+    pub cmd: Vec<Cmd>,
 }
 
 /// kh2-rs `combat::ReactionData`: the executable's constants, the `sstm` defaults, the `patn` table.
@@ -200,7 +203,9 @@ impl Disc {
         let sora = plrp.iter().find(|p| p.character == 1);
         let (max_hp, max_mp) = (sora.map_or(20, |p| p.hp as i32), sora.map_or(100, |p| p.mp as i32));
         let camera = exe.as_deref().and_then(kh2_game_core::camera_rules::Params::from_exe);
-        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera })
+        let magc = self.table::<Magc>(&t::MAGC).unwrap_or_default();
+        let cmd = self.table::<Cmd>(&t::CMD).unwrap_or_default();
+        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera, magc, cmd })
     }
 
     /// Everything Sora needs.

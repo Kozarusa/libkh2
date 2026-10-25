@@ -63,6 +63,7 @@ typedef struct kh2_inputs {
 #define KH2_STATE_BLOWN 8
 #define KH2_STATE_DOWN 9      /* knocked out: kh2_revive */
 #define KH2_STATE_COUNTER 10  /* the guard repelled a hit */
+#define KH2_STATE_MAGIC 11    /* a cast motion plays */
 
 typedef struct kh2_state {
     float pos[3];
@@ -86,6 +87,8 @@ typedef struct kh2_state {
     int32_t ground_material; /* material of the floor under Sora, -1 airborne */
     int32_t invulnerable;  /* invincibility ticks are running */
     int32_t hp, max_hp;
+    int32_t mp, max_mp;
+    float mp_charge;       /* MP charge frames left, 0 when none */
 } kh2_state;
 
 /* A live attack capsule in world units: segment a-b, radius. */
@@ -163,6 +166,23 @@ KH2_API int32_t kh2_get_attack_volumes(int32_t handle, kh2_volume *out, uint32_t
 KH2_API int32_t kh2_motion_tag(int32_t handle, char *buf, uint32_t len);
 /* Sora's jump height read from the disc (prty JumpHeight, or the High Jump row). */
 KH2_API float kh2_jump_height(int32_t handle);
+
+/* ---- Magic (kh2-rs magic_rules) ---- */
+/* Asks for a cast of slot 0 Fire, 1 Blizzard, 2 Thunder, 3 Cure, 4 Magnet, 5 Reflect; tried for up
+ * to 30 ticks until the state and MP allow it. The host spawns the spell on KH2_EV_SPELL_FIRED. */
+KH2_API int32_t kh2_cast(int32_t handle, int32_t slot);
+KH2_API int32_t kh2_set_magic_levels(int32_t handle, const uint8_t levels[6]);
+KH2_API int32_t kh2_set_mp(int32_t handle, int32_t mp, int32_t max_mp);
+
+#define KH2_EV_CAST_STARTED 1   /* slot, cast_kind, motion, voice */
+#define KH2_EV_SPELL_FIRED 2    /* frame trigger 17: MP paid, spawn the spell (charge: MP charge began) */
+#define KH2_EV_CAST_CANCELLED 3 /* the motion changed before the trigger: no spell, no cost */
+#define KH2_EV_MP_RESTORED 4    /* the MP charge ended */
+typedef struct kh2_event {
+    int32_t kind, slot, cast_kind, motion, voice, charge;
+} kh2_event;
+/* Takes the oldest event: 1 written, 0 none left. */
+KH2_API int32_t kh2_poll_event(int32_t handle, kh2_event *out);
 
 /* ---- Field camera helper (kh2-rs camera_rules, oracle-tested there) ---- */
 #define KH2_CAM_RESET 1u   /* R3: behind Sora */

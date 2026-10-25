@@ -50,6 +50,10 @@ pub struct Kh2State {
     pub invulnerable: i32,
     pub hp: i32,
     pub max_hp: i32,
+    pub mp: i32,
+    pub max_mp: i32,
+    /// MP charge frames left (0 when no charge runs).
+    pub mp_charge: f32,
 }
 
 #[repr(C)]
@@ -286,6 +290,9 @@ fn state_of(s: &Sora) -> Kh2State {
         invulnerable: (s.invuln > 0.0) as i32,
         hp: s.hp,
         max_hp: s.max_hp,
+        mp: s.mp,
+        max_mp: s.max_mp,
+        mp_charge: s.charge.left,
     }
 }
 
@@ -658,4 +665,84 @@ pub unsafe extern "C" fn kh2_lock_on_pick(handle: i32, points: *const f32, count
     }
     let pts: Vec<Vec3> = unsafe { std::slice::from_raw_parts(points, 3 * count as usize) }.chunks(3).map(|c| Vec3::new(c[0], c[1], c[2])).collect();
     sora_do(handle, -1, |s, _| crate::camera::lock_on_pick(s, &pts).map_or(-1, |i| i as i32))
+}
+
+/// Asks for a cast of magic slot `slot` (0 Fire, 1 Blizzard, 2 Thunder, 3 Cure, 4 Magnet, 5
+/// Reflect). It is tried on the next ticks (up to 30) until the state and MP allow it.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_cast(handle: i32, slot: i32) -> i32 {
+    if !(0..6).contains(&slot) {
+        return set_error("magic slot is 0..5");
+    }
+    sora_do(handle, -1, |s, _| {
+        if s.spell(slot as u8).is_none() {
+            return set_error("the slot has no spell at its level");
+        }
+        s.cast_request = Some((slot as u8, 30));
+        0
+    })
+}
+
+/// Spell levels of the six magic slots (0 = not owned; default Fire, Blizzard, Thunder, Cure at 1).
+///
+/// # Safety
+/// `levels` points to 6 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_set_magic_levels(handle: i32, levels: *const u8) -> i32 {
+    if levels.is_null() {
+        return -1;
+    }
+    let l: [u8; 6] = unsafe { std::ptr::read(levels as *const [u8; 6]) };
+    sora_do(handle, -1, |s, _| {
+        s.magic_levels = l;
+        0
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_set_mp(handle: i32, mp: i32, max_mp: i32) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        s.max_mp = max_mp.max(0);
+        s.mp = mp.clamp(0, s.max_mp);
+        0
+    })
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2Event {
+    /// KH2_EV_*: 1 cast started, 2 spell fired, 3 cast cancelled, 4 MP restored.
+    pub kind: i32,
+    pub slot: i32,
+    /// The cast kind (atkp sub-row key / magi row).
+    pub cast_kind: i32,
+    pub motion: i32,
+    pub voice: i32,
+    pub charge: i32,
+}
+
+/// Takes the oldest pending event; returns 1 when one was written, 0 when none is left.
+///
+/// # Safety
+/// `out` points to a writable `kh2_event`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_poll_event(handle: i32, out: *mut Kh2Event) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    sora_do(handle, -1, |s, _| {
+        if s.events.is_empty() {
+            return 0;
+        }
+        let e = s.events.remove(0);
+        use crate::sora::Event as E;
+        let v = match e {
+            E::CastStarted { slot, kind, motion, voice } => Kh2Event { kind: 1, slot: slot.into(), cast_kind: kind as i32, motion: motion.into(), voice: voice.into(), charge: 0 },
+            E::SpellFired { slot, kind, charge } => Kh2Event { kind: 2, slot: slot.into(), cast_kind: kind as i32, motion: -1, voice: -1, charge: charge as i32 },
+            E::CastCancelled { slot } => Kh2Event { kind: 3, slot: slot.into(), cast_kind: -1, motion: -1, voice: -1, charge: 0 },
+            E::MpRestored => Kh2Event { kind: 4, slot: -1, cast_kind: -1, motion: -1, voice: -1, charge: 0 },
+        };
+        unsafe { *out = v };
+        1
+    })
 }
