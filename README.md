@@ -13,6 +13,25 @@ the original executable there; libkh2 compiles kh2-rs's pure modules in place wi
 a plain-struct controller, a C ABI and examples. `DESIGN.md` says exactly what is reused, what is
 new glue, and what v1 does not cover.
 
+What it is not: not a game or a renderer (no meshes, textures, effects, sound playback or UI: it
+hands the host skeletons, motions, events and sound numbers), not a story or menu system (no
+cutscenes, dialogue, shops, save menus), not a full port (what differs from the game is listed in
+`docs/DEVIATIONS.md`; how close each function is, in `docs/FAITHFULNESS.md`). Host authors start
+with `docs/FOR-HOST-AUTHORS.md` (tick order, units, collision, a C loop, common mistakes).
+
+## Quick start per language
+
+- **C:** `include/kh2.h` + `kh2.dll` / `kh2.dll.lib`; `examples/min.c`, built by
+  `examples\build_min.bat` (MSVC) or `examples/build_min.sh`.
+- **C#:** `unity/Kh2.cs` (define `KH2_NO_UNITY` outside Unity); `dotnet run -c Release --project
+  examples/csharp -- <disc image>`.
+- **Python:** ctypes, no build: `python examples/python/kh2_run.py [library] [disc image]`.
+- **Unity:** copy `kh2.dll` to `Assets/Plugins/`, `unity/Kh2.cs` to `Assets/`, add `Kh2Sora`
+  to a GameObject (`docs/UNITY.md`; written for Unity, not run here).
+
+All read the disc image from the argument or `KH2_ISO`. The packaged form (`scripts/package.ps1
+-Zip`, `dist/libkh2.zip`) has the same layout with the library in `bin/`.
+
 ## Quick start
 
 ```
@@ -210,7 +229,7 @@ rows, status from their `lvup` table at their level (`kh2_party_set_level`), ene
 (`prty` StunTime, `sstm` 0x58 / 0x5c) stands them up, styles 0..3 (`kh2_party_set_style`), the danger
 test, emergency pass and HP/MP item handlers spend the stock the host gives (`kh2_party_set_items`);
 events via `kh2_poll_member_event` (disc test `members_take_hits_fall_revive_use_items_and_fight_in_every_style`).
-decided: no member scripts (Specials and Cure are never chosen), no equipment, items act at once.
+Since 0.7 their own BDX scripts run (Cure, Specials: `member_scripts_cast_cure_and_specials`) and they wear equipment (`kh2_party_set_equipment`); items act at once.
 
 Enemies (`kh2_enemy_spawn`, `kh2_enemies_tick`): any kind of kh2-rs's list (Shadow, Soldier, Dusk and
 50 more) under its own BDX script through kh2-rs's interpreter and its script host compiled in
@@ -223,7 +242,7 @@ turn rate is set, straight at level 1), Thunder's strikes on the target with the
 the column, the victims' hit memory and row variants, damage with Sora's magic; the cast turns
 Sora toward the target (triggers 22/28) (disc test `spells_fly_and_hit_enemies`).
 
-Not in v1: summons, sounds and effects, moving platforms. See `DESIGN.md`.
+Since 0.7 / 0.8: summons (`summons_arrive_run_their_scripts_and_leave`), limits with Donald and Goofy (no limit damage, see `docs/DEVIATIONS.md`), area battle programs with their waves (`kh2_area_run`), the Struggle's mission manager (`docs/STRUGGLE.md`), talks (`kh2_talk_begin`). Not done: sound and effect playback (numbers go to the host), moving platforms, cutscenes, menus. See `DESIGN.md`.
 
 ## Credits
 
@@ -238,16 +257,16 @@ Reaction commands (`kh2_reaction_offer`, `kh2_reaction_accept`): kh2-rs `reactio
 MP) is compiled from its source; accept follows FUN_00177c20's generic path (use counter, target
 check, CmdAction stop) and hands the command to the target's BDX script as event 11 (disc test
 `a_reaction_command_is_offered_accepted_and_delivered`: a Dusk's script handles command 27).
-decided: limits (Execute 81), talk/save/shop rows and the script's commands back to Sora are not
-ported; no spawnable kind offers one from its motions, so `kh2_reaction_force_offer` (kh2-rs's
+decided: save and shop rows and the script's commands back to Sora are not ported (limits start
+through `kh2_limit_start` and Auto Limit, talks through `kh2_talk_begin`); no spawnable kind offers one from its motions, so `kh2_reaction_force_offer` (kh2-rs's
 harness offer) drives it.
 
 Level-ups (kh2-rs `Progress::raise_level`): `KH2_EV_LEVEL_UP` carries the strength/magic/defense/AP
 rises over the previous `lvup` row and the ability the row gives for the weapon set
 (`kh2_set_weapon_set`); given abilities are listed by `kh2_granted_abilities` (disc test
-`level_ups_give_the_lvup_rows_abilities_and_the_record_saves`). decided: HP/MP growth comes from
-the bonus levels (`bons`), which are not ported. Save record: `kh2_state_save` / `kh2_state_load`
-("KH2S" v1, the status and the place, not the moment; malformed records are refused unchanged).
+`level_ups_give_the_lvup_rows_abilities_and_the_record_saves`). HP/MP growth comes from
+the bonus levels (`kh2_give_bonus`, the `bons` rows). Save record: `kh2_state_save` / `kh2_state_load`
+("KH2S" v3, the status and the place, not the moment; malformed records are refused unchanged).
 Replays: `battle_replays_the_same` runs Sora, Donald, Goofy and three enemies twice and compares
 every tick (and a golden digest file); the members' generator word is kept per party.
 
@@ -262,7 +281,8 @@ by `python scripts/gen_api_ref.py` (`--check` tells whether it is up to date).
 
 Packaging: `powershell -ExecutionPolicy Bypass -File scripts/package.ps1 [-Zip]` builds the release
 library and lays out `dist/libkh2` (bin/kh2.dll and its import library, include/kh2.h, docs, the
-Unity bindings and sample folder, the C and Python examples); it refuses to package anything that
-looks like disc data. Quick experiments without a compiler: `python examples/python/kh2_run.py`
+Unity bindings and sample folder, the C, C# and Python examples); it builds with this machine's
+paths remapped and refuses to package anything that looks like disc data (`tests/package.rs`
+scans the folder and the zip for disc files and machine paths). Quick experiments without a compiler: `python examples/python/kh2_run.py`
 (ctypes; Sora, Donald and Goofy against a Soldier, a line per second of game time). Unity:
 `unity/sample/README.md`.

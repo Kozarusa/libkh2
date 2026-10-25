@@ -393,6 +393,7 @@ fn state_of(s: &Sora) -> Kh2State {
 pub unsafe extern "C" fn kh2_tick(handle: i32, inputs: *const Kh2Inputs, state: *mut Kh2State) -> i32 {
     let input = if inputs.is_null() { Input::default() } else { input_of(unsafe { &*inputs }) };
     sora_do(handle, -1, |s, w| {
+        cap(&mut s.events);
         s.tick(w, &input);
         if !state.is_null() {
             unsafe { *state = state_of(s) };
@@ -1149,6 +1150,7 @@ pub extern "C" fn kh2_party_add(handle: i32, member: i32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
     with(-1, |l| {
+        cap_queues(l, handle);
         let (Some(p), Some(s)) = (l.party.clone(), usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut)) else { return -1 };
         let away = l.summons.get(&handle).is_some_and(|m| m.companions_away);
         if let Some(list) = l.followers.get_mut(&handle).filter(|_| !away) {
@@ -1294,6 +1296,7 @@ pub unsafe extern "C" fn kh2_enemy_spawn(handle: i32, kind: *const c_char, x: f3
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_enemies_tick(handle: i32) -> i32 {
     with(-1, |l| {
+        cap_queues(l, handle);
         let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return -1 };
         let fall = s.game.params.sstm.fall_max;
         if let Some(en) = l.enemies.get_mut(&handle) {
@@ -2630,4 +2633,36 @@ pub extern "C" fn kh2_talk_end(handle: i32) -> i32 {
         }
         0
     })
+}
+
+/// The most events a queue keeps for a host that does not poll (oldest dropped first).
+pub const QUEUE_CAP: usize = 1024;
+
+fn cap<T>(v: &mut Vec<T>) {
+    if v.len() > QUEUE_CAP {
+        let n = v.len() - QUEUE_CAP;
+        v.drain(..n);
+    }
+}
+
+/// Bounds Sora `handle`'s event queues (members, enemies, limits, summons, the area run's events).
+fn cap_queues(l: &mut Lib, handle: i32) {
+    if let Some(list) = l.followers.get_mut(&handle) {
+        for f in list {
+            cap(&mut f.events);
+        }
+    }
+    if let Some(en) = l.enemies.get_mut(&handle) {
+        cap(&mut en.events);
+    }
+    if let Some(m) = l.limits.get_mut(&handle) {
+        cap(&mut m.events);
+    }
+    if let Some(m) = l.summons.get_mut(&handle) {
+        cap(&mut m.events);
+    }
+    if let Some((run, raised)) = l.area_runs.get_mut(&handle) {
+        cap(&mut run.raised);
+        cap(raised);
+    }
 }

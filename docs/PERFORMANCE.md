@@ -30,3 +30,11 @@ Notes:
 - The cost per enemy is about 9 microseconds a tick, dominated by posing the skeleton and the
   script.
 - The C API adds a mutex lock per call and no allocation in the tick path beyond the library's own.
+## Soak (round 8)
+
+`KH2_SOAK_SECS=600 cargo test --release --test soak` (and the same without `--release`): random
+inputs, spawns, area runs and Struggle missions, party, drive forms, spells, save / load, prune
+and clear. Release: 2,225,721 ticks in 600 s, 5,523 area cycles; debug: 2,021,749 ticks, 5,028
+cycles. Live heap after the first area cycle 34.5 MiB, at the end 41.7 / 41.3 MiB (the same
+41 MiB after 20 s: bounded), peak 63.6 MiB; no panic; the same seed gives the same Sora trace
+before and after.

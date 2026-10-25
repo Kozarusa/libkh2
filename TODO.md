@@ -1,3 +1,29 @@
+# Remaining (v0.9.0)
+
+What is still open, honestly; everything else listed below as done is tested.
+
+1. Limit damage: the damage of the limits is in their PAX effect elements (`limit/us/*.bar` type 18),
+   which kh2-rs does not decode; needs kh2-rs to port the PAX hit data first (docs/DEVIATIONS.md).
+2. Not run here: the Unity sample (`unity/`, `docs/UNITY.md`) and the Linux / macOS builds
+   (`examples/build_min.sh`, `nm` path of `scripts/check_bindings.py`). Only Windows + MSVC + .NET 9 ran.
+3. Struggle: the result menu (record 0x1a) and the game over are reported, not run; the layout
+   events' pictures are not drawn; an object's centre is feet + 80 cm.
+4. Talks: the dialogue (libretto programs, windows) and the townspeople are the host's; a talk
+   camera record on a bone uses the host's bones or the rest pose.
+5. Not ported at all: sound / effect playback (numbers only), moving platforms, cutscenes, menus,
+   shops, save points, story flags across areas, the story's choice of an area's battle program.
+6. Of the 107 functions, 4 rest on oracle-tested kh2-rs rules, 48 on kh2-rs rules read from the
+   original but not oracle-tested, 55 are glue (docs/FAITHFULNESS.md); more oracle tests belong in kh2-rs.
+
+# TODO (round 8)
+
+1. [x] Release check from the unpacked zip (C, Python, C# against the packaged DLL); package built
+   with remapped paths; `tests/package.rs` scans for disc files and machine paths.
+2. [x] Seifer's bat hits Sora (`seifers_bat_hits_sora_and_knocks_his_orbs_out`); members' and
+   summons' hits knock orbs out; limit damage: dead end documented (item 1 above).
+3. [x] Soak (`tests/soak.rs`, `KH2_SOAK_SECS`): release and debug, 10 min each; event queues capped
+   at 1024.
+4. [x] Documentation pass: README, docs/FOR-HOST-AUTHORS.md, API-REFERENCE regenerated, DEVIATIONS.
 # TODO (round 7)
 
 1. [~] Limits that deal damage: not reachable from kh2-rs's rules. Measured on the disc (`limits_hold_the_members_and_their_motions_carry_no_attacks`): the LIMI sub-motions played on Sora and the members carry no attack windows; the limit scripts ask only for motions (2.47), effects (2.50) and PAX elements (2.59); the damage comes from the limit's own objects (the kind 5000 objects of the type 0x14 entry, made by the limit task) which kh2-rs does not port or document. Done instead: the members are in the limit state for the whole limit (kh2-rs `LimitMembers { away: true }`), so they no longer fight on their own during it.

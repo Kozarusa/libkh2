@@ -40,7 +40,7 @@ libkh2: Sora's controller from Kingdom Hearts II as an embeddable library (libsm
 The version this header describes; kh2_version() returns the library's (same packing).
 
 - `KH2_VERSION_MAJOR` = `0`
-- `KH2_VERSION_MINOR` = `7`
+- `KH2_VERSION_MINOR` = `8`
 - `KH2_VERSION_PATCH` = `0`
 - `KH2_VERSION` = `((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)`
 
@@ -987,28 +987,104 @@ Takes the events the groups raised: up to max (id, argument) pairs into out; ret
 int32_t kh2_area_end(int32_t handle);
 ```
 
-### `kh2_mission_state`, `kh2_mission_orbs`, `kh2_mission_take_sounds`
+The mission manager an area run's program starts (opcode 0x15; kh2-rs struggle.rs compiled from source): the mission file's counters, clock, layouts and script; every reaction a fighter takes knocks orbs out of its counter into the pool, the first fighter in reach takes one back; the script sends the result (global events 159 won / 160 lost, also in kh2_area_take_events). Ticked in kh2_enemies_tick. The Struggle matches are tt04 programs 182 (N_EX500_BTL), 183 (N_EX600_BTL) and 184 (Seifer).
+
+### `kh2_mission`
+
+```c
+typedef struct kh2_mission {
+    int32_t running;       /* 1 while the manager exists */
+    int32_t counters[3];   /* host 4.29: 0 the player's orbs, 1 the opponent's */
+    int32_t clock_frames;  /* the time shown, 60 a second */
+    int32_t clock_down;    /* 1: counts down */
+    int32_t state;         /* 0 wait to show, 1 running, 2..4 the end */
+    int32_t event_playing; /* a layout event plays (the groups wait) */
+    int32_t stopped;
+    int32_t end_cause;     /* 0 not yet, 1 player's counter full, 2 opponent's, 3 clock, 4 knock-out */
+    int32_t result;        /* 0 none, 1 won (159), 2 lost (160) */
+    int32_t ended;         /* the manager ended */
+    int32_t game_over;     /* it ended with the game-over path */
+    int32_t menu;          /* the last step asked for the result menu (record 0x1a) */
+    uint32_t orbs;         /* orbs in the pool */
+    uint32_t id;           /* the mission id */
+} kh2_mission;
+```
+
+### `kh2_mission_state`
 
 ```c
 int32_t kh2_mission_state(int32_t handle, kh2_mission *out);
+```
+
+Returns 1 and fills out when a manager exists, 0 when none.
+
+### `kh2_mission_orbs`
+
+```c
 int32_t kh2_mission_orbs(int32_t handle, float *out, uint32_t max);
+```
+
+Up to max orbs as (x, y, z cm, kind) 4 floats each (kind 0 the player's, 2 the opponent's).
+
+### `kh2_mission_take_sounds`
+
+```c
 int32_t kh2_mission_take_sounds(int32_t handle, float *out, uint32_t max);
 ```
 
-The mission manager that `kh2_area_run` starts when a group of the program has a mission command
-(area-script opcode 0x15; kh2-rs `struggle.rs`, compiled from source): the counters, the clock, the
-layouts, the mission script and the orb pool, ticked in `kh2_enemies_tick`. The Struggle matches
-are tt04 programs 182 (`TT04_MS00`, N_EX500_BTL), 183 (`TT04_MS01`, N_EX600_BTL) and 184 (`TT04_MS02`, Seifer). `kh2_mission_state` returns 1 and fills
-`out` while a manager exists (also after it ended, `ended` = 1), 0 otherwise. Its global events
-(0x7b a full counter, 0x4a the clock, 159 won, 160 lost ...) also come out of
-`kh2_area_take_events`. Orbs are (x, y, z cm, kind) 4 floats each; sounds (number, has place, x,
-y, z) 5 floats each.
+Takes up to max sounds as (number, has place, x, y, z) 5 floats each (the last 256 are kept).
+
+Talks (kh2-rs npc.rs talk_step): the host owns its townspeople and their dialogue. When Sora interacts with one, kh2_talk_begin stops Sora and turns him to it, turns it to him (unless keep_facing), starts the talk camera (kh2_camera_tick reports mode 4) from its type-0x13 record of obj/<model>.mdlx, locks Sora's control and fills the request (the talk id back, the target's motion 0x32). kh2_talk_end releases him and the camera warps back. bones: NULL (the model's rest pose) or bone_count column-major 4x4 matrices of its pose in model space.
+
+### `kh2_talk_target`
+
+```c
+typedef struct kh2_talk_target {
+    float pos[3];
+    float yaw;
+    int32_t part;        /* the talk part of the offer */
+    int32_t keep_facing; /* script array bit 4 */
+    int32_t own_frame;   /* script array bit 6: the camera in the target's frame */
+    int32_t examine;     /* Execute 0x1e: no camera, no turn, no motion */
+    uint32_t talk_id;
+} kh2_talk_target;
+```
+
+### `kh2_talk_request`
+
+```c
+typedef struct kh2_talk_request {
+    uint32_t talk_id;
+    int32_t examine;
+    float target_yaw;
+    float sora_yaw;
+    int32_t target_motion; /* 0x32, -1 none */
+    int32_t camera;        /* 1: the talk camera started */
+    float look[3];
+    float dist;
+    float height;
+} kh2_talk_request;
+```
+
+### `kh2_talk_begin`
+
+```c
+int32_t kh2_talk_begin(int32_t handle, const char *model, const kh2_talk_target *target, const float *bones, uint32_t bone_count, kh2_talk_request *out);
+```
+
+### `kh2_talk_end`
+
+```c
+int32_t kh2_talk_end(int32_t handle);
+```
 
 ### `kh2_enemies_prune`
 
 ```c
 int32_t kh2_enemies_prune(int32_t handle);
 ```
+
+kh2_cam_view.mode: 0 follow, 1 look-around, 2 lock-on (a kh2_set_target point), 4 talk, 5 overhead, 8 always-behind.
 
 Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load on demand at their first spawn). Returns the number dropped.
 
@@ -1190,24 +1266,3 @@ int32_t kh2_lock_on_pick(int32_t handle, const float *points, uint32_t count);
 ```
 
 Index of the nearest of `count` xyz points within the lock-on range, or -1.
-
-### `kh2_talk_begin`, `kh2_talk_end`
-
-```c
-int32_t kh2_talk_begin(int32_t handle, const char *model, const kh2_talk_target *target,
-                       const float *bones, uint32_t bone_count, kh2_talk_request *out);
-int32_t kh2_talk_end(int32_t handle);
-```
-
-The host keeps its townspeople and their dialogue; when Sora interacts with one (the host's
-interact button on its NPC, or an accepted talk command), `kh2_talk_begin` does the player's side
-of kh2-rs `npc::talk_step` (`FUN_001a5728`, examine `FUN_001a5510`): Sora's velocity is cleared and
-he faces the target; the target faces him unless `keep_facing` (script array bit 4); the talk
-camera (`kh2_camera_tick` mode 4) cuts in at `talk_pose` of the shot read from the target's
-type-0x13 record of `obj/<model>.mdlx` (kh2-rs `talk_shot`: else its type-3 record); Sora's control
-is locked (his input reads as untouched) until `kh2_talk_end`, which also sends the camera back
-(warp) to the follow or lock-on view. The request (`out`) hands back the talk id, both facings,
-the target's motion (0x32) and the shot. An examine (`examine` = 1) only turns Sora and locks him.
-
-`kh2_cam_view.mode` is the game's camera mode: 0 follow, 1 look-around, 2 lock-on (a
-`kh2_set_target` point is held), 4 talk, 5 overhead, 8 always-behind.
