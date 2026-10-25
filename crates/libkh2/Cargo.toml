@@ -23,4 +23,6 @@ kh2-model = { path = "../../../kh2-rs/crates/kh2-model" }
 kh2-tables = { path = "../../../kh2-rs/crates/kh2-tables" }
 
 [dev-dependencies]
+kh2-ee = { path = "../../../kh2-rs/crates/kh2-ee" }
+kh2-factory = { path = "../../../kh2-rs/crates/kh2-factory" }
 kh2-fx = { path = "../../../kh2-rs/crates/kh2-fx" }

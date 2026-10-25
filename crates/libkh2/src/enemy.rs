@@ -163,15 +163,21 @@ impl EnemyData {
     }
 }
 
-/// kh2-rs `GameData::damage`: the game's per-hit damage.
+/// The game's per-hit damage (`FUN_001a0610`; kh2-rs `GameData::damage` with two corrections the
+/// oracle test `orig_1a0610_damage_matches_the_game` measured: a row whose +5 byte is neither 0 nor
+/// 1 uses no stat, and the attacker's maximum dealt caps the damage even when it is 0).
 pub fn damage(atk: &Atkp, from: &Stats, to: &Stats) -> i32 {
-    let stat = if atk.critical_adjust == 1 { from.magic } else { from.strength };
+    let stat = match atk.critical_adjust {
+        0 => from.strength,
+        1 => from.magic,
+        _ => 0,
+    };
     let power = atk.power as i32;
     let dmg = match atk.r#type {
         5 => (to.max_hp * stat * power + 9999) / 10000,
         6 => (stat * power + 99) / 100,
         _ => {
-            let cap_hi = to.max_taken.min(if from.max_dealt > 0 { from.max_dealt } else { i32::MAX });
+            let cap_hi = to.max_taken.min(from.max_dealt);
             let cap_lo = to.min_taken.max(from.min_dealt);
             let base = (stat - to.defense).min(cap_hi).max(cap_lo);
             let elem = to.weakness[(atk.element as usize).min(6)] as i64;

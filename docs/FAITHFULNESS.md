@@ -92,7 +92,7 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_get_attack_volumes | b | the motion's attack triggers (kh2-anim, read) | `the_ground_and_air_combos_play_the_attack_table` |
 | kh2_jump_height | b | `prty` JumpHeight / High Jump row through motor.rs | `a_held_jump_peaks_at_the_jump_height_and_lands` |
 | kh2_cast | b | magic_rules.rs (17 of 78 verified, e.g. `orig_17bbc0_matches_the_game`; the cast flow read) and spell.rs's transcription (c) | `level_one_spells_cast_pay_and_charge`, `spells_fly_and_hit_enemies`, `a_homing_shot_turns_by_its_rate` |
-| kh2_damage, kh2_drive_outgoing_damage | b | the damage formula (read) | `spells_report_attack_stages_with_disc_rows_and_damage` |
+| kh2_damage, kh2_drive_outgoing_damage | a | the damage formula `kh2::enemy::damage` against the original FUN_001a0610 in kh2-ee (libkh2 `oracle.rs::orig_1a0610_damage_matches_the_game`, 3000 cases; it found and fixed two differences of kh2-rs's formula), the boosts FUN_001a0a18 / FUN_001a0aa8 (`orig_1a0a18_1a0aa8_attacker_bonuses_match_the_game`) | `spells_report_attack_stages_with_disc_rows_and_damage` |
 | kh2_use_item | a | items.rs item effect (`item_effect_matches_the_game`); the use motion is glue | `items_heal_through_the_use_motion_and_defeats_raise_the_level` |
 | kh2_set_level | a | the status rebuild (`orig_19f920_matches_the_game`) with the `lvup` rows | `level_ups_give_the_lvup_rows_abilities_and_the_record_saves` |
 | kh2_report_defeat, kh2_give_bonus | b | experience and `bons` rows (progress.rs spans, read) | `items_heal_through_the_use_motion_and_defeats_raise_the_level`, `bonus_levels_member_levels_and_form_ability_lists` |
@@ -115,14 +115,32 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_mission_state, kh2_mission_orbs | b | struggle.rs and shared/struggle.rs (the clock's `orig_14c6b0_matches_the_game` family verified, the rest read), prize rules; struggle.rs glue (c, compared below) | `the_struggle_mission_runs_its_clock_orbs_and_result`, `the_struggle_glue_knocks_out_what_kh2_rs_orbs_knocked_out_says` |
 | kh2_mission_take_sounds | c | records | `the_struggle_mission_runs_its_clock_orbs_and_result` |
 | kh2_talk_begin, kh2_talk_end | b | npc.rs `talk_shot` and camera_rules `start_talk` / `talk_pose` (read); talk.rs glue (c, compared below) | `a_talk_locks_sora_and_cuts_the_camera_to_the_talk_view` |
+| kh2_area_setup | a | kh2-ard `run_area` (orig 0x181148, `orig_181148_matches_the_game`) and `entity_for_entrance` (FUN_001981a0, `orig_1981a0_matches_the_game`) | `an_area_setup_lists_townspeople_with_their_talks` |
+| kh2_area_get_object, kh2_poll_cue | c | records; the cues read the motions' frame triggers (kh2-anim, b) as kh2-rs's audio / fx systems do | `motions_give_sound_and_effect_cues` |
 | kh2_reaction_offer, kh2_reaction_accept | b | reaction_cmd.rs offers (6 of 55 verified), reaction_parts.rs (read), player_reaction.rs paired motions | `a_reaction_command_is_offered_accepted_and_delivered`, `a_soldier_offers_its_reaction_command_and_its_script_moves_sora` |
 | kh2_reaction_force_offer | c | a test hook | `a_reaction_command_is_offered_accepted_and_delivered` |
 | kh2_camera_tick | a | camera_rules.rs rig (15 of 74 verified, `orig_13f600_matches_the_game`, `orig_13f740_matches_the_game`); camera.rs drives it as kh2-rs `camera::tick` | `the_field_camera_follows_collides_and_locks_on`, `a_talk_locks_sora_and_cuts_the_camera_to_the_talk_view` |
 | kh2_camera_reset | c | the table row choice | `the_field_camera_follows_collides_and_locks_on` |
 
-Totals: class a 4 functions (kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
-kh2_camera_tick), class b 48, class c 55: most of the game rules are kh2-rs code read from the
-original but not oracle-tested; the records, setters and the transcribed Bevy flows are glue.
+Totals (110 functions): class a 7 (kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
+kh2_camera_tick, kh2_damage, kh2_drive_outgoing_damage, kh2_area_setup), class b 46, class c 57:
+most of the game rules are kh2-rs code read from the original but not oracle-tested; the records,
+setters and the transcribed Bevy flows are glue.
+
+## libkh2's own oracle tests (`crates/libkh2/tests/oracle.rs`)
+
+Run the original from the user's executable in kh2-rs's kh2-ee (read-only dependency) on seeded
+cases, every case compared:
+
+| test | original | libkh2 / kh2-rs code | result |
+|---|---|---|---|
+| `orig_1a0610_damage_matches_the_game` | FUN_001a0610 (damage) | `kh2::enemy::damage` | 3000 / 3000 after two fixes: a row with +5 byte 2 or more uses no stat (kh2-rs used strength), the attacker's maximum dealt caps even at 0 (kh2-rs took 0 as none) |
+| `orig_1a0a18_1a0aa8_attacker_bonuses_match_the_game` | FUN_001a0a18, FUN_001a0aa8, FUN_00176be8, FUN_00176c40 | `abilities::attacker_bonuses` | 3000 / 3000 |
+| `orig_1a0be0_hp_is_low_matches_the_game` | FUN_001a0be0 | `abilities::hp_is_low` (Defender's gate) | 3000 / 3000 |
+
+Not done (not cheap): the jump curve and the wall slide are kh2-rs's motor.rs, already oracle-tested
+there (`orig_143840_matches_the_game` and the mover family); the attack-table choice and the
+controller states are large state machines on the actor object that need the whole actor laid out.
 
 ## Glue checked against kh2-rs values
 
