@@ -1523,3 +1523,61 @@ fn equipment_builds_the_status_and_items_are_described() {
     eprintln!("Donald: defense {} -> {}, weakness {:?} -> {:?}", before.defense, after.defense, before.weakness, after.weakness);
     assert_eq!(after.defense - before.defense, i32::from(armor.defense));
 }
+
+/// During a limit the members are in the limit state (kh2-rs `LimitMembers { away: true }`): they do
+/// not fight on their own. The LIMI motions carry no attack windows (measured: at most the hit of a
+/// swing already running at the start), so the limits' damage needs the limit's own attack objects,
+/// which kh2-rs does not port (docs/DEVIATIONS.md).
+#[test]
+fn limits_hold_the_members_and_their_motions_carry_no_attacks() {
+    use kh2::enemy::{EnemyEvent, Enemies};
+    use kh2::limit::{LimitEvent, Limits};
+    use kh2::party::{tick_battle, Follower, PartyRng};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let ldata = d.limits().expect("limit tables");
+    let edata = Arc::new(d.enemies().expect("enemy data"));
+    let party = d.party().expect("party data");
+    let w = floor();
+    let mut results = Vec::new();
+    for cmd in [255u16, 338, 282, 344] {
+        let mut s = standing(&game, &w);
+        s.max_hp = 999;
+        s.hp = 999;
+        let mut en = Enemies::new(edata.clone());
+        for k in 0..6 {
+            let a = k as f32;
+            en.spawn("M_EX990", Vec3::new(a.sin() * 200.0, 0.0, 150.0 + a.cos() * 150.0), 3.0, &w);
+        }
+        for e in en.list.iter_mut() {
+            e.rt = None;
+            e.hp = 100000;
+        }
+        let mut fs = vec![Follower::new(&party, 0, Vec3::new(-100.0, 0.0, 0.0)), Follower::new(&party, 1, Vec3::new(100.0, 0.0, 0.0))];
+        let present = kh2::limit::present(&fs, &party);
+        let mut rng = PartyRng::default();
+        let mut lim = Limits::default();
+        lim.start(&ldata, &mut d, &mut s, &present, cmd).expect("starts");
+        let (mut hits, mut rows) = (0, std::collections::BTreeSet::new());
+        let mut ticks = 0;
+        while lim.running() && ticks < 3000 {
+            s.tick(&w, &Input::default());
+            tick_battle(&party, &mut fs, &mut rng, &mut s, &w, Some(&mut en));
+            en.tick(&mut s, &w, game.params.sstm.fall_max);
+            lim.tick(&s);
+            lim.play_motions(&mut s, &mut fs, &party);
+            lim.events.retain(|e| !matches!(e, LimitEvent::Motion { .. }));
+            for ev in en.events.drain(..) {
+                if let EnemyEvent::Hit { atkp, .. } = ev {
+                    hits += 1;
+                    rows.insert(atkp);
+                    lim.count_hit();
+                }
+            }
+            ticks += 1;
+        }
+        eprintln!("limit {cmd}: {ticks} ticks, {hits} hits on the enemies, rows {rows:?}, limit count {}", lim.hits());
+        results.push((cmd, hits));
+    }
+    assert!(results.iter().all(|r| r.1 <= 2), "the members do not fight during a limit");
+}

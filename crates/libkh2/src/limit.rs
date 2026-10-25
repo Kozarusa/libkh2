@@ -244,6 +244,13 @@ impl Limits {
     /// on Sora (held in `State::Reaction`) and the members (held by `Follower::limit_hold`); at the end
     /// they get their own motions back. `sora_byte` is the objentry byte +7 of P_EX100.
     pub fn play_motions(&mut self, sora: &mut Sora, followers: &mut [crate::party::Follower], data: &crate::party::PartyData) {
+        // kh2-rs `LimitMembers { away: true }`: the party members are in the limit state for the whole
+        // limit (no battle choice of their own).
+        if self.task.is_some() {
+            for f in followers.iter_mut() {
+                f.limit_hold = true;
+            }
+        }
         let new: Vec<(u32, usize, f32)> = self.events[self.seen.min(self.events.len())..].iter().filter_map(|e| if let LimitEvent::Motion { who, id, blend } = e { Some((*who, *id, *blend)) } else { None }).collect();
         self.seen = self.events.len();
         for (who, id, blend) in new {

@@ -1,3 +1,13 @@
+# TODO (round 7)
+
+1. [~] Limits that deal damage: not reachable from kh2-rs's rules. Measured on the disc (`limits_hold_the_members_and_their_motions_carry_no_attacks`): the LIMI sub-motions played on Sora and the members carry no attack windows; the limit scripts ask only for motions (2.47), effects (2.50) and PAX elements (2.59); the damage comes from the limit's own objects (the kind 5000 objects of the type 0x14 entry, made by the limit task) which kh2-rs does not port or document. Done instead: the members are in the limit state for the whole limit (kh2-rs `LimitMembers { away: true }`), so they no longer fight on their own during it.
+2. [ ] Summons' AI, arrival event, summon limits.
+3. [ ] Area signals and waves.
+4. [ ] Struggle mission manager.
+5. [ ] Talk / event hooks, camera modes.
+6. [ ] docs/FAITHFULNESS.md.
+7. [ ] C# console sample, binding diff script.
+
 # TODO (round 6)
 
 1. [x] Member scripts: kh2-rs friend_host.rs compiled in place, friend_ai transcribed (friend.rs): Donald's Cure heals Sora, Specials (Goofy's blade ...) run with their attack objects hitting enemies, no unserved host calls in the test (`member_scripts_cast_cure_and_specials`); limit motions (LIMI sets) play on Sora and the members (Goofy's limits: 299 ticks held), Auto Limit offers a partner's limit in the reaction slot and accept starts it (`limit_motions_play_on_the_bodies_and_auto_limit_offers`). Not ported: the limits' own damage (Comet's / the participants' attack objects come from objects of the LIMI set the library does not create), the scripts' effects (reported), Auto Limit needs the limit tables loaded (any kh2_limit_* call).

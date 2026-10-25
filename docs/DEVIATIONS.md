@@ -36,8 +36,10 @@ Party
 
 Limits
 - The limit task, its countdown, hit count, the limit file's own script, the LIMI motions on the
-  bodies and Auto Limit's offer run; the limits' damage (from objects of the LIMI set the library
-  does not create), summon limits and the HUD do not.
+  bodies and Auto Limit's offer run, and the members stay in the limit state; the limits' damage
+  does not: the LIMI motions carry no attack windows (measured), the damage comes from the limit
+  task's own objects (kind 5000), which kh2-rs neither ports nor documents. Summon limits and the
+  HUD are not ported either.
 
 Summons
 - The command, arrival (no event), timer, level, dismiss and leave run, and the object's own
