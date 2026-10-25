@@ -20,7 +20,7 @@
 
 /* The version this header describes; kh2_version() returns the library's (same packing). */
 #define KH2_VERSION_MAJOR 0
-#define KH2_VERSION_MINOR 6
+#define KH2_VERSION_MINOR 7
 #define KH2_VERSION_PATCH 0
 #define KH2_VERSION ((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)
 
@@ -248,9 +248,9 @@ typedef struct kh2_item_info {
     uint8_t attack, magic, defense;
     uint8_t resist[7];    /* physical, fire, blizzard, thunder, dark, light, general (percent) */
     uint16_t ability;     /* the ability the item carries, 0 none */
-} kh2_item_info;
+} kh2_item_info_t;
 /* 0, or -1 for no such item. */
-KH2_API int32_t kh2_item_info(int32_t id, kh2_item_info *out);
+KH2_API int32_t kh2_item_info(int32_t id, kh2_item_info_t *out);
 /* Sora's equipment (item ids: weapon, armor, accessories; up to 16). Default: the Kingdom Key. */
 KH2_API int32_t kh2_set_equipment(int32_t handle, const uint16_t *ids, uint32_t count);
 KH2_API int32_t kh2_party_set_equipment(int32_t handle, int32_t slot, const uint16_t *ids, uint32_t count);
@@ -356,7 +356,7 @@ typedef struct kh2_limit_state {
     int32_t command;      /* running command, 0 none */
     int32_t ticks_left;
     int32_t hits;
-} kh2_limit_state;
+} kh2_limit_state_t;
 #define KH2_LIMIT_STARTED 1   /* a = command, b = time, text = file */
 #define KH2_LIMIT_ENDED 2     /* a = command, b = hits */
 #define KH2_LIMIT_MOTION 3    /* a = participant handle, b = LIMI motion id, blend */
@@ -374,7 +374,7 @@ KH2_API int32_t kh2_limit_status(int32_t handle, uint16_t *cmds, int32_t *status
 /* 0, or minus the status code. A sub-command of the running limit goes to its script (event 23). */
 KH2_API int32_t kh2_limit_start(int32_t handle, int32_t cmd);
 KH2_API int32_t kh2_limit_set_world(int32_t handle, int32_t world);
-KH2_API int32_t kh2_limit_state(int32_t handle, kh2_limit_state *out);
+KH2_API int32_t kh2_limit_state(int32_t handle, kh2_limit_state_t *out);
 KH2_API int32_t kh2_poll_limit_event(int32_t handle, kh2_limit_event *out);
 
 /* ---- Summons (kh2-rs summon.rs flow + drive_rules: Stitch, Genie, Chicken Little, Peter Pan)
@@ -396,7 +396,7 @@ typedef struct kh2_summon_state {
     float yaw;
     int32_t motion_slot;
     int32_t companions_away;
-} kh2_summon_state;
+} kh2_summon_state_t;
 typedef struct kh2_summon_event {
     int32_t kind;         /* 1 started (value = command), 2 arrived (value = segments, timer, text = model),
                              3 script mode (text), 4 level up (value), 5 leaving (value = dismissed), 6 gone */
@@ -410,7 +410,7 @@ KH2_API int32_t kh2_summon_set_owned(int32_t handle, const uint16_t *items, uint
 KH2_API int32_t kh2_summon_status(int32_t handle, uint16_t *cmds, int32_t *status, uint32_t max);
 /* 0, or minus the status code; KH2_SUMMON_DISMISS dismisses. */
 KH2_API int32_t kh2_summon(int32_t handle, int32_t cmd);
-KH2_API int32_t kh2_summon_state(int32_t handle, kh2_summon_state *out);
+KH2_API int32_t kh2_summon_state(int32_t handle, kh2_summon_state_t *out);
 KH2_API int32_t kh2_summon_bones(int32_t handle, int32_t space, float *out, uint32_t max_bones);
 KH2_API int32_t kh2_poll_summon_event(int32_t handle, kh2_summon_event *out);
 
@@ -445,8 +445,8 @@ typedef struct kh2_enemy_state {
     int32_t grounded;
     float alpha;          /* the script's fade */
     int32_t enmp;
-} kh2_enemy_state;
-KH2_API int32_t kh2_enemy_state(int32_t handle, int32_t index, kh2_enemy_state *out);
+} kh2_enemy_state_t;
+KH2_API int32_t kh2_enemy_state(int32_t handle, int32_t index, kh2_enemy_state_t *out);
 KH2_API int32_t kh2_enemy_bones(int32_t handle, int32_t index, int32_t space, float *out, uint32_t max_bones);
 #define KH2_EN_HIT 1        /* Sora hit it: atkp, damage, value = HP left */
 #define KH2_EN_HIT_SORA 2   /* it hit Sora: atkp, damage, value = kh2_hit_taken result */
@@ -478,9 +478,9 @@ typedef struct kh2_reaction_offer {
     int32_t from;     /* offering enemy id */
     int32_t status;   /* KH2_REACT_* */
     uint32_t message; /* the prompt's message id */
-} kh2_reaction_offer;
+} kh2_reaction_offer_t;
 /* 1 written, 0 nothing offered. */
-KH2_API int32_t kh2_reaction_offer(int32_t handle, kh2_reaction_offer *out);
+KH2_API int32_t kh2_reaction_offer(int32_t handle, kh2_reaction_offer_t *out);
 /* Returns the accepted command id, or -1 (nothing available offered). */
 KH2_API int32_t kh2_reaction_accept(int32_t handle);
 /* Every living enemy offers `cmd` (0 stops). */

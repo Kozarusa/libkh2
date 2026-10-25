@@ -27,20 +27,26 @@ Sora
 - HP/MP growth comes from bonus rewards only (`kh2_give_bonus`); no equipment, so no stat items.
 
 Party
-- Donald and Goofy run no member scripts: their Specials and Cure (which switch the member's script
-  to a mode) are never chosen; the members' items take effect when chosen (no use motion).
+- Since 0.6 Donald and Goofy run their own scripts (Specials, Cure); the scripts' effects are
+  reported as events, not played. The members' items take effect when chosen (no use motion).
 - Their weapon set byte is 0 (Sword column of the level-up abilities); their weapons are the base
-  items (Mage's Staff, Knight's Shield).
+  items (Mage's Staff, Knight's Shield) unless the host equips others.
 - A member beyond 30 m is put back beside Sora (no warp through the trail).
 - Auto Healing of reserve members, Auto Change, the party record across areas: not ported.
 
 Limits
-- The limit task, its countdown, hit count and the limit file's own script run; the participants'
-  own threads (the members' scripts that play the limit's attacks), the playback of the limit's
-  motions on the bodies, summon limits, Auto Limit's reaction offer and the HUD are not.
+- The limit task, its countdown, hit count, the limit file's own script, the LIMI motions on the
+  bodies and Auto Limit's offer run; the limits' damage (from objects of the LIMI set the library
+  does not create), summon limits and the HUD do not.
+
+Summons
+- The command, arrival (no event), timer, level, dismiss and leave run, and the object's own
+  script; the summons' class AI (Stitch's moves and blast, Genie's records, Chicken Little's and
+  Peter Pan's classes) does not: the object stands and plays what its script asks.
 
 Enemies and reaction commands
-- No area scripts: spawn groups, events and missions do not run; the host spawns enemies.
+- An area's battle groups spawn on request (`kh2_area_spawn`), but its signals, waves, triggers,
+  events and missions do not run; the Struggle's mission manager is the host's (`docs/STRUGGLE.md`).
   M_EX850 and M_EX870 wait for such a set-up and stay idle (see `ENEMY-KINDS.md`).
 - No camera: every enemy counts as on screen. No clashes. Prize drops are reported as counts.
 - A defeat by a party member pays no experience (the event carries the values).

@@ -40,7 +40,7 @@ libkh2: Sora's controller from Kingdom Hearts II as an embeddable library (libsm
 The version this header describes; kh2_version() returns the library's (same packing).
 
 - `KH2_VERSION_MAJOR` = `0`
-- `KH2_VERSION_MINOR` = `6`
+- `KH2_VERSION_MINOR` = `7`
 - `KH2_VERSION_PATCH` = `0`
 - `KH2_VERSION` = `((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)`
 
@@ -487,7 +487,7 @@ kh2-rs GameData::sora_status / member_status: item_stat rows
 
 The inventory is the host's; the library describes items and applies equipment: every equipped item's item_stat row adds attack, magic, defense and AP, scales the resistances, and its ability joins the loadout. Sora's equipment is saved in the record.
 
-### `kh2_item_info`
+### `kh2_item_info_t`
 
 ```c
 typedef struct kh2_item_info {
@@ -500,13 +500,13 @@ typedef struct kh2_item_info {
     uint8_t attack, magic, defense;
     uint8_t resist[7];    /* physical, fire, blizzard, thunder, dark, light, general (percent) */
     uint16_t ability;     /* the ability the item carries, 0 none */
-} kh2_item_info;
+} kh2_item_info_t;
 ```
 
 ### `kh2_item_info`
 
 ```c
-int32_t kh2_item_info(int32_t id, kh2_item_info *out);
+int32_t kh2_item_info(int32_t id, kh2_item_info_t *out);
 ```
 
 0, or -1 for no such item.
@@ -787,14 +787,14 @@ int32_t kh2_party_bones(int32_t handle, int32_t slot, int32_t space, float *out,
  * the limit count. Not ported: the participants' own threads (the members' scripts play the attacks),
  * summon limits, the HUD; the limit's motions are reported, not played.
 
-### `kh2_limit_state`
+### `kh2_limit_state_t`
 
 ```c
 typedef struct kh2_limit_state {
     int32_t command;      /* running command, 0 none */
     int32_t ticks_left;
     int32_t hits;
-} kh2_limit_state;
+} kh2_limit_state_t;
 ```
 
 - `KH2_LIMIT_STARTED` = `1` — a = command, b = time, text = file
@@ -839,7 +839,7 @@ int32_t kh2_limit_set_world(int32_t handle, int32_t world);
 ### `kh2_limit_state`
 
 ```c
-int32_t kh2_limit_state(int32_t handle, kh2_limit_state *out);
+int32_t kh2_limit_state(int32_t handle, kh2_limit_state_t *out);
 ```
 
 ### `kh2_poll_limit_event`
@@ -858,7 +858,7 @@ int32_t kh2_poll_limit_event(int32_t handle, kh2_limit_event *out);
 
 - `KH2_SUMMON_DISMISS` = `0x13c`
 
-### `kh2_summon_state`
+### `kh2_summon_state_t`
 
 ```c
 typedef struct kh2_summon_state {
@@ -872,7 +872,7 @@ typedef struct kh2_summon_state {
     float yaw;
     int32_t motion_slot;
     int32_t companions_away;
-} kh2_summon_state;
+} kh2_summon_state_t;
 ```
 
 ### `kh2_summon_event`
@@ -912,7 +912,7 @@ int32_t kh2_summon(int32_t handle, int32_t cmd);
 ### `kh2_summon_state`
 
 ```c
-int32_t kh2_summon_state(int32_t handle, kh2_summon_state *out);
+int32_t kh2_summon_state(int32_t handle, kh2_summon_state_t *out);
 ```
 
 ### `kh2_summon_bones`
@@ -985,7 +985,7 @@ One tick of the enemies (after kh2_tick): scripts, movement, reactions, hits bot
 int32_t kh2_enemy_count(int32_t handle);
 ```
 
-### `kh2_enemy_state`
+### `kh2_enemy_state_t`
 
 ```c
 typedef struct kh2_enemy_state {
@@ -999,13 +999,13 @@ typedef struct kh2_enemy_state {
     int32_t grounded;
     float alpha;          /* the script's fade */
     int32_t enmp;
-} kh2_enemy_state;
+} kh2_enemy_state_t;
 ```
 
 ### `kh2_enemy_state`
 
 ```c
-int32_t kh2_enemy_state(int32_t handle, int32_t index, kh2_enemy_state *out);
+int32_t kh2_enemy_state(int32_t handle, int32_t index, kh2_enemy_state_t *out);
 ```
 
 ### `kh2_enemy_bones`
@@ -1045,7 +1045,7 @@ int32_t kh2_poll_enemy_event(int32_t handle, kh2_enemy_event *out);
 - `KH2_REACT_NO_MP` = `3`
 - `KH2_REACT_NOT_PORTED` = `4`
 
-### `kh2_reaction_offer`
+### `kh2_reaction_offer_t`
 
 ```c
 typedef struct kh2_reaction_offer {
@@ -1053,13 +1053,13 @@ typedef struct kh2_reaction_offer {
     int32_t from;     /* offering enemy id */
     int32_t status;   /* KH2_REACT_* */
     uint32_t message; /* the prompt's message id */
-} kh2_reaction_offer;
+} kh2_reaction_offer_t;
 ```
 
 ### `kh2_reaction_offer`
 
 ```c
-int32_t kh2_reaction_offer(int32_t handle, kh2_reaction_offer *out);
+int32_t kh2_reaction_offer(int32_t handle, kh2_reaction_offer_t *out);
 ```
 
 1 written, 0 nothing offered.

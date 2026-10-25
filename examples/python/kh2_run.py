@@ -56,12 +56,12 @@ class MemberState(C.Structure):
 
 
 class MemberEvent(C.Structure):
-    _fields_ = [(n, I32) for n in "slot kind id atkp damage hp".split()]
+    _fields_ = [(n, I32) for n in "slot kind id atkp damage hp".split()] + [("text", C.c_char * 32)]
 
 
 ATTACK = 1
 EVENT = {1: "Sora hit", 2: "hit Sora", 3: "defeated", 4: "effect", 5: "drop", 6: "removed", 7: "reaction"}
-MEMBER = {1: "hit", 2: "knocked out", 3: "revived", 4: "item", 5: "level up", 6: "bonus"}
+MEMBER = {1: "hit", 2: "knocked out", 3: "revived", 4: "item", 5: "level up", 6: "bonus", 7: "script mode", 8: "effect", 9: "healed"}
 
 
 def main():

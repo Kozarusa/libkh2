@@ -29,7 +29,7 @@ Donald and Goofy (follow, battle AI with styles and item use, HP, knock-out and 
 every kh2-rs enemy kind under its own BDX script, a field camera helper, motion export and a save
 record. The C API is `include/kh2.h` (reference: `docs/API-REFERENCE.md`); what differs from the
 game is in `docs/DEVIATIONS.md`, speed and memory in `docs/PERFORMANCE.md`, the enemy kinds in
-`docs/ENEMY-KINDS.md`.
+`docs/ENEMY-KINDS.md`, the Struggle in `docs/STRUGGLE.md`, the C API's safety in `docs/SAFETY.md`, changes in `CHANGELOG.md`.
 
 ## Build
 

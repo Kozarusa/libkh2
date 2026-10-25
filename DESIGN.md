@@ -237,3 +237,23 @@ decided:
 - Bonus rewards are given by id by the host (no story to trigger them); saved in the record (v2).
 - The library's tick order for a host: `kh2_tick`, `kh2_party_tick` (members, their levels, the
   limit), `kh2_enemies_tick`.
+
+## Round 6 (C API 0.7)
+
+Compiled from kh2-rs's source: `friend_host.rs` (whole file, with `party::SpecialOn` and
+`fx::hit_rotation` cut by the build script and a `GameData` stand-in holding the `atkp` rows),
+`player_reaction.rs`'s paired-motion reader, `limit_visual.rs`'s records. Transcribed:
+`friend_ai.rs` (`friend.rs`), `limit_visual::play_motions` / `release`, `reaction_cmd::auto_limit_offer`,
+`summon.rs`'s tick flow (`summon.rs`), `enemy.rs`'s `area_groups` (`area.rs`),
+`GameData::sora_status` / `member_status` for equipment (`equipment.rs`).
+
+decided:
+- Member scripts run through `friend_host` for Donald, Goofy and the summon objects (the summons'
+  own host `SummonHost` and class AI are not ported).
+- Summons: no arrival event, the companions leave at once, the object appears 2.5 m in front of Sora.
+- Enemy kinds load on demand through a second reader of the disc (`Disc::reopen`) and are freed
+  when no enemy holds them.
+- An area's groups spawn all at once on the host's request; its signals and waves are not run.
+- Equipment abilities join the loadout; the Kingdom Key is the default equipment, so the status
+  without equipment calls is the one before.
+- The five record typedefs named like functions are renamed `..._t` (invalid C before).

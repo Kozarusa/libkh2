@@ -1,5 +1,10 @@
 //! The C ABI (`include/kh2.h`). One library state per process, as libsm64 has: the disc data, the
 //! collision world and the Sora instances live behind a mutex; every call locks it.
+//!
+//! Safety (round 6 audit, docs/SAFETY.md): every `unsafe` block here is an output record write after a
+//! NULL check, `write_mats` / `write_str` (NULL-checked, bounded by the caller's count), a `from_raw_parts`
+//! over a host buffer (NULL / 0 empty, counts capped), `CStr::from_ptr` after a NULL check, or a bounded
+//! `copy_nonoverlapping`; the records are `#[repr(C)]` and match kh2.h (tests/layout.rs).
 
 use std::ffi::{c_char, CStr};
 use std::path::PathBuf;
