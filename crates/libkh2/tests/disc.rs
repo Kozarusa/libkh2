@@ -1822,3 +1822,43 @@ fn a_talk_locks_sora_and_cuts_the_camera_to_the_talk_view() {
     }
     assert!(tested > 0, "a townsperson with a talk camera record");
 }
+
+/// Glue against kh2-rs values (docs/FAITHFULNESS.md class c): the Struggle glue's orb loss per
+/// reaction equals kh2-rs `orbs_knocked_out` (FUN_001caeb0) for Sora's and the opponent's side,
+/// and the orbs launched equal the counter's drop.
+#[test]
+fn the_struggle_glue_knocks_out_what_kh2_rs_orbs_knocked_out_says() {
+    use kh2::area::AreaRun;
+    use kh2::enemy::Enemies;
+    use kh2_enemy_host::struggle::orbs_knocked_out;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let w = World::from_coct(&d.coct("tt04").expect("collision"));
+    let mut checked = 0;
+    for reaction in 0u8..20 {
+        let mut en = Enemies::new(data.clone());
+        let mut run = AreaRun::set_up(&mut d, "tt04", 184, &mut en, &w);
+        let mut s = Sora::new(game.clone(), w.spawn_point());
+        // Up to the running state (the start layout lets the player act).
+        for _ in 0..400 {
+            run.tick_mission(&s, &mut en, &w);
+        }
+        let m = run.mission.as_ref().expect("Seifer's mission");
+        let before = m.counters();
+        let orbs = m.a.orbs.len();
+        s.reactions_taken = vec![reaction];
+        if let Some(e) = en.list.first_mut() {
+            e.struck = vec![reaction];
+        }
+        run.tick_mission(&s, &mut en, &w);
+        let m = run.mission.as_ref().unwrap();
+        let after = m.counters();
+        let want = orbs_knocked_out(reaction, before[0]) + if en.list.is_empty() { 0 } else { orbs_knocked_out(reaction, before[1]) };
+        let lost = (before[0] - after[0]) + (before[1] - after[1]);
+        assert_eq!(lost, want, "reaction {reaction}: counters {before:?} -> {after:?}");
+        assert_eq!(m.a.orbs.len() - orbs, want as usize, "reaction {reaction}: orbs launched");
+        checked += 1;
+    }
+    assert_eq!(checked, 20);
+}
