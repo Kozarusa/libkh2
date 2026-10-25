@@ -147,6 +147,11 @@ the host's list: Guard, Combo Plus, Air Combo Plus, Finishing Plus, Negative Com
 abilities, Berserk Charge, Second Chance / Once More, Leaf Bracer, the element and combo boosts in
 `kh2_damage`; a form adds its own list (disc test `the_loadout_sets_combo_lengths_growth_and_survival`).
 
+Items and growth: `kh2_use_item` plays the use motion and applies kh2-rs's oracle-tested
+`item_effect` (HP, MP with the charge, drive gauge) 30 frames after the motion's trigger;
+`kh2_report_defeat` pays experience (`defeat_payout`) and raises the level from `lvup`; HP, MP,
+drive, level and EXP are in `kh2_state` (disc test `items_heal_through_the_use_motion_and_defeats_raise_the_level`).
+
 Not in v1: enemies, the spells' flight paths, summons, sounds and effects, moving platforms. See `DESIGN.md`.
 
 ## Credits

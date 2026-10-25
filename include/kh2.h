@@ -101,6 +101,8 @@ typedef struct kh2_state {
     int32_t form;          /* active drive form: 0 none, 1 Valor, 2 Wisdom, 3 Master, 4 Final, 5 Anti */
     int32_t drive_points, drive_fraction;
     float form_time, form_time_total;
+    int32_t level, exp;    /* level 1..99 and the experience total */
+    int32_t strength, magic, defense;
 } kh2_state;
 
 /* A live attack capsule in world units: segment a-b, radius. */
@@ -202,6 +204,9 @@ KH2_API int32_t kh2_set_mp(int32_t handle, int32_t mp, int32_t max_mp);
 #define KH2_EV_FORM_CHANGED 5   /* slot = new form (0 base), cast_kind = old form */
 #define KH2_EV_SPELL_ATTACK 6   /* slot, stage, atkp/sub_id row, radius/height/life/speed, pos, dir */
 #define KH2_EV_HEALED 7         /* amount, hp */
+#define KH2_EV_ITEM_USED 8      /* slot = item id, amount = HP change, hp = MP change, charge = drive change (1/100 points) */
+#define KH2_EV_EXPERIENCE 9     /* amount paid, hp = total */
+#define KH2_EV_LEVEL_UP 10      /* amount = the new level */
 typedef struct kh2_event {
     int32_t kind, slot, cast_kind, motion, voice, charge;
     int32_t stage, atkp, sub_id;  /* spell attack: stage and its atkp row (for kh2_damage) */
@@ -213,6 +218,12 @@ typedef struct kh2_event {
 /* The damage of one of Sora's attack rows (sub_id -1: first variant) against a target's defense,
  * max HP (type 5 rows) and element / general percents (100 neutral). -1: unknown row. */
 KH2_API int32_t kh2_damage(int32_t handle, int32_t atkp, int32_t sub_id, int32_t defense, int32_t max_hp, int32_t weakness, int32_t general);
+/* Uses an item (item id: 1 Potion, 2 Hi-Potion, 3 Ether, 4 Elixir, ...): the use motion plays and
+ * the effect lands 30 frames after its trigger (KH2_EV_ITEM_USED). The host keeps the inventory. */
+KH2_API int32_t kh2_use_item(int32_t handle, int32_t item);
+/* A defeat: the lvpm row's Experience for the world level and the enemy's enmp Experience. Returns
+ * the EXP paid; KH2_EV_LEVEL_UP follows each level reached. */
+KH2_API int32_t kh2_report_defeat(int32_t handle, int32_t lvpm_experience, int32_t enmp_experience);
 /* Level 1..99: strength, magic, defense from the disc's lvup row plus the Kingdom Key. */
 KH2_API int32_t kh2_set_level(int32_t handle, int32_t level);
 /* Takes the oldest event: 1 written, 0 none left. */

@@ -70,7 +70,34 @@ fn abilities() {
     std::fs::write(out, text).unwrap();
 }
 
+/// The text from `start` (a line marker, kept) to the end of the first `fn` item named `last_fn`
+/// after it (brace-matched).
+fn span(text: &str, start: &str, last_fn: &str) -> String {
+    let a = text.find(start).unwrap_or_else(|| panic!("{start:?} not found"));
+    let f = a + text[a..].find(last_fn).unwrap_or_else(|| panic!("{last_fn:?} not found"));
+    let open = f + text[f..].find('{').unwrap() + 1;
+    text[a..close(text.as_bytes(), open)].to_string()
+}
+
+/// kh2-rs's item effect (`kh2-party/src/items.rs`: `Vitals`, `item_effect`, oracle-tested there
+/// against FUN_001a12a0) and the defeat payout (`kh2-game-core/src/progress.rs`: `defeat_payout`):
+/// the pure spans of two Bevy files.
+fn items() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates");
+    let items = base.join("kh2-party/src/items.rs");
+    let progress = base.join("kh2-game-core/src/progress.rs");
+    println!("cargo:rerun-if-changed={}", items.display());
+    println!("cargo:rerun-if-changed={}", progress.display());
+    let it = std::fs::read_to_string(&items).expect("items.rs");
+    let pr = std::fs::read_to_string(&progress).expect("progress.rs");
+    let mut out = span(&it, "/// The parts of a status record", "pub fn item_effect");
+    out.push_str("\n");
+    out.push_str(&span(&pr, "pub fn defeat_payout", "pub fn defeat_payout"));
+    std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("items.rs"), out).unwrap();
+}
+
 fn main() {
+    items();
     abilities();
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-game-core/src/shared/drive.rs");
     println!("cargo:rerun-if-changed={}", src.display());

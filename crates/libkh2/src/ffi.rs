@@ -60,6 +60,11 @@ pub struct Kh2State {
     pub drive_fraction: i32,
     pub form_time: f32,
     pub form_time_total: f32,
+    pub level: i32,
+    pub exp: i32,
+    pub strength: i32,
+    pub magic: i32,
+    pub defense: i32,
 }
 
 #[repr(C)]
@@ -337,6 +342,11 @@ fn state_of(s: &Sora) -> Kh2State {
         drive_fraction: i32::from(s.drive.points.fraction),
         form_time: s.drive.timer.left,
         form_time_total: s.drive.timer.total,
+        level: s.level,
+        exp: s.exp,
+        strength: s.strength,
+        magic: s.magic,
+        defense: s.defense,
     }
 }
 
@@ -824,6 +834,9 @@ pub unsafe extern "C" fn kh2_poll_event(handle: i32, out: *mut Kh2Event) -> i32 
                 Kh2Event { kind: 6, slot: slot.into(), stage: stage.into(), atkp: atkp.into(), sub_id: sub_id.into(), radius, height, life, speed, pos: pos.to_array(), dir: dir.to_array(), ..d }
             }
             E::Healed { amount, hp } => Kh2Event { kind: 7, amount, hp, ..d },
+            E::ItemUsed { item, hp, mp, drive } => Kh2Event { kind: 8, slot: item.into(), amount: hp, hp: mp, charge: drive, ..d },
+            E::Experience { amount, total } => Kh2Event { kind: 9, amount, hp: total, ..d },
+            E::LevelUp { level } => Kh2Event { kind: 10, amount: level, ..d },
         };
         unsafe { *out = v };
         1
@@ -1044,4 +1057,19 @@ pub extern "C" fn kh2_drive_set_second_keyblade(handle: i32, item: i32) -> i32 {
         s.hand1_item = item.clamp(0, u16::MAX as i32) as u16;
         0
     })
+}
+
+/// Uses item `item` (item id of the disc's item table: Potion 1, Hi-Potion 2, Ether 3, Elixir 4,
+/// Drive Recovery 274, ...): the use motion plays and the effect lands 30 frames after its trigger
+/// (`KH2_EV_ITEM_USED`). The host keeps the inventory. -1 when Sora is busy or the item is unknown.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_use_item(handle: i32, item: i32) -> i32 {
+    sora_do(handle, -1, |s, _| if s.use_item(item.clamp(0, u16::MAX as i32) as u16) { 0 } else { set_error("cannot use the item now") })
+}
+
+/// A defeat by Sora's side: `lvpm_experience` the lvpm row's Experience for the world level,
+/// `enmp_experience` the enemy's. Returns the experience paid (level-ups arrive as events).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_report_defeat(handle: i32, lvpm_experience: i32, enmp_experience: i32) -> i32 {
+    sora_do(handle, -1, |s, _| s.report_defeat(lvpm_experience.clamp(0, 65535) as u16, enmp_experience.clamp(0, 65535) as u16))
 }

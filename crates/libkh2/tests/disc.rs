@@ -595,3 +595,46 @@ fn the_loadout_sets_combo_lengths_growth_and_survival() {
     eprintln!("Berserk Charge: atkp {} damage {before} -> {during} while charging", strength_row.id);
     assert!(during > before);
 }
+
+#[test]
+fn items_heal_through_the_use_motion_and_defeats_raise_the_level() {
+    use kh2::sora::Event;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let potion = game.params.items.iter().find(|i| i.id == 1).expect("item 1");
+    let amount = potion.flag1 as i32 | (potion.rank as i32) << 8;
+    let mut s = standing(&game, &w);
+    s.hp = 2;
+    s.tick(&w, &Input::default());
+    assert!(s.use_item(1));
+    let mut used = None;
+    for t in 0..200 {
+        s.tick(&w, &Input::default());
+        for e in s.events.drain(..) {
+            if let Event::ItemUsed { hp, .. } = e {
+                used = Some((t, hp));
+            }
+        }
+    }
+    let expect = ((s.max_hp * amount * 100 + 9999) / 10000).min(s.max_hp - 2);
+    eprintln!("Potion (amount {amount}): used {used:?}, expected +{expect}, HP {}/{}", s.hp, s.max_hp);
+    assert_eq!(used.map(|u| u.1), Some(expect));
+    assert!(used.unwrap().0 > 30, "the effect waits for the trigger and 30 frames");
+    // Ether during the MP charge shortens the charge.
+    let mut s = standing(&game, &w);
+    s.charge = kh2_game_core::magic_rules::Charge { left: 3000.0, total: 3000.0 };
+    s.mp = 0;
+    assert!(s.apply_item(3));
+    assert!(s.charge.left < 3000.0 || s.mp == s.max_mp);
+    // Defeats: EXP and level-ups from the lvup table.
+    let mut s = standing(&game, &w);
+    let need = game.params.levels[0].exp;
+    let mut paid = 0;
+    while s.level == 1 && paid < 100_000 {
+        paid += s.report_defeat(100, 10);
+    }
+    let up = s.events.iter().any(|e| matches!(e, Event::LevelUp { level: 2 }));
+    eprintln!("level 2 after {paid} EXP (lvup row 1 needs {need}): strength {} magic {} defense {}", s.strength, s.magic, s.defense);
+    assert!(up && paid >= need && s.level == 2);
+}

@@ -157,6 +157,11 @@ Round 3 step 3: `shared/abilities.rs` is compiled from kh2-rs's text with two ed
 their doc comments). decided: no AP accounting (the host's list is equipped as given); Defender
 and MP Rage are not applied (the host computes incoming damage); Leaf Bracer starts on Cure.
 
+Round 3 step 4: `build.rs` extracts the pure spans of two more Bevy files (`items.rs`: `Vitals`,
+`item_effect`; `progress.rs`: `defeat_payout`). decided: the host keeps the inventory and the item
+counts; level-up abilities and bonus levels are not given; HP and MP maxima stay the `plrp` values
+(kh2-rs's record bonuses need the save record).
+
 ## 4b. Regression and drift (step 7)
 
 Drift has two sources: (1) the files compiled in place change (caught by the build and the

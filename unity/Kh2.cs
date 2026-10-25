@@ -56,6 +56,7 @@ public static class Kh2
         public float mpCharge;
         public int form, drivePoints, driveFraction;
         public float formTime, formTimeTotal;
+        public int level, exp, strength, magic, defense;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -109,6 +110,8 @@ public static class Kh2
 
     [DllImport(Lib)] public static extern int kh2_damage(int handle, int atkp, int subId, int defense, int maxHp, int weakness, int general);
     [DllImport(Lib)] public static extern int kh2_set_level(int handle, int level);
+    [DllImport(Lib)] public static extern int kh2_use_item(int handle, int item);
+    [DllImport(Lib)] public static extern int kh2_report_defeat(int handle, int lvpmExperience, int enmpExperience);
 
     [DllImport(Lib)] public static extern int kh2_cast(int handle, int slot);
     [DllImport(Lib)] public static extern int kh2_set_magic_levels(int handle, byte[] levels);

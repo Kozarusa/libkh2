@@ -39,6 +39,19 @@ pub mod drive_rules {
     include!(concat!(env!("OUT_DIR"), "/drive_rules.rs"));
 }
 
+/// kh2-rs's item effect and defeat payout, extracted by `build.rs`.
+#[allow(dead_code, clippy::all)]
+pub mod items {
+    include!(concat!(env!("OUT_DIR"), "/items.rs"));
+
+    impl Vitals {
+        /// The HP change of `item_effect` without its private helpers (for callers outside).
+        pub fn hp_now(&self) -> i32 {
+            self.hp
+        }
+    }
+}
+
 /// kh2-rs `shared::abilities` (the ability block and its rules), transformed by `build.rs`.
 #[allow(dead_code, unused_imports, clippy::all)]
 pub mod abilities {

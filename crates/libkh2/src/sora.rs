@@ -316,6 +316,8 @@ pub struct Sora {
     pub loadout: Option<kh2_game_core::abilities::Abilities>,
     /// Leaf Bracer's untouchable ticks (kh2-rs `Sora::leaf_bracer`).
     pub leaf_bracer: f32,
+    /// An item use: (item id, the wait after frame trigger 6 when started).
+    pub item_use: Option<(u16, Option<f32>)>,
     /// The keyblade item a form's second hand takes (Kingdom Key by default).
     pub hand1_item: u16,
     /// The attack table and its leaps (the base body's, or a drive form's).
@@ -399,6 +401,7 @@ impl Sora {
             hand1_item: 41,
             loadout: None,
             leaf_bracer: 0.0,
+            item_use: None,
             pose: true,
             spawn: at,
             prev: Input::default(),
@@ -948,6 +951,7 @@ impl Sora {
         let before = (self.body.slot, self.body.frame);
         self.body.step(self.pose);
         self.magic_trigger(before);
+        self.item_tick(before);
         for w in [self.weapon.as_mut(), self.weapon2.as_mut()].into_iter().flatten() {
             w.follow(&self.body);
             if self.pose {
@@ -1349,6 +1353,96 @@ impl Sora {
         self.growth = Growth { high_jump: l.growth(0), quick_run: l.growth(1), aerial_dodge: l.growth(2), glide: l.growth(3) };
     }
 
+    /// Starts an item use (kh2-rs `items.rs`: motion request 9 with blend 8, FUN_00175e20). False
+    /// when Sora is busy (only from the ground and air states) or the item is unknown.
+    pub fn use_item(&mut self, item: u16) -> bool {
+        if !matches!(self.state, State::Ground | State::Air) || !self.game.params.items.iter().any(|i| i.id == item) {
+            return false;
+        }
+        let slot = self.body.rig.mset.slot(9, PlayerState::BattleWeapon);
+        self.body.restart(slot, false, 8.0);
+        self.state = State::Magic;
+        self.timer = 0.0;
+        self.motor.vel = Vec3::ZERO;
+        self.queued_attack = false;
+        self.cast = None;
+        self.item_use = Some((item, None));
+        true
+    }
+
+    /// Frame trigger 6 of the use motion starts the 30-frame wait, at its end the item's effect runs
+    /// (kh2-rs `items.rs`: `TRIGGER_USE`, `USE_WAIT`, `item_effect` with 100 plus Item Boost).
+    fn item_tick(&mut self, (slot_before, frame_before): (Option<usize>, f32)) {
+        let Some((item, wait)) = self.item_use else { return };
+        match wait {
+            None => {
+                if self.state != State::Magic {
+                    self.item_use = None;
+                    return;
+                }
+                let Some((m, t)) = self.body.motion().zip(self.body.triggers()) else { return };
+                let g = |f: f32| f * crate::anim::LOGIC_HZ / m.fps.max(1.0);
+                let from = if slot_before == self.body.slot { g(frame_before) } else { g(self.body.prev_frame) };
+                if t.crossed(from, g(self.body.frame)).any(|f| f.id == 6) {
+                    self.item_use = Some((item, Some(30.0)));
+                }
+            }
+            Some(left) if left > 1.0 => self.item_use = Some((item, Some(left - 1.0))),
+            Some(_) => {
+                self.item_use = None;
+                self.apply_item(item);
+            }
+        }
+    }
+
+    /// The item's effect on Sora now (FUN_001a12a0 through kh2-rs `item_effect`).
+    pub fn apply_item(&mut self, item: u16) -> bool {
+        use kh2_game_core::items::{item_effect, Vitals};
+        let p = self.game.params.clone();
+        let Some(row) = p.items.iter().find(|i| i.id == item) else { return false };
+        let amount = row.flag1 as u16 | (row.rank as u16) << 8;
+        let mult = 100 + self.loadout.as_ref().map_or(0, |l| l.block().item_boost as i32);
+        let d = &self.drive.points;
+        let mut v = Vitals { hp: self.hp, hp_max: self.max_hp, hp_min: 0, mp: self.mp, mp_max: self.max_mp, charge_left: self.charge.left, charge_total: self.charge.total, drive_fraction: d.fraction, drive_points: d.whole, drive_max: d.max };
+        let before = (self.hp, self.mp, d.whole as i32 * 100 + d.fraction as i32);
+        if !item_effect(item, amount, mult, &mut v, p.charge_feed) {
+            return false;
+        }
+        self.hp = v.hp;
+        self.mp = v.mp;
+        self.charge = kh2_game_core::magic_rules::Charge { left: v.charge_left, total: v.charge_total };
+        self.drive.points.whole = v.drive_points;
+        self.drive.points.fraction = v.drive_fraction;
+        let drive = v.drive_points as i32 * 100 + v.drive_fraction as i32 - before.2;
+        self.events.push(Event::ItemUsed { item, hp: self.hp - before.0, mp: self.mp - before.1, drive });
+        if self.hp > before.0 {
+            self.events.push(Event::Healed { amount: self.hp - before.0, hp: self.hp });
+        }
+        true
+    }
+
+    /// A defeat Sora's side scored: `table` is the `lvpm` Experience of the world level, `row` the
+    /// enemy's `enmp` Experience (kh2-rs `defeat_payout`, with the Experience Boost multiplier at
+    /// low HP), then the level rises while the `lvup` row of the level is reached (kh2-rs
+    /// `Progress::raise_level`, Sora's table, held at its end). Returns the experience paid.
+    pub fn report_defeat(&mut self, table: u16, row: u16) -> i32 {
+        let p = self.game.params.clone();
+        let low = self.max_hp > 0 && self.hp as f32 / self.max_hp as f32 <= p.low_hp_fraction;
+        let mult = low.then(|| self.loadout.as_ref().map_or(1, |l| i32::from(l.block().exp_multiplier)));
+        let amount = kh2_game_core::items::defeat_payout(table, row, mult);
+        if amount <= 0 {
+            return 0;
+        }
+        self.exp = (self.exp + amount).min(9_999_999);
+        self.events.push(Event::Experience { amount, total: self.exp });
+        let last = p.levels.len().max(1);
+        while self.level < 99 && p.levels.get((self.level as usize - 1).min(last - 1)).is_some_and(|r| r.exp <= self.exp) {
+            self.set_level(self.level + 1);
+            self.events.push(Event::LevelUp { level: self.level });
+        }
+        amount
+    }
+
     /// The input of the last tick.
     pub fn last_input(&self) -> Input {
         self.prev
@@ -1553,6 +1647,11 @@ pub enum Event {
     SpellAttack { slot: u8, stage: u8, atkp: u16, sub_id: u16, radius: f32, height: f32, life: f32, speed: f32, pos: Vec3, dir: Vec3 },
     /// HP restored (Cure on Sora, an item): the amount and the HP after it.
     Healed { amount: i32, hp: i32 },
+    /// An item took effect (kh2-rs `items.rs`, FUN_001a12a0): HP, MP and drive gauge (hundredths) changes.
+    ItemUsed { item: u16, hp: i32, mp: i32, drive: i32 },
+    /// Experience paid for a defeat, and the level reached when it rose.
+    Experience { amount: i32, total: i32 },
+    LevelUp { level: i32 },
     /// The body changed: drive form `to` (0 = base Sora) replaced form `from`.
     FormChanged { from: u8, to: u8 },
 }

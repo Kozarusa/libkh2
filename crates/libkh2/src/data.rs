@@ -65,6 +65,12 @@ pub struct Params {
     pub levels: Vec<t::Lvup>,
     pub weapon_attack: i32,
     pub weapon_magic: i32,
+    /// The items (`item` of `03system.bin`), and the `sstm` floats the item and EXP code reads:
+    /// +0x7c (MP gained during the charge shortens it by this much per point), +0x144 (the HP
+    /// fraction at or below which the experience multiplier applies).
+    pub items: Vec<t::Item>,
+    pub charge_feed: f32,
+    pub low_hp_fraction: f32,
 }
 
 /// kh2-rs `combat::ReactionData`: the executable's constants, the `sstm` defaults, the `patn` table.
@@ -235,7 +241,10 @@ impl Disc {
         let stats = self.table::<t::ItemStat>(&t::ITEM_STAT).unwrap_or_default();
         let kk = items.iter().find(|i| i.id == 41).and_then(|i| stats.iter().find(|s| s.id == i.stat_entry));
         let (weapon_attack, weapon_magic) = kk.map_or((0, 0), |s| (s.attack as i32, s.magic as i32));
-        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera, magc, cmd, magi, levels, weapon_attack, weapon_magic })
+        let raw = kh2_tables::player::load_sstm(&mut self.0).ok();
+        let at = |off: usize| raw.as_ref().filter(|s| s.words.len() > off / 4).map_or(0.0, |s| s.f32(off));
+        let (charge_feed, low_hp_fraction) = (at(0x7c), at(0x144));
+        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera, magc, cmd, magi, levels, weapon_attack, weapon_magic, items, charge_feed, low_hp_fraction })
     }
 
     /// Everything Sora needs.
