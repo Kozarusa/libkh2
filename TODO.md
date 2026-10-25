@@ -1,3 +1,13 @@
+# TODO (round 6)
+
+1. [x] Member scripts: kh2-rs friend_host.rs compiled in place, friend_ai transcribed (friend.rs): Donald's Cure heals Sora, Specials (Goofy's blade ...) run with their attack objects hitting enemies, no unserved host calls in the test (`member_scripts_cast_cure_and_specials`); limit motions (LIMI sets) play on Sora and the members (Goofy's limits: 299 ticks held), Auto Limit offers a partner's limit in the reaction slot and accept starts it (`limit_motions_play_on_the_bodies_and_auto_limit_offers`). Not ported: the limits' own damage (Comet's / the participants' attack objects come from objects of the LIMI set the library does not create), the scripts' effects (reported), Auto Limit needs the limit tables loaded (any kh2_limit_* call).
+2. [ ] Summons.
+3. [ ] Enemy area set-up, area spawns, enemies hitting members.
+4. [ ] Enemy kinds on demand; heap again; fuzz extended.
+5. [ ] Struggle / boss fights.
+6. [ ] Items / equipment.
+7. [ ] Safety audit, layout asserts, CHANGELOG, version.
+
 # TODO (round 5)
 
 1. [x] Party members as characters: HP/MP (plrp), status from lvup by level, enemy hits with reaction motions, KO / revive timer, styles 0..3, danger + emergency pass + HP/MP item handlers from a host stock (disc test `members_take_hits_fall_revive_use_items_and_fight_in_every_style`). Not ported: Specials/Cure (need the member scripts), equipment, auto-heal of reserve members.

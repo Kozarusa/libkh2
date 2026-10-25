@@ -96,6 +96,26 @@ pub struct Limits {
     /// Overrides the learned limit ability bits (None: every limit item learned).
     pub abilities: Option<u128>,
     pub events: Vec<LimitEvent>,
+    /// The `LIMI` motion sets of the running limit's file (kh2-rs `limit_visual::sets_of`).
+    pub sets: HashMap<usize, Vec<kh2_enemy_host::player_reaction::Paired>>,
+    /// Events already looked at for motions to play.
+    seen: usize,
+    /// Sora is held in the reaction state by a limit motion; members held (by slot).
+    pub sora_held: bool,
+    /// kh2-rs `LimitRng` (FUN_001d25e0's generator for the Auto Limit pick).
+    pub auto_seed: u32,
+}
+
+/// kh2-rs `limit_visual::sets_of`: the sets of the `LIMI` entry (kind 0x14) in the limit BAR.
+pub fn sets_of(bar: &[u8]) -> HashMap<usize, Vec<kh2_enemy_host::player_reaction::Paired>> {
+    let Ok(es) = kh2_bar::parse(bar) else { return HashMap::new() };
+    es.iter().find(|e| e.kind == rules::KIND_PARTY_SET).map(|e| kh2_enemy_host::player_reaction::paired_entries(e.data)).unwrap_or_default()
+}
+
+/// kh2-rs `limit_visual::find`: the sub-motion of set `id` for a character's model byte.
+pub fn find(sets: &HashMap<usize, Vec<kh2_enemy_host::player_reaction::Paired>>, id: usize, model: u8) -> Option<&kh2_enemy_host::player_reaction::Paired> {
+    let name = kh2_enemy_host::player_reaction::sub_name(model);
+    sets.get(&id)?.iter().find(|(n, _)| *n == name)
 }
 
 /// Party member ids of the followers who stand (kh2-rs's `Party::present`; 2 Donald, 3 Goofy).
@@ -149,6 +169,8 @@ impl Limits {
         let bytes = data.bar(disc, &r.file);
         let bar = bytes.as_deref().and_then(|b| kh2_bar::parse(b).ok().map(|es| LimitBar::from_kinds(&es.iter().map(|e| e.kind).collect::<Vec<_>>()))).unwrap_or_default();
         self.thread = rules::event_receiver(&bar, &r);
+        self.sets = bytes.as_deref().map(sets_of).unwrap_or_default();
+        self.seen = self.events.len();
         self.hits.start(r.id, 0);
         self.events.push(LimitEvent::Started { command, file: r.file.clone(), time: r.time, members: r.members });
         // Event 22 to the BAR's own script (FUN_001b2e08); the participant's thread (FUN_001b3118) needs
@@ -216,6 +238,73 @@ impl Limits {
 
     pub fn running(&self) -> bool {
         self.task.is_some()
+    }
+
+    /// kh2-rs `limit_visual::play_motions` / `release`: the script's motion requests (host 2.47) played
+    /// on Sora (held in `State::Reaction`) and the members (held by `Follower::limit_hold`); at the end
+    /// they get their own motions back. `sora_byte` is the objentry byte +7 of P_EX100.
+    pub fn play_motions(&mut self, sora: &mut Sora, followers: &mut [crate::party::Follower], data: &crate::party::PartyData) {
+        let new: Vec<(u32, usize, f32)> = self.events[self.seen.min(self.events.len())..].iter().filter_map(|e| if let LimitEvent::Motion { who, id, blend } = e { Some((*who, *id, *blend)) } else { None }).collect();
+        self.seen = self.events.len();
+        for (who, id, blend) in new {
+            if who == kh2_enemy_host::enemy_obj::PLAYER {
+                if let Some((_, m)) = find(&self.sets, id, data.sora_byte) {
+                    sora.body.play_external(m.clone(), blend);
+                    sora.state = crate::sora::State::Reaction;
+                    self.sora_held = true;
+                }
+                continue;
+            }
+            for f in followers.iter_mut() {
+                let md = &data.members[f.member];
+                if kh2_enemy_host::limit_script::partner(u32::from(md.neo)) == who
+                    && let Some((_, m)) = find(&self.sets, id, md.model_byte)
+                {
+                    f.body.play_external(m.clone(), blend);
+                    f.limit_hold = true;
+                }
+            }
+        }
+        if self.task.is_none() {
+            if self.sora_held {
+                self.sora_held = false;
+                if sora.state == crate::sora::State::Reaction {
+                    sora.state = if sora.motor.grounded { crate::sora::State::Ground } else { crate::sora::State::Air };
+                    if sora.state == crate::sora::State::Air {
+                        sora.motor.start_fall();
+                    }
+                }
+            }
+            for f in followers.iter_mut() {
+                f.limit_hold = false;
+            }
+        }
+    }
+
+    /// kh2-rs `reaction_cmd::auto_limit_offer` (FUN_001d25e0): with nothing else offered, no limit
+    /// running and enemies present, a partner with Auto Limit (ability 417) within 5 m offers one of
+    /// his limits; the command shown last tick is kept. Returns (command, enough MP).
+    pub fn auto_offer(&mut self, data: &LimitData, sora: &Sora, followers: &[crate::party::Follower], party: &crate::party::PartyData, shown: Option<u16>) -> Option<(u16, bool)> {
+        if self.task.is_some() {
+            return None;
+        }
+        let present = present(followers, party);
+        let base = self.party(data, sora, &present);
+        // decided: as for the rows' test (every limit item learned), each partner holds the limit items of his rows.
+        let partners: Vec<rules::Partner> = followers
+            .iter()
+            .filter(|f| !f.ko)
+            .map(|f| {
+                let neo = party.members[f.member].neo as u8;
+                let mut items = f.abilities.clone();
+                items.extend(data.rows.iter().filter(|r| r.members[0] == neo && self.abilities.is_none()).map(|r| r.item));
+                rules::Partner { member: neo, pos: f.motor.pos, items }
+            })
+            .collect();
+        let c = rules::auto_limit_candidates(&data.rows, &partners, sora.motor.pos, &base, |_| true);
+        let cmds: Vec<u16> = c.iter().map(|x| x.command).collect();
+        let i = rules::auto_limit_pick(&cmds, shown.unwrap_or(u16::MAX), &mut self.auto_seed)?;
+        Some((c[i].command, !c[i].no_mp))
     }
 
     /// The running limit's hit count.

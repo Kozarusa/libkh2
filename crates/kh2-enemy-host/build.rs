@@ -41,7 +41,7 @@ fn span(text: &str, start: &str, last: &str) -> String {
     let brace = text[f..].find('{').map(|x| f + x);
     let semi = text[f..].find(';').map(|x| f + x);
     match (brace, semi) {
-        (Some(b), Some(s)) if s < b => text[a..s + 1].to_string(),
+        (Some(b), Some(s)) if s < b && !last.contains("fn ") => text[a..s + 1].to_string(),
         (Some(b), _) => text[a..close(text.as_bytes(), b + 1)].to_string(),
         (None, Some(s)) => text[a..s + 1].to_string(),
         _ => panic!("{last:?} has no body"),
@@ -107,7 +107,22 @@ fn player_reaction() {
     std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("player_reaction.rs"), out).unwrap();
 }
 
+/// The two small pieces `friend_host.rs` names outside itself: `party.rs`'s `SpecialOn` and
+/// `fx.rs`'s `hit_rotation`.
+fn friend_bits() {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates");
+    let read = |f: &str| {
+        let p = base.join(f);
+        println!("cargo:rerun-if-changed={}", p.display());
+        std::fs::read_to_string(&p).unwrap_or_else(|_| panic!("{f}"))
+    };
+    let dir = std::env::var("OUT_DIR").unwrap();
+    std::fs::write(Path::new(&dir).join("special_on.rs"), span(&read("kh2-party/src/party.rs"), "/// Whom a special's target record names", "pub enum SpecialOn")).unwrap();
+    std::fs::write(Path::new(&dir).join("hit_rotation.rs"), span(&read("kh2-game-core/src/fx.rs"), "pub fn hit_rotation", "pub fn hit_rotation")).unwrap();
+}
+
 fn main() {
+    friend_bits();
     player_reaction();
     limits();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-enemy/src/kinds");

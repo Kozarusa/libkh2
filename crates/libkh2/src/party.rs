@@ -79,6 +79,13 @@ pub struct MemberData {
     /// `prty` StunTime (the revive time) and MpDrive.
     pub stun: f32,
     pub mp_drive: f32,
+    /// The member's own script (type 3 of its model file) and its objentry flag (kh2-rs `FriendScripts`).
+    pub script: Option<(kh2_bdx::Program, bool)>,
+    /// The abilities the new game's `plrp` row equips (items with bit 15): a record whose item is one
+    /// of them is equipped (FUN_0010f220).
+    pub abilities: Vec<u16>,
+    /// The objentry byte +7 (`WeaponJoint`): the `%03d0` name of its paired / limit sub-motions.
+    pub model_byte: u8,
 }
 
 impl MemberData {
@@ -108,6 +115,12 @@ pub struct PartyData {
     pub mp_items: (Vec<u16>, Vec<u16>),
     /// The items (`item` of 03system.bin) for the item handlers' effect.
     pub items: Vec<kh2_tables::tables::Item>,
+    /// The scripts' host table, host 1.247's numbers and the `atkp` rows (the attack objects' rows).
+    pub table: Option<kh2_bdx::HostTable>,
+    pub free: Option<kh2_game_core::party_rules::FreePointConsts>,
+    pub atkp: kh2_enemy_host::data::GameData,
+    /// Sora's objentry byte +7 (P_EX100).
+    pub sora_byte: u8,
 }
 
 impl PartyData {
@@ -154,6 +167,9 @@ impl Disc {
         let sstm = kh2_tables::player::load_sstm(&mut self.0).ok();
         let plrp = kh2_tables::load::<t::Plrp>(&mut self.0, &t::PLRP).map(|d| d.rows).unwrap_or_default();
         let items = kh2_tables::load::<t::Item>(&mut self.0, &t::ITEM).map(|d| d.rows).unwrap_or_default();
+        let table = kh2_bdx::HostTable::from_exe(&exe);
+        let free = kh2_game_core::party_rules::FreePointConsts::from_exe(&exe);
+        let atkp = kh2_enemy_host::data::GameData { atkp: kh2_tables::load::<t::Atkp>(&mut self.0, &t::ATKP).map(|d| d.rows).unwrap_or_default() };
         let mut members = Vec::new();
         for (k, model) in MEMBERS.iter().enumerate() {
             let row = objs.iter().find(|o| o.model_name == *model).ok_or_else(|| LoadError(format!("objentry: no {model}")))?;
@@ -177,7 +193,12 @@ impl Disc {
             let neo = row.neo_status;
             let table = lvup.get((neo as usize).max(1) - 1).filter(|t| !t.is_empty()).or_else(|| lvup.first()).cloned().unwrap_or_default();
             let pr = plrp.iter().find(|r| r.id == 0 && u16::from(r.character) == neo);
+            let script = self.read(&format!("obj/{model}.mdlx")).ok().and_then(|f| kh2_bar::parse(&f).ok()?.into_iter().find(|e| e.kind == 3).and_then(|e| kh2_bdx::Program::parse(e.data).ok())).map(|p| (p, row.flags & 8 != 0));
+            let abilities = pr.map_or_else(Vec::new, |r| r.items.iter().filter(|&&i| i & 0x8000 != 0).map(|&i| i & 0x7fff).collect());
             members.push(MemberData {
+                model_byte: row.weapon_joint,
+                script,
+                abilities,
                 neo,
                 hp_max: pr.map_or(20, |r| i32::from(r.hp)),
                 mp_max: pr.map_or(0, |r| i32::from(r.mp)),
@@ -198,7 +219,8 @@ impl Disc {
                 rig,
             });
         }
-        Ok(PartyData { consts, members, ai, orders, half, stop, sstm, mp_gate_w, item_frac, hp_items, mp_items, items })
+        let sora_byte = objs.iter().find(|r| r.model_name == "P_EX100").map_or(1, |r| r.weapon_joint);
+        Ok(PartyData { consts, members, ai, orders, half, stop, sstm, mp_gate_w, item_frac, hp_items, mp_items, items, table, free, atkp, sora_byte })
     }
 }
 
@@ -246,6 +268,33 @@ pub struct Follower {
     pub hit_by: HashSet<(u32, Option<usize>, i16)>,
     /// What happened to this member since the host last took it.
     pub events: Vec<MemberEvent>,
+    /// The member's own script (kh2-rs `FriendBrain`) and its call trace.
+    pub brain: Option<crate::friend::FriendBrain>,
+    pub trace: kh2_enemy_host::enemy_ai::AiTrace,
+    /// FUN_00113d48: the mode asked of the script and the MP byte it will cost.
+    pub mode_request: Option<(String, u8)>,
+    /// Whom the running special was chosen for (its target record).
+    pub special_who: Option<SpecialWho>,
+    /// The script's current mode, and what it asked: motion slot, queue, movement, facing.
+    pub script_mode: Option<String>,
+    pub script_slot: Option<usize>,
+    pub script_restart: bool,
+    pub script_queue: Option<usize>,
+    pub script_move: Option<Vec3>,
+    pub script_yaw: Option<f32>,
+    /// The MP charge after a cost the MP did not cover (magic_rules `pay`).
+    pub charge: kh2_game_core::magic_rules::Charge,
+    /// A limit's motion holds the body (kh2-rs `LimitHold`): the party's motion choice leaves it.
+    pub limit_hold: bool,
+    /// The member's equipped abilities (the new game's; the host may change them).
+    pub abilities: Vec<u16>,
+}
+
+/// The target record of a running special: an enemy (by id) or a party member (Cure).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SpecialWho {
+    Enemy(u32),
+    Party(battle::Who),
 }
 
 /// Something that happened to a member.
@@ -261,6 +310,12 @@ pub enum MemberEvent {
     LevelUp { level: u8, ability: u16 },
     /// A bonus reward's row for this member: maximum HP / MP added, the bonus items.
     Bonus { id: u16, hp: i32, mp: i32, items: [u16; 2] },
+    /// The script switched to a mode (a Special, Cure, a limit's part ...).
+    ScriptMode { mode: String },
+    /// The script started element `id` of the member's effect file.
+    Effect { id: u16 },
+    /// A script heal (Cure): `who` 0 Sora, 1 this member, 2 the other member; amount.
+    Healed { who: u8, amount: i32 },
 }
 
 /// kh2-rs `Progress::raise_level` for the members (FUN_001b52f8): while the `lvup` threshold of the
@@ -311,7 +366,39 @@ impl Follower {
             items: Vec::new(),
             hit_by: HashSet::new(),
             events: Vec::new(),
+            brain: m.script.clone().map(|(p, f124)| crate::friend::FriendBrain::new(p, f124, data.table.as_ref(), member, &m.model)),
+            trace: Default::default(),
+            mode_request: None,
+            special_who: None,
+            script_mode: None,
+            script_slot: None,
+            script_restart: false,
+            script_queue: None,
+            script_move: None,
+            script_yaw: None,
+            charge: Default::default(),
+            limit_hold: false,
+            abilities: m.abilities.clone(),
         }
+    }
+
+    /// kh2-rs `PartyMember::pay_mp` (host 1.276): the MP, or the MP charge when it is short.
+    pub fn pay_mp(&mut self, cost: u8, mp_drive: f32) {
+        if self.ko || self.hp_max == 0 {
+            return;
+        }
+        match kh2_game_core::magic_rules::pay(self.mp, self.mp_max, cost, mp_drive) {
+            kh2_game_core::magic_rules::Paid::Mp(v) => self.mp = v,
+            kh2_game_core::magic_rules::Paid::Charge { total } => {
+                self.mp = 0;
+                self.charge = kh2_game_core::magic_rules::Charge { left: total, total };
+            }
+        }
+    }
+
+    /// The script is busy with a special's mode (+0x390, kh2-rs `script_busy`).
+    pub fn script_busy(&self, ai: Option<&ClassAi>) -> bool {
+        self.mode_request.is_some() || ai.is_some_and(|a| a.records.iter().any(|r| !r.mode.is_empty() && self.script_mode.as_deref() == Some(r.mode.as_str())))
     }
 
     /// The member's status block for the damage formula at its level.
@@ -413,6 +500,28 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::so
     // Sora's target as an object index (style 1's `0x34e9b0`): the enemy nearest his target point.
     let player_target = sora.target.and_then(|t| foes.iter().enumerate().flat_map(|(fi, (_, s))| s.iter().enumerate().map(move |(si, &(ct, _))| ((fi, si), ct.distance(t.pos)))).min_by(|a, b| a.1.total_cmp(&b.1)).map(|x| x.0));
     let vitals: Vec<battle::Vital> = followers.iter().map(Follower::vital).collect();
+    // The scripts' victims (the enemies' hurt volumes by id) and the target parts host 6.5 walks.
+    let victims: Vec<(u32, Vec<crate::enemy::Volume>)> = enemies.as_ref().map(|en| en.list.iter().filter(|e| e.alive() && !e.removed && e.data.kind.status).map(|e| (e.id, crate::enemy::hurt_volumes(&e.data.rig, &e.anim.pose, e.matrix()))).collect()).unwrap_or_default();
+    let targets: Vec<kh2_enemy_host::friend_host::SearchPart> = enemies
+        .as_ref()
+        .map(|en| {
+            en.list
+                .iter()
+                .filter(|e| e.alive() && !e.removed && e.data.kind.status)
+                .flat_map(|e| {
+                    let vols = crate::enemy::hurt_volumes(&e.data.rig, &e.anim.pose, e.matrix());
+                    let shapes: Vec<_> = e.data.rig.model.shapes.iter().filter(|s| s.kind == kh2_model::collision::kind::BATTLE || s.kind == kh2_model::collision::kind::TARGET).collect();
+                    shapes
+                        .into_iter()
+                        .zip(vols)
+                        .enumerate()
+                        .filter(|(_, (s, _))| s.kind == kh2_model::collision::kind::TARGET)
+                        .map(|(i, (s, v))| kh2_enemy_host::friend_host::SearchPart { entity: kh2_enemy_host::Entity(u64::from(e.id)), shape: i, part: s.group, point: (v.a + v.b) * 0.5, radius: v.r })
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let n = followers.len();
     for i in 0..n {
         let (left, right) = followers.split_at_mut(i);
@@ -464,7 +573,12 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::so
                 f.body.restart(down, false, 4.0);
             }
         }
-        let free = f.attack.is_none() && f.hurt.is_none() && !f.ko;
+        let busy = f.script_busy(ai) || f.limit_hold;
+        let free = f.attack.is_none() && f.hurt.is_none() && !f.ko && !busy;
+        // The MP charge runs out into full MP (kh2-rs `Charge::tick`).
+        if f.charge.active() && f.charge.tick(1.0) {
+            f.mp = f.mp_max;
+        }
         let mut delta = Vec3::ZERO;
         let mut start: Option<(Option<usize>, battle::Entry)> = None;
         let mut follow_up: Option<battle::FollowUp> = None;
@@ -504,7 +618,11 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::so
                 let other_v = vitals.iter().enumerate().find(|(k, _)| *k != i).map(|(_, v)| *v);
                 let danger = battle::danger_member(player_v, me_v, other_v, false);
                 let mp_gate = danger.is_some() || battle::mp_gate(roll, ai.params.mp_chance, f.mp, f.mp_max, data.mp_gate_w.0, data.mp_gate_w.1);
-                let now = MemberNow { standing: f.motor.grounded, free: true, status: true, mp: f.mp, mp_gate, mp_charge: false, target_ok, dy: tdy, gd: tgd, facing_dot: facing.dot(tdir), radius: tshape.map_or(0.0, |s| s.1) };
+                let now = MemberNow { standing: f.motor.grounded, free: true, status: true, mp: f.mp, mp_gate, mp_charge: f.charge.active(), target_ok, dy: tdy, gd: tgd, facing_dot: facing.dot(tdir), radius: tshape.map_or(0.0, |s| s.1) };
+                let equipped = |r: &battle::Record| f.abilities.contains(&(r.item as u16));
+                let has_script = f.brain.is_some();
+                // FUN_00113d48 phase 1: a mode to switch to, the script free to take it, FUN_0010f220.
+                let special_ok = |r: &battle::Record| !r.mode.is_empty() && has_script && battle::feasible(r, &now, Some(0), equipped(r));
                 let stock: Vec<u16> = f.items.iter().filter(|x| x.1 > 0).map(|x| x.0).collect();
                 let item_choice = |h: Handler| -> Option<(battle::Who, u16)> {
                     let (frac, lists, value): (f32, &ItemLists, VitalPart) = match h {
@@ -531,8 +649,10 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::so
                         Handler::Approach => (if cont { waited } else { current != Some(k) }) && !any_attack(skip),
                         Handler::Wait => (!cont || waited) && !any_attack(skip),
                         Handler::GoofyWait => (!cont || waited) && target_ok,
-                        Handler::HpItem | Handler::MpItem => battle::feasible(r, &now, Some(0), false) && item_choice(r.handler).is_some(),
-                        // decided: Special and Cure switch the member's script, which is not run.
+                        Handler::HpItem | Handler::MpItem => battle::feasible(r, &now, Some(0), equipped(r)) && item_choice(r.handler).is_some(),
+                        Handler::Special => special_ok(r),
+                        // FUN_00113e68: as the special, when someone's HP is below the entry's +0x3c.
+                        Handler::Cure => special_ok(r) && r.entry.is_some_and(|e| battle::cure_target(danger, me_v, player_v, other_v, e.cure).is_some()),
                         _ => false,
                     }
                 };
@@ -575,6 +695,13 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::so
                                 f.timer = kh2_game_core::rng::range(ai.params.wait_b.0, ai.params.wait_b.1);
                             }
                             (dir, speed) = toward(f);
+                        }
+                        Handler::Special | Handler::Cure => {
+                            // FUN_00113d48 phase 0: the target kept, +0xaf4 the entry's MP byte, the
+                            // script's mode switched to the record's name.
+                            (dir, speed) = (facing, 0.0);
+                            f.special_who = if r.handler == Handler::Cure { r.entry.and_then(|e| battle::cure_target(danger, me_v, player_v, other_v, e.cure)).map(SpecialWho::Party) } else { f.target.map(|t| SpecialWho::Enemy(t.0)) };
+                            f.mode_request = Some((r.mode.clone(), r.entry.map_or(0, |e| e.mp as u8)));
                         }
                         Handler::HpItem | Handler::MpItem => {
                             (dir, speed) = (facing, 0.0);
@@ -671,6 +798,25 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::so
                 f.held = Some((dir, fu.speed));
             }
         }
+        // The script's own motion while it runs a special (kh2-rs `party_tick`: `script_slot` played
+        // while the member stands, its movement and facing).
+        if busy && !f.limit_hold && f.attack.is_none() && f.hurt.is_none() && !f.ko {
+            if let Some(slot) = f.script_slot.filter(|_| std::mem::take(&mut f.script_restart)) {
+                let looping = f.body.rig.mset.get(slot).and_then(|s| s.motion.as_ref()).is_some_and(|x| x.frame_return < x.frame_end);
+                f.body.restart(Some(slot), looping, BLEND);
+            } else if f.body.finished
+                && let Some(q) = f.script_queue.take()
+            {
+                f.script_slot = Some(q);
+                f.body.restart(Some(q), false, BLEND);
+            }
+            if let Some(v) = f.script_move.take() {
+                delta = v.with_y(0.0);
+            }
+            if let Some(y) = f.script_yaw.take() {
+                f.motor.yaw = y;
+            }
+        }
         // A running action: root motion, the jump's run, free again once it ended on the ground.
         if let Some(at) = f.attack
             && !started
@@ -691,7 +837,7 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::so
         }
         let airborne = (!f.motor.grounded).then(|| f.motor.jump_dy(fall_max));
         f.motor.move_by(world, delta, airborne);
-        if f.attack.is_none() && f.hurt.is_none() && !f.ko {
+        if f.attack.is_none() && f.hurt.is_none() && !f.ko && !busy {
             if f.follow.turning {
                 f.motor.turn_to(ground_dir, m.turn);
             } else if let Some(y) = f.want_yaw {
@@ -708,6 +854,122 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::so
             w.follow(&f.body);
             if pose {
                 w.pose_now();
+            }
+        }
+        // The member's own script (kh2-rs `friend_update`), after the body's step.
+        let to_m = Mat4::from_scale(Vec3::splat(kh2_enemy_host::SCALE));
+        let hand_root = f.matrix() * f.body.pose.get(m.hand).copied().unwrap_or(Mat4::IDENTITY);
+        let hand_obj = f.weapon.as_ref().map(|wa| (wa.pose.iter().map(|b| to_m * hand_root * *b).collect::<Vec<_>>(), to_m * hand_root));
+        let (member, mpos, myaw) = (f.member, f.motor.pos, f.motor.yaw);
+        if let Some(brain) = f.brain.as_mut()
+            && !f.ko
+        {
+            let sw = crate::friend::ScriptWorld { player, player_yaw, world, in_battle: in_battle_now, victims: &victims, targets: &targets, atkp: &data.atkp, free: data.free.as_ref() };
+            brain.fields.free = f.attack.is_none() && f.hurt.is_none();
+            brain.fields.target_valid = f.target.is_some() || f.special_who.is_some();
+            let tp = f.target.and_then(|t| foes.iter().find(|x| x.0 == t.0).and_then(|x| x.1.get(t.1).copied()));
+            brain.fields.target_point = tp.map(|x| x.0);
+            brain.fields.target_radius = tp.map_or(0.0, |x| x.1);
+            brain.fields.special = f.special_who.map(|w| match w {
+                SpecialWho::Enemy(id) => kh2_enemy_host::party::SpecialOn::Enemy(kh2_enemy_host::Entity(u64::from(id))),
+                SpecialWho::Party(battle::Who::Player) => kh2_enemy_host::party::SpecialOn::Player,
+                SpecialWho::Party(battle::Who::Me) => kh2_enemy_host::party::SpecialOn::Me,
+                SpecialWho::Party(battle::Who::Other) => kh2_enemy_host::party::SpecialOn::Other,
+            });
+            // The hand-0 object (host 1.234): its drawn bones and root in kh2-rs's Bevy space (metres).
+            match hand_obj {
+                Some((bones, root)) => {
+                    let wobj = brain.fields.weapon.get_or_insert_with(|| kh2_enemy_host::friend_host::WeaponObj { handle: kh2_enemy_host::friend_host::WEAPON_HANDLE + member as u32, linked: true, pos: mpos, yaw: myaw, vel: Vec3::ZERO, motion: None, bones: Vec::new(), root: Mat4::IDENTITY });
+                    wobj.bones = bones;
+                    wobj.root = root;
+                }
+                None => brain.fields.weapon = None,
+            }
+            let req = f.mode_request.take();
+            let out = crate::friend::update(brain, &f.body, f.motor.pos, f.motor.yaw, order, ai, req, &mut f.trace, &sw);
+            if let Some(s) = out.slot {
+                f.script_slot = Some(s);
+                f.script_restart = true;
+                f.script_queue = None;
+            }
+            if out.queued.is_some() {
+                f.script_queue = out.queued;
+            }
+            f.script_move = out.moved;
+            f.script_yaw = out.yaw;
+            if let Some(t) = out.invuln {
+                f.invuln = t;
+            }
+            if let Some(cost) = out.paid {
+                f.pay_mp(cost, m.mp_drive);
+            }
+            if let Some(found) = out.searched {
+                f.target = found;
+            }
+            if out.mode != f.script_mode {
+                if let Some(md) = &out.mode {
+                    f.events.push(MemberEvent::ScriptMode { mode: md.clone() });
+                }
+                f.script_mode = out.mode;
+            }
+            for id in out.effects {
+                f.events.push(MemberEvent::Effect { id });
+            }
+            // Hosts 2.10 / 2.17 hits (kh2-rs `party_script_hits` and the attack objects' hits).
+            let caster = f.stats(data);
+            let mut hits: Vec<(u32, kh2_tables::tables::Atkp)> = out.object_hits.iter().filter_map(|h| Some((h.enemy, data.atkp.atkp.get(h.row)?.clone()))).collect();
+            for id in out.target_hits {
+                let Some(atk) = params.atkp(id).cloned() else { continue };
+                match f.special_who {
+                    Some(SpecialWho::Enemy(t)) => hits.push((t, atk)),
+                    Some(SpecialWho::Party(who)) if matches!(atk.r#type, 5 | 6) => {
+                        let amount = match who {
+                            battle::Who::Player => {
+                                let to = kh2_enemy_host::data::Stats { max_hp: sora.max_hp, ..caster };
+                                let a = crate::enemy::damage(&atk, &caster, &to);
+                                sora.hp = (sora.hp + a).clamp(0, sora.max_hp);
+                                a
+                            }
+                            battle::Who::Me => {
+                                let a = crate::enemy::damage(&atk, &caster, &caster);
+                                f.change_hp(a, data);
+                                a
+                            }
+                            battle::Who::Other => match other.as_mut() {
+                                Some(o) => {
+                                    let to = o.stats(data);
+                                    let a = crate::enemy::damage(&atk, &caster, &to);
+                                    o.change_hp(a, data);
+                                    a
+                                }
+                                None => 0,
+                            },
+                        };
+                        f.events.push(MemberEvent::Healed { who: match who { battle::Who::Player => 0, battle::Who::Me => 1, battle::Who::Other => 2 }, amount });
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(en) = enemies.as_mut() {
+                for (id, atk) in hits {
+                    let Some(e) = en.list.iter_mut().find(|e| e.id == id && e.alive() && !e.removed) else { continue };
+                    let dmg = crate::enemy::damage(&atk, &caster, &e.stats);
+                    let dir = (e.pos() - f.motor.pos).with_y(0.0).normalize_or_zero();
+                    if let Some(r) = game.params.reaction.as_ref() {
+                        crate::enemy::Enemies::receive(e, &atk, dmg, dir, r);
+                    }
+                    let (eid, hp) = (e.id, e.hp);
+                    en.events.push(crate::enemy::EnemyEvent::Hit { id: eid, atkp: atk.id as i16, damage: dmg, hp });
+                    if hp <= 0 && !e.defeated {
+                        e.defeated = true;
+                        let (table, row) = en.data.experience(e.enmp, en.world_level);
+                        en.events.push(crate::enemy::EnemyEvent::Defeated { id: eid, enmp: e.enmp, lvpm_experience: table, enmp_experience: row, paid: 0 });
+                    }
+                }
+            }
+            // The special is over when the script left its mode.
+            if !f.script_busy(ai) && f.mode_request.is_none() {
+                f.special_who = None;
             }
         }
         // The enemies' live attacks against this member (kh2-rs `party_receive_hits`): not while KO'd

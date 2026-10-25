@@ -20,6 +20,10 @@ pub mod prelude {
 
     impl Entity {
         pub const PLACEHOLDER: Entity = Entity(u64::MAX);
+
+        pub fn to_bits(self) -> u64 {
+            self.0
+        }
     }
 
     /// Stand-ins for render types named in a field of `shared::enemy::AiBrain` (never used here).

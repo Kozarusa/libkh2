@@ -1218,3 +1218,101 @@ fn areas_load_and_sora_walks_on_them() {
     }
     assert!(ok >= 3);
 }
+
+#[test]
+fn member_scripts_cast_cure_and_specials() {
+    use kh2::enemy::{EnemyEvent, Enemies};
+    use kh2::party::{tick_battle, Follower, MemberEvent, PartyRng};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let party = d.party().expect("party data");
+    let w = floor();
+    for m in &party.members {
+        let ai = party.ai.get(&m.class).unwrap();
+        let specials: Vec<String> = ai.records.iter().filter(|r| !r.mode.is_empty()).map(|r| format!("{:?} {} item {}", r.handler, r.mode, r.item)).collect();
+        eprintln!("{}: script {}, equipped {:?}; mode records {specials:?}", m.model, m.script.is_some(), m.abilities);
+        assert!(m.script.is_some());
+    }
+    let mut s = standing(&game, &w);
+    let mut en = Enemies::new(data.clone());
+    en.spawn("M_EX990", Vec3::new(0.0, 0.0, 300.0), std::f32::consts::PI, &w);
+    for e in en.list.iter_mut() {
+        e.rt = None;
+        e.hp = 100000;
+    }
+    let mut rng = PartyRng::default();
+    let mut fs = vec![Follower::new(&party, 0, Vec3::new(-100.0, 0.0, 0.0)), Follower::new(&party, 1, Vec3::new(100.0, 0.0, 0.0))];
+    let (mut modes, mut heals, mut hits, mut effects) = (Vec::new(), Vec::new(), 0, 0);
+    for t in 0..3000 {
+        // Sora in danger now and then: Cure is wanted.
+        if t % 600 == 0 {
+            s.hp = 3;
+        }
+        s.tick(&w, &Input::default());
+        tick_battle(&party, &mut fs, &mut rng, &mut s, &w, Some(&mut en));
+        en.tick(&mut s, &w, game.params.sstm.fall_max);
+        hits += en.events.drain(..).filter(|e| matches!(e, EnemyEvent::Hit { .. })).count();
+        for (k, f) in fs.iter_mut().enumerate() {
+            for e in f.events.drain(..) {
+                match e {
+                    MemberEvent::ScriptMode { mode } => modes.push((k, mode)),
+                    MemberEvent::Healed { who, amount } => heals.push((k, who, amount)),
+                    MemberEvent::Effect { .. } => effects += 1,
+                    _ => {}
+                }
+            }
+        }
+    }
+    let unserved: Vec<_> = fs.iter().map(|f| f.trace.missing()).collect();
+    modes.dedup();
+    eprintln!("modes {:?}", modes.iter().take(30).collect::<Vec<_>>());
+    eprintln!("heals {heals:?}; enemy hits {hits}; effects {effects}; unserved host calls {unserved:?}; MP {:?}", fs.iter().map(|f| f.mp).collect::<Vec<_>>());
+    assert!(modes.iter().any(|(_, m)| m != "idle"), "a special's mode runs");
+    assert!(heals.iter().any(|h| h.1 == 0 && h.2 > 0), "Donald's Cure heals Sora");
+}
+
+#[test]
+fn limit_motions_play_on_the_bodies_and_auto_limit_offers() {
+    use kh2::limit::{LimitEvent, Limits};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = d.limits().expect("limit tables");
+    let party = d.party().expect("party data");
+    let w = floor();
+    let mut s = standing(&game, &w);
+    let mut fs = vec![kh2::party::Follower::new(&party, 0, Vec3::new(-100.0, 0.0, 0.0)), kh2::party::Follower::new(&party, 1, Vec3::new(100.0, 0.0, 0.0))];
+    let present = kh2::limit::present(&fs, &party);
+    // Auto Limit: nothing without the ability; Donald with it offers his limit.
+    let mut lim = Limits::default();
+    assert!(lim.auto_offer(&data, &s, &fs, &party, None).is_none());
+    fs[0].abilities.push(417);
+    let auto = lim.auto_offer(&data, &s, &fs, &party, None);
+    eprintln!("auto limit offer with Donald's Auto Limit: {auto:?}");
+    assert!(auto.is_some_and(|(c, _)| data.rows.iter().any(|r| r.command == c && r.members[0] == 2)));
+    let mut best = 0;
+    for cmd in [auto.unwrap().0, 344, 255, 338] {
+    s.mp = s.max_mp;
+    lim.start(&data, &mut d, &mut s, &present, cmd).expect("starts");
+    eprintln!("{} LIMI sets", lim.sets.len());
+    let (mut sora_held, mut member_held, mut motions) = (0, 0, 0);
+    while lim.running() {
+        s.tick(&w, &Input::default());
+        lim.tick(&s);
+        lim.play_motions(&mut s, &mut fs, &party);
+        motions += lim.events.drain(..).filter(|e| matches!(e, LimitEvent::Motion { .. })).count();
+        if s.state == kh2::sora::State::Reaction {
+            sora_held += 1;
+        }
+        if fs.iter().any(|f| f.limit_hold) {
+            member_held += 1;
+        }
+    }
+    lim.play_motions(&mut s, &mut fs, &party);
+    eprintln!("limit {cmd}: {motions} motion requests; Sora held {sora_held} ticks, a member held {member_held} ticks; after: Sora {:?}, held {:?}", s.state, fs.iter().map(|f| f.limit_hold).collect::<Vec<_>>());
+    assert!(s.state != kh2::sora::State::Reaction && fs.iter().all(|f| !f.limit_hold), "released at the end");
+    best = best.max(sora_held + member_held);
+    }
+    eprintln!("most ticks a body was held: {best}");
+    assert!(best > 0, "a limit's motions play on Sora and a member");
+}

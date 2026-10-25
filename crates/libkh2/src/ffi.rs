@@ -88,6 +88,7 @@ struct Lib {
     followers: std::collections::HashMap<i32, Vec<crate::party::Follower>>,
     party_rng: std::collections::HashMap<i32, crate::party::PartyRng>,
     limit_data: Option<Arc<crate::limit::LimitData>>,
+    auto_shown: std::collections::HashMap<i32, u16>,
     limits: std::collections::HashMap<i32, crate::limit::Limits>,
     enemy_data: Option<Arc<crate::enemy::EnemyData>>,
     enemies: std::collections::HashMap<i32, crate::enemy::Enemies>,
@@ -174,7 +175,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, limits: Default::default(), enemy_data: None, enemies: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
     0
 }
 
@@ -1160,6 +1161,9 @@ pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
         // The limit task's countdown and script (after the party).
         if let Some(lim) = l.limits.get_mut(&handle) {
             lim.tick(s);
+            if let (Some(list), Some(p)) = (l.followers.get_mut(&handle), l.party.as_ref()) {
+                lim.play_motions(s, list, p);
+            }
         }
         0
     })
@@ -1285,6 +1289,21 @@ pub extern "C" fn kh2_enemies_tick(handle: i32) -> i32 {
             if let Some(lim) = l.limits.get_mut(&handle) {
                 for _ in en.events[before.min(en.events.len())..].iter().filter(|x| matches!(x, crate::enemy::EnemyEvent::Hit { .. })) {
                     lim.count_hit();
+                }
+            }
+            // Auto Limit (FUN_001d25e0): with nothing else offered, a partner's limit in slot 1.
+            if en.offer.is_none()
+                && !en.list.is_empty()
+                && let (Some(list), Some(p), Some(d)) = (l.followers.get(&handle), l.party.as_ref(), l.limit_data.clone())
+            {
+                let shown = l.auto_shown.get(&handle).copied();
+                let lim = l.limits.entry(handle).or_default();
+                if let Some((cmd, mp_ok)) = lim.auto_offer(&d, s, list, p, shown) {
+                    let message = en.data.cmds.iter().find(|c| c.id == cmd).map_or(0, |c| c.message_id as u32);
+                    en.offer = Some(crate::enemy::ReactionOffer { cmd, pos: 0, from: 0, status: if mp_ok { crate::enemy::Status::Available } else { crate::enemy::Status::NoMp }, message });
+                    l.auto_shown.insert(handle, cmd);
+                } else {
+                    l.auto_shown.remove(&handle);
                 }
             }
             en.list.len() as i32
@@ -1460,6 +1479,23 @@ pub extern "C" fn kh2_reaction_accept(handle: i32) -> i32 {
     with(-1, |l| {
         let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return -1 };
         let Some(en) = l.enemies.get_mut(&handle) else { return -1 };
+        // An Auto Limit offer: the limit starts (FUN_001cf030 case 0x51).
+        if let (Some(o), Some(d)) = (en.offer, l.limit_data.clone())
+            && o.from == 0
+            && d.rows.iter().any(|r| r.command == o.cmd)
+        {
+            if o.status != crate::enemy::Status::Available {
+                return -1;
+            }
+            let present = match (l.followers.get(&handle), l.party.as_ref()) {
+                (Some(f), Some(p)) => crate::limit::present(f, p),
+                _ => Vec::new(),
+            };
+            return match l.limits.entry(handle).or_default().start(&d, &mut l.disc, s, &present, o.cmd) {
+                Ok(()) => i32::from(o.cmd),
+                Err(_) => -1,
+            };
+        }
         en.accept(s).map_or(-1, i32::from)
     })
 }
@@ -1618,6 +1654,8 @@ pub struct Kh2MemberEvent {
     pub damage: i32,
     /// HP after (hit, revived).
     pub hp: i32,
+    /// Script mode: its name (NUL-terminated, cut).
+    pub text: [u8; 32],
 }
 
 /// Takes the oldest member event of Sora `handle`'s party: 1 written, 0 none left.
@@ -1638,12 +1676,21 @@ pub unsafe extern "C" fn kh2_poll_member_event(handle: i32, out: *mut Kh2MemberE
             use crate::party::MemberEvent as E;
             let s = slot as i32;
             let v = match f.events.remove(0) {
-                E::Hit { by, atkp, damage, hp } => Kh2MemberEvent { slot: s, kind: 1, id: by as i32, atkp: atkp.into(), damage, hp },
+                E::Hit { by, atkp, damage, hp } => Kh2MemberEvent { slot: s, kind: 1, id: by as i32, atkp: atkp.into(), damage, hp, ..Default::default() },
                 E::KnockedOut => Kh2MemberEvent { slot: s, kind: 2, ..Default::default() },
                 E::Revived { hp } => Kh2MemberEvent { slot: s, kind: 3, hp, ..Default::default() },
                 E::ItemUsed { item, who } => Kh2MemberEvent { slot: s, kind: 4, id: item.into(), atkp: who.into(), ..Default::default() },
                 E::LevelUp { level, ability } => Kh2MemberEvent { slot: s, kind: 5, id: ability.into(), hp: level.into(), ..Default::default() },
-                E::Bonus { id, hp, mp, items } => Kh2MemberEvent { slot: s, kind: 6, id: id.into(), damage: hp, hp: mp, atkp: items[0].into() },
+                E::Bonus { id, hp, mp, items } => Kh2MemberEvent { slot: s, kind: 6, id: id.into(), damage: hp, hp: mp, atkp: items[0].into(), ..Default::default() },
+                E::ScriptMode { mode } => {
+                    let mut text = [0u8; 32];
+                    for (k, b) in mode.bytes().take(31).enumerate() {
+                        text[k] = b;
+                    }
+                    Kh2MemberEvent { slot: s, kind: 7, text, ..Default::default() }
+                }
+                E::Effect { id } => Kh2MemberEvent { slot: s, kind: 8, id: id.into(), ..Default::default() },
+                E::Healed { who, amount } => Kh2MemberEvent { slot: s, kind: 9, atkp: who.into(), damage: amount, ..Default::default() },
             };
             unsafe { *out = v };
             return 1;

@@ -130,7 +130,7 @@ public static class Kh2
     [StructLayout(LayoutKind.Sequential)]
     public struct MemberState { public float posX, posY, posZ, yaw; public int member, motionSlot; public float frame; public int hp, maxHp, mp, maxMp, ko, level, style, strength, magic, defense; }
     [StructLayout(LayoutKind.Sequential)]
-    public struct MemberEvent { public int slot, kind, id, atkp, damage, hp; }
+    public struct MemberEvent { public int slot, kind, id, atkp, damage, hp; [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)] public byte[] text; }
     [DllImport(Lib)] public static extern int kh2_poll_member_event(int handle, out MemberEvent ev);
     [DllImport(Lib)] public static extern int kh2_party_set_level(int handle, int slot, int level);
     [DllImport(Lib)] public static extern int kh2_party_set_vitals(int handle, int slot, int hp, int maxHp, int mp, int maxMp);

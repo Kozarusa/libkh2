@@ -9,7 +9,22 @@
 //! the pure modules of kh2-game-core (from `libkh2-pure`) and small stand-ins for the parts of
 //! kh2-rs that are Bevy systems (the trace, the voice queue, the story flags, `Stats`, `Rig`).
 
-pub use kh2_game_core::{magic_rules, motor, party_rules, reaction_rules, world};
+pub use kh2_game_core::{magic_rules, motor, party_battle, party_rules, reaction_rules, world};
+
+/// kh2-rs `party::SpecialOn` (span by `build.rs`).
+pub mod party {
+    use bevy::prelude::*;
+    include!(concat!(env!("OUT_DIR"), "/special_on.rs"));
+}
+
+/// kh2-rs `fx::hit_rotation` (span by `build.rs`).
+pub mod fx {
+    use bevy::prelude::*;
+    include!(concat!(env!("OUT_DIR"), "/hit_rotation.rs"));
+}
+
+/// The ECS id stand-in the compiled files carry (`bevy::prelude::Entity` of the shim).
+pub use bevy::prelude::Entity;
 
 /// KH2 units are centimetres; kh2-rs's Bevy scene units are metres.
 pub const SCALE: f32 = 0.01;
@@ -30,6 +45,12 @@ pub mod data {
         pub max_dealt: i32,
         pub min_dealt: i32,
         pub weakness: [i32; 7],
+    }
+
+    /// kh2-rs `data::GameData`, the one table the friend host reads (`atkp`, for an attack's combo group).
+    #[derive(Default)]
+    pub struct GameData {
+        pub atkp: Vec<kh2_tables::tables::Atkp>,
     }
 }
 
@@ -146,6 +167,11 @@ pub mod enemy_ai {
 pub mod enemy_host;
 
 include!(concat!(env!("OUT_DIR"), "/kinds.rs"));
+
+/// kh2-rs `kh2-party/src/friend_host.rs`: the party members' script host (the enemy host plus host group 10).
+#[path = "../../../../kh2-rs/crates/kh2-party/src/friend_host.rs"]
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod friend_host;
 
 /// kh2-rs `kh2-player/src/player_reaction.rs`'s paired motion reader (span by `build.rs`).
 #[allow(dead_code, clippy::all)]

@@ -8,7 +8,14 @@ Generated from `include/kh2.h` by `scripts/gen_api_ref.py`; do not edit by hand.
 - [Magic](#magic)
 - [Drive forms](#drive-forms)
 - [Animation export](#animation-export)
-- [Party members](#party-members)
+- [Party members (kh2-rs party_rules + party_battle: field follow; with spawned enemies
+ * kh2_party_tick runs the battle part: target choice of the member's style (0..3), action records,
+ * attack motions, weapons, damage reported as kh2_enemy_event hits; enemies hit the members (HP from
+ * the new game's plrp rows, status from lvup at the member's level), knock-out and the revive timer,
+ * the danger test, emergency pass and HP/MP item handlers from the host's item stock; since 0.6 the
+ * members' own BDX scripts run (kh2-rs friend_host): Specials (Fire, Thunder, Blade, Tornado ...) and
+ * Cure switch the script's mode, its attack objects hit enemies, its heals heal; during a limit the
+ * limit's motions play on the members' bodies. Not ported: equipment, the scripts' effects (reported).](#party-members-kh2-rs-partyrules--partybattle-field-follow-with-spawned-enemies--kh2partytick-runs-the-battle-part-target-choice-of-the-members-style-03-action-records--attack-motions-weapons-damage-reported-as-kh2enemyevent-hits-enemies-hit-the-members-hp-from--the-new-games-plrp-rows-status-from-lvup-at-the-members-level-knock-out-and-the-revive-timer--the-danger-test-emergency-pass-and-hpmp-item-handlers-from-the-hosts-item-stock-since-06-the--members-own-bdx-scripts-run-kh2-rs-friendhost-specials-fire-thunder-blade-tornado--and--cure-switch-the-scripts-mode-its-attack-objects-hit-enemies-its-heals-heal-during-a-limit-the--limits-motions-play-on-the-members-bodies-not-ported-equipment-the-scripts-effects-reported)
 - [Limits (kh2-rs limit.rs rules + limit_script.rs: Sora's limit commands with Donald and Goofy)
  * The party is Sora plus the members who follow and stand. kh2_limit_start spends the MP, starts the
  * countdown (the command's Time, times Combination Boost) and the limit file's own script, whose
@@ -25,7 +32,7 @@ libkh2: Sora's controller from Kingdom Hearts II as an embeddable library (libsm
 The version this header describes; kh2_version() returns the library's (same packing).
 
 - `KH2_VERSION_MAJOR` = `0`
-- `KH2_VERSION_MINOR` = `5`
+- `KH2_VERSION_MINOR` = `6`
 - `KH2_VERSION_PATCH` = `0`
 - `KH2_VERSION` = `((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)`
 
@@ -609,9 +616,14 @@ int32_t kh2_sample_motion(int32_t handle, int32_t which, int32_t slot, float fra
 
 Bone matrices of `slot` at `frame` relative to the motion's root; root = (x, y, z, yaw) or NULL.
 
-## Party members
-
-kh2-rs party_rules + party_battle: field follow; with spawned enemies * kh2_party_tick runs the battle part: target choice of the member's style (0..3), action records, * attack motions, weapons, damage reported as kh2_enemy_event hits; enemies hit the members (HP from * the new game's plrp rows, status from lvup at the member's level), knock-out and the revive timer, * the danger test, emergency pass and HP/MP item handlers from the host's item stock. Not ported: * member scripts (Specials, Cure), limits, equipment.
+## Party members (kh2-rs party_rules + party_battle: field follow; with spawned enemies
+ * kh2_party_tick runs the battle part: target choice of the member's style (0..3), action records,
+ * attack motions, weapons, damage reported as kh2_enemy_event hits; enemies hit the members (HP from
+ * the new game's plrp rows, status from lvup at the member's level), knock-out and the revive timer,
+ * the danger test, emergency pass and HP/MP item handlers from the host's item stock; since 0.6 the
+ * members' own BDX scripts run (kh2-rs friend_host): Specials (Fire, Thunder, Blade, Tornado ...) and
+ * Cure switch the script's mode, its attack objects hit enemies, its heals heal; during a limit the
+ * limit's motions play on the members' bodies. Not ported: equipment, the scripts' effects (reported).
 
 ### `kh2_member_state`
 
@@ -635,12 +647,16 @@ typedef struct kh2_member_state {
 - `KH2_MEMBER_ITEM` = `4` — id = item, atkp = target (0 Sora, 1 the member, 2 the other member)
 - `KH2_MEMBER_LEVEL_UP` = `5` — hp = the new level, id = ability of the row (the members level with Sora's EXP in kh2_party_tick)
 - `KH2_MEMBER_BONUS` = `6` — id = bonus id, damage = max HP added, hp = max MP added, atkp = item
+- `KH2_MEMBER_SCRIPT_MODE` = `7` — the member's own script switched mode: text = its name ("cure", "blade", ...)
+- `KH2_MEMBER_EFFECT` = `8` — the script started element id of the member's effect file
+- `KH2_MEMBER_HEALED` = `9` — a script heal (Cure): atkp = target (0 Sora, 1 the member, 2 the other), damage = amount
 
 ### `kh2_member_event`
 
 ```c
 typedef struct kh2_member_event {
     int32_t slot, kind, id, atkp, damage, hp;
+    char text[32];
 } kh2_member_event;
 ```
 

@@ -20,7 +20,7 @@
 
 /* The version this header describes; kh2_version() returns the library's (same packing). */
 #define KH2_VERSION_MAJOR 0
-#define KH2_VERSION_MINOR 5
+#define KH2_VERSION_MINOR 6
 #define KH2_VERSION_PATCH 0
 #define KH2_VERSION ((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)
 
@@ -281,8 +281,10 @@ KH2_API int32_t kh2_sample_motion(int32_t handle, int32_t which, int32_t slot, f
  * kh2_party_tick runs the battle part: target choice of the member's style (0..3), action records,
  * attack motions, weapons, damage reported as kh2_enemy_event hits; enemies hit the members (HP from
  * the new game's plrp rows, status from lvup at the member's level), knock-out and the revive timer,
- * the danger test, emergency pass and HP/MP item handlers from the host's item stock. Not ported:
- * member scripts (Specials, Cure), limits, equipment.) ---- */
+ * the danger test, emergency pass and HP/MP item handlers from the host's item stock; since 0.6 the
+ * members' own BDX scripts run (kh2-rs friend_host): Specials (Fire, Thunder, Blade, Tornado ...) and
+ * Cure switch the script's mode, its attack objects hit enemies, its heals heal; during a limit the
+ * limit's motions play on the members' bodies. Not ported: equipment, the scripts' effects (reported). ---- */
 typedef struct kh2_member_state {
     float pos[3];
     float yaw;
@@ -300,8 +302,12 @@ typedef struct kh2_member_state {
 #define KH2_MEMBER_ITEM 4     /* id = item, atkp = target (0 Sora, 1 the member, 2 the other member) */
 #define KH2_MEMBER_LEVEL_UP 5 /* hp = the new level, id = ability of the row (the members level with Sora's EXP in kh2_party_tick) */
 #define KH2_MEMBER_BONUS 6    /* id = bonus id, damage = max HP added, hp = max MP added, atkp = item */
+#define KH2_MEMBER_SCRIPT_MODE 7 /* the member's own script switched mode: text = its name ("cure", "blade", ...) */
+#define KH2_MEMBER_EFFECT 8   /* the script started element id of the member's effect file */
+#define KH2_MEMBER_HEALED 9   /* a script heal (Cure): atkp = target (0 Sora, 1 the member, 2 the other), damage = amount */
 typedef struct kh2_member_event {
     int32_t slot, kind, id, atkp, damage, hp;
+    char text[32];
 } kh2_member_event;
 /* 1 written, 0 none left. */
 KH2_API int32_t kh2_poll_member_event(int32_t handle, kh2_member_event *out);
