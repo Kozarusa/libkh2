@@ -287,3 +287,22 @@ fn hidden_groups_are_not_solid() {
     }
     assert!(s.motor.pos.x > 400.0, "{}", s.motor.pos.x);
 }
+
+/// The scripted recording on the synthetic data against the committed trace (no game values in it).
+/// `KH2_BLESS=1` rewrites the golden file.
+#[test]
+fn the_scripted_replay_matches_the_golden_trace() {
+    let w = room(Some(800.0));
+    let mut s = sora(&w);
+    let steps = kh2::replay::parse(include_str!("../../../tests/scripts/basic.txt")).unwrap();
+    let trace = kh2::replay::run(&mut s, &w, &steps);
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden/synthetic_basic.trace");
+    if std::env::var_os("KH2_BLESS").is_some() {
+        std::fs::write(path, &trace).unwrap();
+    }
+    let golden = std::fs::read_to_string(path).expect("golden trace (run with KH2_BLESS=1 once)").replace("\r\n", "\n");
+    if golden != trace {
+        let first = golden.lines().zip(trace.lines()).position(|(a, b)| a != b);
+        panic!("trace differs from the golden file at line {first:?}");
+    }
+}

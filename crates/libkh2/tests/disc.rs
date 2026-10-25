@@ -452,3 +452,37 @@ fn any_motion_slot_samples_like_the_animator() {
     eprintln!("A300 slot {slot}: frames {}..{} at {} fps, sample vs animator worst bone delta {worst}, root {:?} -> {:?}", m.frame_start, m.frame_end, m.fps, r0, r1);
     assert!(worst < 0.5, "{worst}");
 }
+
+/// The scripted recording on the disc: the trace digest is compared with `local/golden_disc.txt`
+/// (outside git: the trace carries disc-derived numbers), written on the first run. Plus the values
+/// kh2-rs's own tests expect for the same rules (`motor.rs` test: a 185 jump rises for 30.1 ticks).
+#[test]
+fn the_scripted_replay_is_stable_on_the_disc() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let rise = (2.0 * game.params.prty.jump_height / kh2_game_core::motor::G).sqrt();
+    if game.params.prty.jump_height == 185.0 {
+        assert!((rise - 30.1).abs() < 0.1, "kh2-rs motor test value: {rise}");
+    }
+    let s = 2000.0;
+    let t = |v, flags| Surface { v, flags, ..Default::default() };
+    let w = world_from_surfaces(&[
+        t([[-s, 0.0, -s], [-s, 0.0, s], [s, 0.0, s]], 1),
+        t([[-s, 0.0, -s], [s, 0.0, s], [s, 0.0, -s]], 1),
+        t([[800.0, -100.0, -s], [800.0, -100.0, s], [800.0, 600.0, s]], kh2::SURF_WALL),
+        t([[800.0, -100.0, -s], [800.0, 600.0, s], [800.0, 600.0, -s]], kh2::SURF_WALL),
+    ]);
+    let mut so = standing(&game, &w);
+    let steps = kh2::replay::parse(include_str!("../../../tests/scripts/basic.txt")).unwrap();
+    let trace = kh2::replay::run(&mut so, &w, &steps);
+    let digest = format!("{:016x}", kh2::replay::digest(&trace));
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../local/golden_disc.txt");
+    match std::fs::read_to_string(path) {
+        Ok(g) => assert_eq!(g.trim(), digest, "the disc replay changed (delete local/golden_disc.txt after a deliberate change)"),
+        Err(_) => {
+            let _ = std::fs::create_dir_all(concat!(env!("CARGO_MANIFEST_DIR"), "/../../local"));
+            std::fs::write(path, &digest).unwrap();
+            eprintln!("wrote {path}: {digest}");
+        }
+    }
+}

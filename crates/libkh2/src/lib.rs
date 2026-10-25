@@ -10,6 +10,7 @@ pub mod camera;
 pub mod data;
 pub mod drive;
 pub mod ffi;
+pub mod replay;
 pub mod sora;
 
 /// kh2-rs `kh2-player/src/controller_rules.rs` (stick through the camera view, walk/run split,

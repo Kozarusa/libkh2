@@ -70,6 +70,16 @@ kh2_delete(h); kh2_terminate();
 * **Skeleton:** `kh2_get_bones` (body = 0, keyblade = 1; model or world space), `kh2_get_rest_bones`,
   `kh2_bone_parents`. Meshes are not exported in v1: the host loads its own model of Sora.
 
+## Regression and drift
+
+* `tests/scripts/basic.txt` is a scripted input recording (format in `crates/libkh2/src/replay.rs`).
+  The synthetic replay is compared with the committed `crates/libkh2/tests/golden/synthetic_basic.trace`
+  (`KH2_BLESS=1` rewrites it); the disc replay with a digest in `local/golden_disc.txt` (not in git).
+  `cargo run --release -p libkh2 --example replay -- <disc> tests/scripts/basic.txt` prints a trace.
+* `KH2RS_COMMIT` is the kh2-rs commit libkh2 was checked against. `sh scripts/drift_check.sh`
+  (Git Bash on Windows) lists changes in the kh2-rs files compiled in place, the transcribed ones
+  and the path dependencies since then, and exits 1 on drift.
+
 ## Numbers (this machine, release build)
 
 | | |

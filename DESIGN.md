@@ -144,6 +144,17 @@ the dodge roll, reaction commands, the auto-target, sounds and effects (frame tr
 reported, not played), the game's exact COCT walker (`Oct`, unwired in kh2-rs too), weapon
 switching, moving platforms.
 
+## 4b. Regression and drift (step 7)
+
+Drift has two sources: (1) the files compiled in place change (caught by the build and the
+tests), (2) the transcribed Bevy systems (`sora::tick`, `skel::Animator`, `camera::tick`,
+`drive_tick`, `magic.rs`, `receive_hits`) change in kh2-rs and libkh2's copies fall behind
+silently. `scripts/drift_check.sh` diffs both groups against `KH2RS_COMMIT`. The replay tests pin
+behaviour: the synthetic trace is committed (made-up numbers only); the disc trace is kept as a
+digest outside git. decided: no live comparison with kh2-rs's Bevy app (it would need the whole
+app headless); the comparison points with kh2-rs are its own test values (the 185-unit jump's
+30.1-tick rise) and the shared rule code itself.
+
 ## 5. Risks and next steps
 
 * kh2-rs's files are compiled in place; an API change there breaks libkh2's build (fix at the call

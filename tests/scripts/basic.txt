@@ -1,0 +1,15 @@
+# Run, turn, jump, combo, guard. Camera along +z unless given.
+10 - 0 0
+40 - 0 1
+20 - 1 0
+5 j 0 1
+40 j 0 0
+30 - 0 0
+1 a 0 0
+8 - 0 0
+1 a 0 0
+8 - 0 0
+1 a 0 0
+60 - 0 0
+1 g 0 0
+40 - 0 0
