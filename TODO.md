@@ -6,6 +6,6 @@
 4. [x] Items, HP/MP/drive state, level and EXP.
 5. [x] Party members: field following (attacks: plan in DESIGN.md).
 6. [x] Golden-trace suite, docs/PORTING-BACK.md.
-7. [ ] Windowed sample host.
+7. [x] Windowed sample host (crates/viewer).
 
 Later: spell flight paths, the ability system's full block, summons, enemies.

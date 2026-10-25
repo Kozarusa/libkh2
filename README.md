@@ -33,6 +33,19 @@ sh examples/build_min.sh && build/min <disc image>     # Linux / macOS
 
 Pure-Rust example host: `cargo run --release -p libkh2 --example host -- <disc image>`.
 
+**Viewer** (a window; Sora, his keyblades, Donald and Goofy drawn as skeleton lines through the
+field camera; `crates/viewer`, depends on `minifb` only):
+
+```
+cargo run --release -p libkh2-viewer -- "<path to Kingdom Hearts II (USA).iso>"        # test room
+cargo run --release -p libkh2-viewer -- "<iso>" tt00                                   # an area's collision
+```
+
+Keys: WASD move (Shift walks), Space jump, J attack, K guard / Quick Run / Glide, arrows camera,
+Q lock onto the red post, 1-4 Fire / Blizzard / Thunder / Cure, P Potion, F Valor, M Master,
+R revert, H take a hit, G growth abilities on/off, Esc quit. Events print to the console.
+`KH2_VIEWER_FRAMES=160 KH2_VIEWER_SHOT=out.ppm` runs a scripted walk and saves the last frame.
+
 Unity: `unity/Kh2.cs` (P/Invoke bindings and a `MonoBehaviour` driver) and the sample scene in
 `docs/UNITY.md` (documented, not built here).
 
