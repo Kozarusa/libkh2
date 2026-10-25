@@ -9,8 +9,23 @@ use kh2::data::Disc;
 use kh2::sora::{Input, Sora, State};
 use kh2::{world_from_surfaces, Surface, World};
 
+/// The compiled kh2-rs script hosts keep a few process-wide tables (the shared memory blocks, the
+/// group edits, the area mask, the group enemy sum), as the game's globals are; tests that run
+/// scripts at the same time disturb each other through them. Each disc test holds this lock for
+/// its whole run (the guard lives in the test thread's local storage and goes with the thread).
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+thread_local! {
+    static HELD: std::cell::RefCell<Option<std::sync::MutexGuard<'static, ()>>> = const { std::cell::RefCell::new(None) };
+}
+
 fn disc() -> Option<Disc> {
     let iso = std::env::var_os("KH2_ISO")?;
+    HELD.with(|h| {
+        if h.borrow().is_none() {
+            *h.borrow_mut() = Some(SERIAL.lock().unwrap_or_else(|e| e.into_inner()));
+        }
+    });
     Some(Disc::open(std::path::Path::new(&iso)).expect("KH2_ISO opens"))
 }
 

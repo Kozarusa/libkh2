@@ -83,3 +83,9 @@ Limits deal no damage. The evidence (rounds 8 and 9), a dead end without the exe
   libkh2 runs since 0.7, not a limit).
 So the hits come from the executable's limit task code (`FUN_001b2c10` / `FUN_001b2e08` and the
 kind-5000 objects it makes), which kh2-rs has not ported; there is no data to drive them from.
+
+Process-wide script state: the compiled kh2-rs script hosts keep the game's few global tables as
+process-wide statics (the shared memory blocks, the collision group edits, the area mask, the group
+enemy sum). Through the C API this is invisible (one library state, calls serialised). Rust users
+who tick separate `Enemies` / `AreaRun` sets on several threads at once share those tables; the disc
+tests serialise themselves for this reason.
