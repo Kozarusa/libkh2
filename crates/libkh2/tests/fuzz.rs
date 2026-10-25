@@ -282,6 +282,8 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 kh2_poll_limit_event(h, if r.chance(5) { std::ptr::null_mut() } else { &mut e });
             }
             44 => {
+                kh2_give_bonus(h, if r.chance(2) { r.below(40) as i32 } else { r.int() });
+                kh2_form_abilities(h, r.int(), if r.chance(4) { std::ptr::null_mut() } else { b.u16s.as_mut_ptr() }, max(r, b.u16s.len()));
                 kh2_set_weapon_set(h, r.int());
                 let p = if r.chance(4) { std::ptr::null_mut() } else { b.u16s.as_mut_ptr() };
                 kh2_granted_abilities(h, p, max(r, b.u16s.len()));

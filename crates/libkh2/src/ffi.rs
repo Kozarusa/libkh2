@@ -871,6 +871,7 @@ pub unsafe extern "C" fn kh2_poll_event(handle: i32, out: *mut Kh2Event) -> i32 
             E::Healed { amount, hp } => Kh2Event { kind: 7, amount, hp, ..d },
             E::ItemUsed { item, hp, mp, drive } => Kh2Event { kind: 8, slot: item.into(), amount: hp, hp: mp, charge: drive, ..d },
             E::Experience { amount, total } => Kh2Event { kind: 9, amount, hp: total, ..d },
+            E::Bonus { id, hp, mp, drive, items } => Kh2Event { kind: 11, slot: id.into(), amount: hp, hp: mp, charge: drive, sub_id: items[0].into(), atkp: items[1].into(), ..d },
             E::LevelUp { level, strength, magic, defense, ap, ability } => Kh2Event { kind: 10, amount: level, sub_id: ability.into(), atkp: strength, stage: magic, slot: defense, charge: ap, ..d },
         };
         unsafe { *out = v };
@@ -1151,6 +1152,11 @@ pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
                 }
             }
         }
+        // The members' levels follow the shared experience (kh2-rs `pay_experience`: every slot).
+        if let (Some(list), Some(p), Some(s)) = (l.followers.get_mut(&handle), l.party.as_ref(), usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref)) {
+            crate::party::raise_levels(p, list, s.exp);
+        }
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return -1 };
         // The limit task's countdown and script (after the party).
         if let Some(lim) = l.limits.get_mut(&handle) {
             lim.tick(s);
@@ -1636,6 +1642,8 @@ pub unsafe extern "C" fn kh2_poll_member_event(handle: i32, out: *mut Kh2MemberE
                 E::KnockedOut => Kh2MemberEvent { slot: s, kind: 2, ..Default::default() },
                 E::Revived { hp } => Kh2MemberEvent { slot: s, kind: 3, hp, ..Default::default() },
                 E::ItemUsed { item, who } => Kh2MemberEvent { slot: s, kind: 4, id: item.into(), atkp: who.into(), ..Default::default() },
+                E::LevelUp { level, ability } => Kh2MemberEvent { slot: s, kind: 5, id: ability.into(), hp: level.into(), ..Default::default() },
+                E::Bonus { id, hp, mp, items } => Kh2MemberEvent { slot: s, kind: 6, id: id.into(), damage: hp, hp: mp, atkp: items[0].into() },
             };
             unsafe { *out = v };
             return 1;
@@ -1806,5 +1814,52 @@ pub unsafe extern "C" fn kh2_poll_limit_event(handle: i32, out: *mut Kh2LimitEve
         };
         unsafe { *out = v };
         1
+    })
+}
+
+/// Gives bonus reward `id` (the `bons` rows, kh2-rs `Progress::give_bonus`): Sora's maximum HP / MP /
+/// drive gauge and items, and the following members' maximum HP / MP. 1 given, 0 given before, -1.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_give_bonus(handle: i32, id: i32) -> i32 {
+    with(-1, |l| {
+        let Ok(id) = u16::try_from(id) else { return set_error("bonus id is 0..255") };
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return set_error(format!("no Sora with handle {handle}")) };
+        let Some(others) = s.give_bonus(id) else { return 0 };
+        if let (Some(list), Some(p)) = (l.followers.get_mut(&handle), l.party.as_ref()) {
+            for (who, hp, mp, items) in others {
+                for f in list.iter_mut().filter(|f| p.members[f.member].neo == u16::from(who)) {
+                    f.hp_max = (f.hp_max + hp).min(9999);
+                    f.mp_max = (f.mp_max + mp).min(9999);
+                    f.mp = (f.mp + mp).clamp(0, f.mp_max);
+                    if !f.ko {
+                        f.hp = (f.hp + hp).clamp(0, f.hp_max);
+                    }
+                    f.events.push(crate::party::MemberEvent::Bonus { id, hp, mp, items });
+                }
+            }
+        }
+        1
+    })
+}
+
+/// A drive form's ability list (kh2-rs `drive::form_ability_list`: the `fmlv` grants up to the form's
+/// level and its growth ability): writes up to `max` ability item ids, returns the count.
+///
+/// # Safety
+/// `out` is NULL or points to `max` u16 values.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_form_abilities(handle: i32, form: i32, out: *mut u16, max: u32) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        let Ok(f) = u8::try_from(form) else { return set_error("form is 1..5") };
+        if !(1..=5).contains(&f) {
+            return set_error("form is 1..5");
+        }
+        let v = s.form_ability_list(f);
+        if !out.is_null() {
+            for (k, &a) in v.iter().take(max as usize).enumerate() {
+                unsafe { *out.add(k) = a };
+            }
+        }
+        v.len() as i32
     })
 }

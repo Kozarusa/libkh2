@@ -7,14 +7,14 @@
 //! out of any form. The status (strength, magic, defense) is rebuilt from the level, as the game's
 //! status rebuild does (FUN_0019f920).
 //!
-//! Layout, little-endian: "KH2S", u16 version (1), then the fields in the order of `save`.
+//! Layout, little-endian: "KH2S", u16 version (2: the given bonus rewards after the abilities), then the fields in the order of `save`.
 
 use glam::Vec3;
 
 use crate::sora::Sora;
 
 const MAGIC: &[u8; 4] = b"KH2S";
-const VERSION: u16 = 1;
+const VERSION: u16 = 2;
 const MAX_LIST: usize = 256;
 
 struct W(Vec<u8>);
@@ -83,6 +83,7 @@ struct Record {
     weapon_set: u8,
     granted: Vec<u16>,
     loadout: Vec<u16>,
+    bonus: Vec<u16>,
     drive_whole: i32,
     drive_max: i32,
     owned: [bool; 6],
@@ -106,6 +107,7 @@ impl Sora {
         w.u8(self.weapon_set);
         w.list(&self.granted);
         w.list(&self.loadout_ids);
+        w.list(&self.bonus_given);
         w.i32(i32::from(self.drive.points.whole));
         w.i32(i32::from(self.drive.points.max));
         for k in 0..6 {
@@ -145,6 +147,7 @@ impl Sora {
             let weapon_set = r.u8()?;
             let granted = r.list()?;
             let loadout = r.list()?;
+            let bonus = r.list()?;
             let drive_whole = r.i32()?;
             let drive_max = r.i32()?;
             let mut owned = [false; 6];
@@ -157,7 +160,7 @@ impl Sora {
             }
             let pos = Vec3::new(r.f32()?, r.f32()?, r.f32()?);
             let yaw = r.f32()?;
-            r.0.is_empty().then_some(Record { level, exp, hp, max_hp, mp, max_mp, magic_levels, weapon_set, granted, loadout, drive_whole, drive_max, owned, form_levels, pos, yaw })
+            r.0.is_empty().then_some(Record { level, exp, hp, max_hp, mp, max_mp, magic_levels, weapon_set, granted, loadout, bonus, drive_whole, drive_max, owned, form_levels, pos, yaw })
         })()
         .ok_or("save record truncated or malformed")?;
         let ok = (1..=99).contains(&rec.level)
@@ -187,6 +190,7 @@ impl Sora {
         fresh.magic_levels = rec.magic_levels;
         fresh.weapon_set = rec.weapon_set;
         fresh.granted = rec.granted;
+        fresh.bonus_given = rec.bonus;
         fresh.drive.points.whole = rec.drive_whole as _;
         fresh.drive.points.max = rec.drive_max as _;
         fresh.drive.owned = rec.owned;

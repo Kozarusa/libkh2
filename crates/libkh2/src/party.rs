@@ -257,6 +257,28 @@ pub enum MemberEvent {
     Revived { hp: i32 },
     /// An item handler used `item` on `who` (0 Sora, 1 this member, 2 the other member).
     ItemUsed { item: u16, who: u8 },
+    /// A level reached (kh2-rs `raise_level`): the new row's ability of the member's column (0 none).
+    LevelUp { level: u8, ability: u16 },
+    /// A bonus reward's row for this member: maximum HP / MP added, the bonus items.
+    Bonus { id: u16, hp: i32, mp: i32, items: [u16; 2] },
+}
+
+/// kh2-rs `Progress::raise_level` for the members (FUN_001b52f8): while the `lvup` threshold of the
+/// member's level is at most the shared experience total, the level rises and the new row's ability
+/// of the member's weapon set is given. decided: the members' weapon set byte is 0 (the new game's),
+/// so the Sword column; the abilities are reported, not equipped.
+pub fn raise_levels(data: &PartyData, followers: &mut [Follower], exp: i32) {
+    for f in followers.iter_mut() {
+        let t = &data.members[f.member].lvup;
+        while f.level < 99 {
+            let (Some(old), Some(new)) = (t.get(f.level as usize - 1), t.get(f.level as usize)) else { break };
+            if old.exp > exp {
+                break;
+            }
+            f.level += 1;
+            f.events.push(MemberEvent::LevelUp { level: f.level, ability: new.sword_ability });
+        }
+    }
 }
 
 impl Follower {

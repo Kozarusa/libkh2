@@ -342,6 +342,8 @@ pub struct Sora {
     pub ap: i32,
     /// Abilities the level-ups gave (kh2-rs `give`); equipping them is the host's (`set_loadout`).
     pub granted: Vec<u16>,
+    /// The bonus rewards given (kh2-rs `Progress::bonus_given`, flags by id) and their count.
+    pub bonus_given: Vec<u16>,
     /// The ability ids of the last `set_loadout`, for the save record.
     pub loadout_ids: Vec<u16>,
     pub strength: i32,
@@ -433,6 +435,7 @@ impl Sora {
             weapon_set: 0,
             ap: 0,
             granted: Vec::new(),
+            bonus_given: Vec::new(),
             loadout_ids: Vec::new(),
             strength: 0,
             magic: 0,
@@ -1478,8 +1481,15 @@ impl Sora {
     /// A form's ability list (kh2-rs `drive::form_ability_list`: the fmlv grants up to the level and
     /// the growth ability of the form's chain at its display level).
     fn form_abilities(&self) -> Vec<u16> {
+        self.form_ability_list(self.drive.form)
+    }
+
+    /// The ability list form `form` gives at its current level (kh2-rs `drive::form_ability_list`):
+    /// the `fmlv` grants up to the level and the growth ability of its chain.
+    pub fn form_ability_list(&self, form: u8) -> Vec<u16> {
         let (Some(d), Some(r)) = (self.game.drive.as_ref(), self.game.ability_rules.as_ref()) else { return Vec::new() };
-        let form = self.drive.form;
+        let Some(&level) = self.drive.level.get(form as usize) else { return Vec::new() };
+        let _ = level;
         let level = self.drive.level[form as usize];
         let mut list = kh2_game_core::drive_rules::granted_abilities(&d.levels, form, level);
         let g = kh2_game_core::drive_rules::growth_level(&d.levels, form, level);
@@ -1611,6 +1621,45 @@ impl Sora {
             self.events.push(Event::LevelUp { level: self.level, strength, magic, defense, ap, ability });
         }
         amount
+    }
+
+    /// kh2-rs `Progress::give_bonus` (FUN_001be6b8) for Sora's rows: once per id (below 256);
+    /// maximum HP and MP rise by the row's values and the current values by the same (held to the
+    /// new maximum); the drive gauge maximum rises and a full fraction carries (FUN_001a0290); the
+    /// bonus items are given. Returns the other characters' rows (member id, HP, MP, items) for the
+    /// party, or None when the reward was given already.
+    #[allow(clippy::type_complexity)]
+    pub fn give_bonus(&mut self, id: u16) -> Option<Vec<(u8, i32, i32, [u16; 2])>> {
+        if id >= 256 || self.bonus_given.contains(&id) {
+            return None;
+        }
+        self.bonus_given.push(id);
+        let p = self.game.params.clone();
+        let mut others = Vec::new();
+        let Some(first) = p.bons.iter().position(|b| u16::from(b.reward_id) == id) else { return Some(others) };
+        for b in p.bons[first..].iter().take_while(|b| u16::from(b.reward_id) == id) {
+            let items = [b.bonus_item1, b.bonus_item2];
+            if b.character_id != 1 {
+                others.push((b.character_id, i32::from(b.hp_increase), i32::from(b.mp_increase), items));
+                continue;
+            }
+            self.max_hp = (self.max_hp + i32::from(b.hp_increase)).min(9999);
+            self.hp = (self.hp + i32::from(b.hp_increase)).clamp(0, self.max_hp);
+            self.max_mp = (self.max_mp + i32::from(b.mp_increase)).min(9999);
+            self.mp = (self.mp + i32::from(b.mp_increase)).clamp(0, self.max_mp);
+            let d = &mut self.drive.points;
+            d.max = d.max.wrapping_add(b.drive_gauge_upgrade);
+            let (f, pts) = kh2_game_core::items::gauge_carry(d.fraction, d.whole, d.max);
+            d.fraction = f;
+            d.whole = pts;
+            for &i in items.iter().filter(|&&i| i != 0) {
+                if p.items.iter().any(|r| r.id == i && r.r#type == 19) {
+                    self.granted.push(i);
+                }
+            }
+            self.events.push(Event::Bonus { id, hp: i32::from(b.hp_increase), mp: i32::from(b.mp_increase), drive: i32::from(b.drive_gauge_upgrade), items });
+        }
+        Some(others)
     }
 
     /// The input of the last tick.
@@ -1821,6 +1870,9 @@ pub enum Event {
     ItemUsed { item: u16, hp: i32, mp: i32, drive: i32 },
     /// Experience paid for a defeat, and the level reached when it rose.
     Experience { amount: i32, total: i32 },
+    /// A bonus reward for Sora (kh2-rs `give_bonus`): maximum HP / MP / drive gauge added and the
+    /// bonus items given (abilities go to `granted`).
+    Bonus { id: u16, hp: i32, mp: i32, drive: i32, items: [u16; 2] },
     /// A level reached: the rises over the previous row and the ability given (0 none).
     LevelUp { level: i32, strength: i32, magic: i32, defense: i32, ap: i32, ability: u16 },
     /// The body changed: drive form `to` (0 = base Sora) replaced form `from`.

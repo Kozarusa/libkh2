@@ -207,6 +207,7 @@ KH2_API int32_t kh2_set_mp(int32_t handle, int32_t mp, int32_t max_mp);
 #define KH2_EV_HEALED 7         /* amount, hp */
 #define KH2_EV_ITEM_USED 8      /* slot = item id, amount = HP change, hp = MP change, charge = drive change (1/100 points) */
 #define KH2_EV_EXPERIENCE 9     /* amount paid, hp = total */
+#define KH2_EV_BONUS 11         /* slot = bonus id, amount = max HP added, hp = max MP added, charge = drive gauge added, sub_id / atkp = items */
 #define KH2_EV_LEVEL_UP 10      /* amount = the new level; rises over the previous lvup row: atkp = strength,
                                    stage = magic, slot = defense, charge = AP; sub_id = ability given (0 none) */
 typedef struct kh2_event {
@@ -230,9 +231,14 @@ KH2_API int32_t kh2_report_defeat(int32_t handle, int32_t lvpm_experience, int32
 KH2_API int32_t kh2_set_level(int32_t handle, int32_t level);
 /* The weapon chosen at the start (0 Sword, 1 Shield, 2 Staff): the lvup ability column level-ups give. */
 KH2_API int32_t kh2_set_weapon_set(int32_t handle, int32_t set);
+/* Bonus reward `id` (bons rows, once per id): Sora's max HP / MP / drive gauge and items (KH2_EV_BONUS),
+ * the following members' max HP / MP (KH2_MEMBER_BONUS). 1 given, 0 given before, -1 error. */
+KH2_API int32_t kh2_give_bonus(int32_t handle, int32_t id);
+/* Drive form `form` (1..5): its ability list at its level (fmlv grants + growth ability). */
+KH2_API int32_t kh2_form_abilities(int32_t handle, int32_t form, uint16_t *out, uint32_t max);
 /* Abilities given by level-ups, oldest first: writes up to max, returns the count (equip: kh2_set_loadout). */
 KH2_API int32_t kh2_granted_abilities(int32_t handle, uint16_t *out, uint32_t max);
-/* Save record ("KH2S" v1): level, EXP, HP/MP, AP, spell levels, weapon set, given and equipped
+/* Save record ("KH2S" v2): level, EXP, HP/MP, AP, spell levels, weapon set, given and equipped
  * abilities, drive gauge/forms/levels, position and yaw. Not saved: motion, combo, cast, an active
  * form, enemies, party. save writes when cap is enough and returns the size; load returns 0, or -1
  * with nothing changed for a record that is not valid. */
@@ -292,6 +298,8 @@ typedef struct kh2_member_state {
 #define KH2_MEMBER_KO 2
 #define KH2_MEMBER_REVIVED 3  /* hp after */
 #define KH2_MEMBER_ITEM 4     /* id = item, atkp = target (0 Sora, 1 the member, 2 the other member) */
+#define KH2_MEMBER_LEVEL_UP 5 /* hp = the new level, id = ability of the row (the members level with Sora's EXP in kh2_party_tick) */
+#define KH2_MEMBER_BONUS 6    /* id = bonus id, damage = max HP added, hp = max MP added, atkp = item */
 typedef struct kh2_member_event {
     int32_t slot, kind, id, atkp, damage, hp;
 } kh2_member_event;

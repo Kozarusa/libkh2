@@ -93,6 +93,9 @@ fn items() {
     let mut out = span(&it, "/// The parts of a status record", "pub fn item_effect");
     out.push(char::from(10u8));
     out.push_str(&span(&pr, "pub fn defeat_payout", "pub fn defeat_payout"));
+    out.push(char::from(10u8));
+    // FUN_001a0290(status, 0): the drive gauge carry a bonus reward's gauge rise runs.
+    out.push_str(&span(&pr, "/// `FUN_001a0290(status, 0)`", "pub fn gauge_carry"));
     std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("items.rs"), out).unwrap();
 }
 

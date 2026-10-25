@@ -1090,3 +1090,38 @@ fn a_soldier_offers_its_reaction_command_and_its_script_moves_sora() {
     assert!(accepted && delivered.is_some_and(|(c, h)| c == 34 && h));
     assert!(reaction_ticks > 0, "the script's paired motion plays on Sora");
 }
+
+#[test]
+fn bonus_levels_member_levels_and_form_ability_lists() {
+    use kh2::party::{raise_levels, Follower, MemberEvent};
+    use kh2::sora::Event;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let party = d.party().expect("party data");
+    let w = floor();
+    let bons = &game.params.bons;
+    eprintln!("{} bons rows; first {:?}", bons.len(), bons.iter().take(4).map(|b| (b.reward_id, b.character_id, b.hp_increase, b.mp_increase, b.drive_gauge_upgrade, b.bonus_item1, b.bonus_item2)).collect::<Vec<_>>());
+    let row = bons.iter().find(|b| b.character_id == 1 && (b.hp_increase > 0 || b.mp_increase > 0)).expect("a Sora row with HP or MP");
+    let mut s = standing(&game, &w);
+    let (hp0, mp0) = (s.max_hp, s.max_mp);
+    let others = s.give_bonus(u16::from(row.reward_id)).expect("given");
+    assert_eq!((s.max_hp, s.max_mp), (hp0 + i32::from(row.hp_increase), mp0 + i32::from(row.mp_increase)));
+    assert!(s.events.iter().any(|e| matches!(e, Event::Bonus { .. })));
+    assert!(s.give_bonus(u16::from(row.reward_id)).is_none(), "once per id");
+    eprintln!("bonus {}: Sora HP {hp0}->{} MP {mp0}->{}; other rows {others:?}", row.reward_id, s.max_hp, s.max_mp);
+    let rec = s.save();
+    let mut t = standing(&game, &w);
+    t.load(&rec).unwrap();
+    assert_eq!(t.bonus_given, s.bonus_given);
+    // The members' levels follow the shared experience.
+    let mut fs = vec![Follower::new(&party, 0, Vec3::ZERO), Follower::new(&party, 1, Vec3::ZERO)];
+    raise_levels(&party, &mut fs, 5000);
+    let ups: Vec<_> = fs.iter().map(|f| (f.level, f.events.iter().filter(|e| matches!(e, MemberEvent::LevelUp { .. })).count())).collect();
+    eprintln!("members at 5000 EXP: {ups:?}");
+    assert!(fs.iter().all(|f| f.level > 1));
+    // Form ability lists.
+    for form in 1..=5u8 {
+        eprintln!("form {form} abilities {:?}", s.form_ability_list(form));
+    }
+    assert!(!s.form_ability_list(1).is_empty());
+}

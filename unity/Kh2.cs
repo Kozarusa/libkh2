@@ -175,6 +175,8 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_reaction_force_offer(int handle, int cmd);
 
     [DllImport(Lib)] public static extern int kh2_set_weapon_set(int handle, int set);
+    [DllImport(Lib)] public static extern int kh2_give_bonus(int handle, int id);
+    [DllImport(Lib)] public static extern int kh2_form_abilities(int handle, int form, [Out] ushort[] outIds, uint max);
     [DllImport(Lib)] public static extern int kh2_granted_abilities(int handle, [Out] ushort[] outIds, uint max);
     [DllImport(Lib)] public static extern int kh2_state_save(int handle, [Out] byte[] outBytes, uint cap);
     [DllImport(Lib)] public static extern int kh2_state_load(int handle, byte[] bytes, uint len);

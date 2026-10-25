@@ -63,6 +63,8 @@ pub struct Params {
     /// Sora's level rows (`lvup`, character 0), and the Kingdom Key's attack and magic
     /// (`item_stat`; kh2-rs `GameData::weapon_attack` / `weapon_magic`).
     pub levels: Vec<t::Lvup>,
+    /// The bonus rewards (`bons` of 00battle.bin).
+    pub bons: Vec<t::Bons>,
     pub weapon_attack: i32,
     pub weapon_magic: i32,
     /// The items (`item` of `03system.bin`), and the `sstm` floats the item and EXP code reads:
@@ -244,7 +246,8 @@ impl Disc {
         let raw = kh2_tables::player::load_sstm(&mut self.0).ok();
         let at = |off: usize| raw.as_ref().filter(|s| s.words.len() > off / 4).map_or(0.0, |s| s.f32(off));
         let (charge_feed, low_hp_fraction) = (at(0x7c), at(0x144));
-        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera, magc, cmd, magi, levels, weapon_attack, weapon_magic, items, charge_feed, low_hp_fraction })
+        let bons = kh2_tables::load::<t::Bons>(&mut self.0, &t::BONS).map(|d| d.rows).unwrap_or_default();
+        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera, magc, cmd, magi, levels, bons, weapon_attack, weapon_magic, items, charge_feed, low_hp_fraction })
     }
 
     /// Everything Sora needs.
