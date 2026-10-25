@@ -91,7 +91,7 @@ fn items() {
     let it = std::fs::read_to_string(&items).expect("items.rs");
     let pr = std::fs::read_to_string(&progress).expect("progress.rs");
     let mut out = span(&it, "/// The parts of a status record", "pub fn item_effect");
-    out.push_str("\n");
+    out.push(char::from(10u8));
     out.push_str(&span(&pr, "pub fn defeat_payout", "pub fn defeat_payout"));
     std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("items.rs"), out).unwrap();
 }

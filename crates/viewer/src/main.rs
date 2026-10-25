@@ -115,7 +115,7 @@ fn main() {
         if scripted {
             stick = if frame < 90 { [0.3, 1.0] } else { [0.0, 0.0] };
         }
-        let input = Input { stick, cam_look: look, attack: down(Key::J) || (scripted && frame > 100 && frame % 6 == 0), jump: down(Key::Space), guard: down(Key::K) };
+        let input = Input { stick, cam_look: look, attack: down(Key::J) || (scripted && frame > 100 && frame.is_multiple_of(6)), jump: down(Key::Space), guard: down(Key::K) };
         for (k, slot) in [(Key::Key1, 0u8), (Key::Key2, 1), (Key::Key3, 2), (Key::Key4, 3)] {
             if pressed(k) {
                 sora.cast_request = Some((slot, 30));
@@ -143,8 +143,8 @@ fn main() {
                 && let Some(d) = drive.as_ref()
             {
                 let mut load = |f: u8| -> Option<Arc<kh2::drive::FormAssets>> {
-                    if !forms.contains_key(&f) {
-                        forms.insert(f, Arc::new(disc.form_assets(d, f, 0, 41).ok()?));
+                    if let std::collections::hash_map::Entry::Vacant(e) = forms.entry(f) {
+                        e.insert(Arc::new(disc.form_assets(d, f, 0, 41).ok()?));
                     }
                     forms.get(&f).cloned()
                 };
