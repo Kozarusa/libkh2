@@ -275,6 +275,11 @@ fn hidden_groups_are_not_solid() {
     }
     tris.extend(wall);
     let mut w = world_from_surfaces(&tris);
+    let mut s = sora(&w);
+    for _ in 0..80 {
+        s.tick(&w, &run_x());
+    }
+    assert!(s.motor.pos.x < 300.0, "group 7 on: the wall stops him at {}", s.motor.pos.x);
     w.set_group(7, false);
     let mut s = sora(&w);
     for _ in 0..80 {

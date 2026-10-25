@@ -416,6 +416,8 @@ impl Sora {
     }
 
     /// One 60 Hz tick.
+    // The empty branches keep kh2-rs's order of tries (a started action ends the chain of `else if`).
+    #[allow(clippy::if_same_then_else)]
     pub fn tick(&mut self, world: &World, input: &Input) {
         let attack = input.attack && !self.prev.attack;
         let jump = input.jump && !self.prev.jump;
@@ -649,14 +651,22 @@ impl Sora {
         }
     }
 
-    /// The live attack windows: (atkp id, shape group) of every range trigger 10 or 33 that covers
-    /// the current frame (kh2-rs `combat::live_attack_shapes`).
-    pub fn attack_triggers(&self) -> Vec<(i16, i16)> {
-        let Some(tr) = self.body.triggers() else { return Vec::new() };
-        tr.active(self.body.gframe())
+    /// The live attack windows of one attack body: (atkp id, shape group) of every range trigger 10
+    /// or 33 that covers its current frame (kh2-rs `combat::live_attack_shapes`).
+    fn live(a: &Anim) -> Vec<(i16, i16)> {
+        let Some(tr) = a.triggers() else { return Vec::new() };
+        tr.active(a.gframe())
             .filter(|r| r.id == range::ATTACK || r.id == range::ATTACK_COMBO)
             .filter_map(|r| Some((*r.params.first()?, *r.params.get(1)?)))
             .collect()
+    }
+
+    /// The live attack windows of the keyblade and the body (kh2-rs `Fighter::attack_bodies`: the
+    /// weapons, then the body; Sora's swing windows are in the keyblade's motions).
+    pub fn attack_triggers(&self) -> Vec<(i16, i16)> {
+        let mut out = self.weapon.as_ref().map(Self::live).unwrap_or_default();
+        out.extend(Self::live(&self.body));
+        out
     }
 
     /// The world-space attack volumes of the live windows: capsules (a, b, radius) of the attack
@@ -666,24 +676,23 @@ impl Sora {
     pub fn attack_volumes(&self) -> Vec<Volume> {
         let body_m = self.body_matrix();
         let mut out = Vec::new();
-        for (atkp, group) in self.attack_triggers() {
-            let mut add = |rig: &Rig, pose: &[Mat4], root: Mat4| {
-                for s in rig.model.shapes.iter().filter(|s| s.kind == kh2_model::collision::kind::ATTACK && s.group as i16 == group) {
+        let mut add = |anim: &Anim, root: Mat4| {
+            for (atkp, group) in Self::live(anim) {
+                for s in anim.rig.model.shapes.iter().filter(|s| s.kind == kh2_model::collision::kind::ATTACK && s.group as i16 == group) {
                     let m = match s.bone {
-                        Some(b) => root * pose.get(b).copied().unwrap_or(Mat4::IDENTITY),
+                        Some(b) => root * anim.pose.get(b).copied().unwrap_or(Mat4::IDENTITY),
                         None => root,
                     };
                     let a = m.transform_point3(Vec3::from(s.offset));
                     let h = if matches!(s.shape, 0 | 1) { s.height.max(0.0) } else { 0.0 };
                     out.push(Volume { a, b: a + Vec3::Y * h, r: s.radius.abs(), atkp, group });
                 }
-            };
-            if let Some(w) = &self.weapon {
-                let hand = body_m * self.body.pose.get(HAND_BONE).copied().unwrap_or(Mat4::IDENTITY);
-                add(&w.rig, &w.pose, hand);
             }
-            add(&self.body.rig, &self.body.pose, body_m);
+        };
+        if let Some(w) = &self.weapon {
+            add(w, self.weapon_matrix());
         }
+        add(&self.body, body_m);
         out
     }
 

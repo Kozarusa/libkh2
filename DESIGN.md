@@ -39,8 +39,8 @@ kh2-audio and the rest; kh2-player adds kh2-enemy and kh2-sound.
 * The included files carry kh2-rs's own unit tests, which need the rest of kh2-game-core; the shim
   crate is built with `test = false`. Those tests run in kh2-rs.
 
-Measured: no Bevy in the dependency graph, the release DLL is small (see README "Numbers"); a full
-build from scratch is about a minute instead of a Bevy build.
+Measured: no Bevy in the dependency graph (16 crates; glam is the only third-party one), the
+release DLL is about 375 KB, and a clean release build takes seconds (see README "Numbers").
 
 ### (b) Sora's state machine: re-implemented on plain structs, mirroring `sora::tick`
 
@@ -105,7 +105,7 @@ as data, none of its code or text is used): **the host moves and draws, the libr
 
 Covered: ground walk/run/turn/idle with the motion classes, jump (High Jump height when the growth
 level is set), short hop on early release, fall, landing, walking off ledges, ceilings, wall slide;
-the ground combo (A300...) and the air combo (A310...) through the attack table, with the motions'
+the ground combo (A300, A302, A304 on the USA disc) and the air combo (A330, A331, A332) through the attack table, with the motions'
 own combo/finisher windows, air attack leaps, root motion, gravity hold triggers, the landing cut;
 the guard (key 11); host-supplied target; posed skeleton and attack volumes.
 
