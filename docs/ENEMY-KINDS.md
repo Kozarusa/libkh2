@@ -8,7 +8,7 @@ attacking it. "moved" is the farthest it went from its spawn point, "motions" th
 slots it played, "unserved host calls" the calls its script made that the host does not serve.
 
 Reading the table:
-- Every kind loads and runs its own script; 52 of 56 are defeated by Sora's combo in the run.
+- Every kind loads and runs its own script; 47 of 54 are defeated by Sora's combo in the run.
 - M_EX590, M_EX760, M_EX900 move and act but were not hit in the run (they fly or keep away; a
   host that brings Sora to them can hit them).
 - M_EX850 and M_EX870 stay in one motion on a flat floor: their scripts wait for an area set-up
