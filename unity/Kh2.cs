@@ -163,6 +163,8 @@ public static class Kh2
 
     [DllImport(Lib)] public static extern int kh2_enemy_spawn(int handle, string kind, float x, float y, float z, float yaw);
     [DllImport(Lib)] public static extern int kh2_enemies_tick(int handle);
+    [DllImport(Lib)] public static extern int kh2_enemies_prune(int handle);
+    [DllImport(Lib)] public static extern int kh2_enemies_clear(int handle);
     [DllImport(Lib)] public static extern int kh2_area_spawn(int handle, string area, int program, int withDisabled);
     [DllImport(Lib)] public static extern int kh2_enemy_count(int handle);
     [DllImport(Lib)] public static extern int kh2_enemy_state(int handle, int index, out EnemyState state);

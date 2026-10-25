@@ -78,8 +78,10 @@ impl KindData {
 
 /// The enemy tables (kh2-rs `AiPrograms` plus `GameData`'s enemy rows).
 pub struct EnemyData {
-    /// By kind name and by model name.
-    pub kinds: HashMap<&'static str, Arc<KindData>>,
+    /// The kinds loaded so far, by model (round 6: on demand, `kind`), and a reader of the disc.
+    kinds: std::sync::Mutex<HashMap<&'static str, Arc<KindData>>>,
+    loader: std::sync::Mutex<Option<Disc>>,
+    objs: Vec<t::Objentry>,
     pub table: Option<kh2_bdx::HostTable>,
     pub prizes: Vec<PrizeRow>,
     pub enmp: Vec<t::Enmp>,
@@ -92,6 +94,39 @@ pub struct EnemyData {
 }
 
 impl EnemyData {
+    /// The kind by its model (`M_EX020`) or its name (`Shadow`), loaded from the disc the first
+    /// time (kh2-rs `enemy_ai::load_programs` for one kind). None when the files are missing.
+    pub fn kind(&self, name: &str) -> Option<Arc<KindData>> {
+        let kind = kh2_enemy_host::KINDS.iter().copied().find(|k| k.model == name || k.name == name)?;
+        let mut kinds = self.kinds.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(k) = kinds.get(kind.model) {
+            return Some(k.clone());
+        }
+        let mut loader = self.loader.lock().unwrap_or_else(|e| e.into_inner());
+        let disc = loader.as_mut()?;
+        let kd = Arc::new(load_kind(disc, &self.objs, kind)?);
+        kinds.insert(kind.model, kd.clone());
+        Some(kd)
+    }
+
+    /// Every kind kh2-rs has, loaded (the kinds that cannot be loaded are left out).
+    pub fn load_all(&self) -> Vec<Arc<KindData>> {
+        kh2_enemy_host::KINDS.iter().filter_map(|k| self.kind(k.model)).collect()
+    }
+
+    /// The kinds loaded now.
+    pub fn loaded(&self) -> usize {
+        self.kinds.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    /// Frees the kinds no enemy uses any more; returns how many were freed.
+    pub fn release_unused(&self) -> usize {
+        let mut kinds = self.kinds.lock().unwrap_or_else(|e| e.into_inner());
+        let before = kinds.len();
+        kinds.retain(|_, k| Arc::strong_count(k) > 1);
+        before - kinds.len()
+    }
+
     /// kh2-rs `GameData::enemy_stats`: HP per part = ceil(lvpm.HpMultiplier x enmp.Health / 100),
     /// damage caps per ten-thousand of HP, strength caps from lvpm.
     pub fn stats(&self, enmp_id: u16, world_level: i32) -> Stats {
@@ -143,8 +178,8 @@ pub fn damage(atk: &Atkp, from: &Stats, to: &Stats) -> i32 {
 }
 
 impl Disc {
-    /// kh2-rs `enemy_ai::load_programs` for every kind of `kh2_enemy_host::KINDS`, plus the tables.
-    /// Kinds whose files are missing are skipped.
+    /// The enemy tables; the kinds load on demand (`EnemyData::kind`) through a second reader of
+    /// the same disc image.
     pub fn enemies(&mut self) -> Result<EnemyData, LoadError> {
         let objs = kh2_tables::load::<t::Objentry>(&mut self.0, &t::OBJENTRY).map_err(|e| LoadError(format!("objentry: {e}")))?.rows;
         let enmp = kh2_tables::load::<t::Enmp>(&mut self.0, &t::ENMP).map_err(|e| LoadError(format!("enmp: {e}")))?.rows;
@@ -152,24 +187,24 @@ impl Disc {
         let table = self.exe().and_then(|e| kh2_bdx::HostTable::from_exe(&e));
         let prizes = self.read("00battle.bin").ok().and_then(|b| kh2_bar::parse(&b).ok().and_then(|e| e.iter().find(|x| x.tag == "przt").map(|x| parse_przt(x.data)))).unwrap_or_default();
         let player_model = objs.iter().find(|r| r.model_name == "P_EX100").map_or(1, |r| r.weapon_joint);
-        let mut kinds = HashMap::new();
-        for &kind in kh2_enemy_host::KINDS {
-            let row = objs.iter().find(|r| r.model_name == kind.model);
-            let mset = kh2_enemy_host::shared::enemy::mset_name(row.map(|r| r.animation_name.as_str()), kind.model);
-            let Ok(rig) = self.rig_named(kind.model, &mset) else { continue };
-            let mdlx = self.read(&format!("obj/{}.mdlx", kind.model)).ok();
-            let prog = mdlx.as_deref().and_then(|f| kh2_bar::parse(f).ok().and_then(|b| b.into_iter().find(|e| e.kind == 3).map(|e| e.data.to_vec()))).and_then(|e| Program::parse(&e).ok());
-            let parts = mdlx.as_deref().and_then(kh2_game_core::reaction_parts::Table::from_mdlx);
-            let paired = self.read(&format!("obj/{mset}.mset")).map(|m| kh2_enemy_host::player_reaction::paired_entries(&m)).unwrap_or_default();
-            let kd = Arc::new(KindData { kind, rig: Arc::new(rig), prog, flags124: row.is_some_and(|r| r.flags & 8 != 0), object_id: row.map_or(0, |r| r.object_id), paired, parts });
-            // By the kind's name (`Shadow`, `Soldier`, ...) and by its model (`M_EX020`).
-            kinds.insert(kind.model, kd.clone());
-            kinds.insert(kind.name, kd);
-        }
+        let loader = self.reopen().ok();
         let cmds = kh2_tables::load::<t::Cmd>(&mut self.0, &t::CMD).map(|t| t.rows.iter().map(CmdRow::from).collect()).unwrap_or_default();
         let player_parts = self.read("obj/P_EX100.mdlx").ok().and_then(|f| kh2_game_core::reaction_parts::Table::from_mdlx(&f));
-        Ok(EnemyData { kinds, table, prizes, enmp, lvpm, player_model, cmds, player_parts })
+        Ok(EnemyData { kinds: Default::default(), loader: std::sync::Mutex::new(loader), objs, table, prizes, enmp, lvpm, player_model, cmds, player_parts })
     }
+}
+
+/// kh2-rs `enemy_ai::load_programs` for one kind: its model and motion set, its script, its
+/// reaction parts and paired motions.
+fn load_kind(d: &mut Disc, objs: &[t::Objentry], kind: &'static Kind) -> Option<KindData> {
+    let row = objs.iter().find(|r| r.model_name == kind.model);
+    let mset = kh2_enemy_host::shared::enemy::mset_name(row.map(|r| r.animation_name.as_str()), kind.model);
+    let rig = d.rig_named(kind.model, &mset).ok()?;
+    let mdlx = d.read(&format!("obj/{}.mdlx", kind.model)).ok();
+    let prog = mdlx.as_deref().and_then(|f| kh2_bar::parse(f).ok().and_then(|b| b.into_iter().find(|e| e.kind == 3).map(|e| e.data.to_vec()))).and_then(|e| Program::parse(&e).ok());
+    let parts = mdlx.as_deref().and_then(kh2_game_core::reaction_parts::Table::from_mdlx);
+    let paired = d.read(&format!("obj/{mset}.mset")).map(|m| kh2_enemy_host::player_reaction::paired_entries(&m)).unwrap_or_default();
+    Some(KindData { kind, rig: Arc::new(rig), prog, flags124: row.is_some_and(|r| r.flags & 8 != 0), object_id: row.map_or(0, |r| r.object_id), paired, parts })
 }
 
 /// A capsule in world units (kh2-rs `combat::Volume`, centimetres here).
@@ -349,6 +384,14 @@ impl Enemies {
         Enemies { data, list: Vec::new(), serial: 0, next_id: 1, trace: AiTrace::default(), mail: Vec::new(), seed: 1, events: Vec::new(), sora_landed: HashSet::new(), world_level: 1, spells: Default::default(), offer: None, fake_offer: None, reactions: Vec::new(), uses: HashMap::new() }
     }
 
+    /// Drops the enemies that are gone (`removed`) and frees the kinds no enemy uses any more.
+    /// Returns (enemies dropped, kinds freed).
+    pub fn prune(&mut self) -> (usize, usize) {
+        let before = self.list.len();
+        self.list.retain(|e| !e.removed);
+        (before - self.list.len(), self.data.release_unused())
+    }
+
     /// kh2-rs `enemy::spawn_enemy` + `enemy_ai::ai_attach`: the kind by its name (`M_EX020` Shadow,
     /// `M_EX010` Soldier, `M_EX990` Dusk, ...) at `at`, facing `yaw`. Returns its id.
     pub fn spawn(&mut self, kind: &str, at: Vec3, yaw: f32, world: &World) -> Option<u32> {
@@ -357,7 +400,7 @@ impl Enemies {
 
     /// `spawn` with the spawn record's kind and parameters (an area's battle group, `area::AreaEnemy`).
     pub fn spawn_with(&mut self, kind: &str, at: Vec3, yaw: f32, world: &World, spawn_kind: i32, spawn_params: Option<[i32; 2]>) -> Option<u32> {
-        let k = self.data.kinds.get(kind)?.clone();
+        let k = self.data.kind(kind)?;
         let stats = self.data.stats(k.kind.enmp, self.world_level);
         self.serial += 1;
         let serial = self.serial;

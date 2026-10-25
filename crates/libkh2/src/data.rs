@@ -168,11 +168,17 @@ fn err<E: std::fmt::Display>(what: &str) -> impl FnOnce(E) -> LoadError + '_ {
 }
 
 /// The opened disc.
-pub struct Disc(pub kh2_archive::Archive);
+/// The disc image (its archive) and the path it was opened from (for a second reader).
+pub struct Disc(pub kh2_archive::Archive, pub std::path::PathBuf);
 
 impl Disc {
     pub fn open(iso: &Path) -> Result<Disc, LoadError> {
-        kh2_archive::Archive::open(iso).map(Disc).map_err(err("opening the disc"))
+        kh2_archive::Archive::open(iso).map(|a| Disc(a, iso.to_path_buf())).map_err(err("opening the disc"))
+    }
+
+    /// A second reader of the same image.
+    pub fn reopen(&self) -> Result<Disc, LoadError> {
+        Disc::open(&self.1)
     }
 
     pub fn read(&mut self, name: &str) -> Result<Vec<u8>, LoadError> {

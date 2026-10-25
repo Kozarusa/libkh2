@@ -53,7 +53,7 @@ fn main() {
     let data = Arc::new(d.enemies().expect("enemies"));
     let party = d.party().expect("party");
     let loaded = LIVE.load(Ordering::Relaxed);
-    println!("load {:.2} s; heap: Sora {:.1} MiB, all enemy kinds and the party {:.1} MiB more, {:.1} MiB in all", t0.elapsed().as_secs_f64(), mib(after_sora - base), mib(loaded - after_sora), mib(loaded - base));
+    println!("load {:.2} s; heap: Sora {:.1} MiB, the enemy tables (kinds load on demand) and the party {:.1} MiB more, {:.1} MiB in all", t0.elapsed().as_secs_f64(), mib(after_sora - base), mib(loaded - after_sora), mib(loaded - base));
     let s = 6000.0;
     let t = |v| Surface { v, flags: 1, ..Default::default() };
     let w = world_from_surfaces(&[t([[-s, 0.0, -s], [-s, 0.0, s], [s, 0.0, s]]), t([[-s, 0.0, -s], [s, 0.0, s], [s, 0.0, -s]])]);
@@ -92,4 +92,7 @@ fn main() {
         let tps = ticks as f64 / secs;
         println!("| {n} | {tps:.0} | {:.3} | {:.0} | {:.1} |", 1000.0 / tps, tps / 60.0, mib(PEAK.load(Ordering::Relaxed) - base));
     }
+    let kinds = data.loaded();
+    let freed = data.release_unused();
+    println!("after the runs: {kinds} kinds were loaded, {freed} freed; heap {:.1} MiB", mib(LIVE.load(Ordering::Relaxed) - base));
 }

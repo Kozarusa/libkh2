@@ -670,10 +670,10 @@ fn twilight_town_enemies_run_their_scripts_fight_and_die() {
     let Some(mut d) = disc() else { return };
     let game = Arc::new(d.game().expect("Sora loads"));
     let data = Arc::new(d.enemies().expect("enemy data"));
-    eprintln!("{} enemy kinds loaded", data.kinds.len());
+    eprintln!("{} enemy kinds loadable", data.load_all().len());
     let w = floor();
     for kind in ["M_EX020", "M_EX010", "M_EX990"] {
-        let k = data.kinds.get(kind).expect(kind);
+        let k = data.kind(kind).expect(kind);
         let mut s = standing(&game, &w);
         s.max_hp = 999;
         s.hp = 999;
@@ -811,7 +811,7 @@ fn a_reaction_command_is_offered_accepted_and_delivered() {
     let data = Arc::new(d.enemies().expect("enemy data"));
     let w = floor();
     // The motions of the kinds the library spawns offer nothing (as kh2-rs's scan found).
-    let offering: usize = data.kinds.values().filter_map(|k| (0..k.rig.mset.slots.len()).filter_map(|s| k.rig.mset.get(s)).map(|s| s.triggers.ranges.iter().filter(|r| r.id == 20).count()).sum::<usize>().checked_sub(0)).sum();
+    let offering: usize = data.load_all().iter().filter_map(|k| (0..k.rig.mset.slots.len()).filter_map(|s| k.rig.mset.get(s)).map(|s| s.triggers.ranges.iter().filter(|r| r.id == 20).count()).sum::<usize>().checked_sub(0)).sum();
     eprintln!("{} cmd rows; trigger 20 ranges in the loaded kinds: {offering}", data.cmds.len());
     // A generic reaction row (Execute equal to its id, a DistRange, a use counter).
     for c in data.cmds.iter().filter(|c| c.reaction_count != 0).take(8) {
@@ -1045,8 +1045,8 @@ fn a_soldier_offers_its_reaction_command_and_its_script_moves_sora() {
     let game = Arc::new(d.game().expect("Sora loads"));
     let data = Arc::new(d.enemies().expect("enemy data"));
     let w = floor();
-    let with_parts: Vec<&str> = data.kinds.values().filter(|k| k.parts.as_ref().is_some_and(|t| t.reaction_parts().next().is_some())).map(|k| k.kind.model).collect();
-    let with_paired: Vec<&str> = data.kinds.values().filter(|k| !k.paired.is_empty()).map(|k| k.kind.model).collect();
+    let with_parts: Vec<&str> = data.load_all().iter().filter(|k| k.parts.as_ref().is_some_and(|t| t.reaction_parts().next().is_some())).map(|k| k.kind.model).collect();
+    let with_paired: Vec<&str> = data.load_all().iter().filter(|k| !k.paired.is_empty()).map(|k| k.kind.model).collect();
     eprintln!("kinds with reaction parts {with_parts:?}; with paired motions {with_paired:?}; Sora's body part {}", data.player_parts.is_some());
     let mut s = standing(&game, &w);
     s.max_hp = 999;
@@ -1142,7 +1142,7 @@ fn every_enemy_kind_runs() {
     let mut table = Vec::new();
     let mut dead = Vec::new();
     for model in models {
-        let Some(k) = data.kinds.get(model) else {
+        let Some(k) = data.kind(model) else {
             table.push(format!("| {model} | - | not loadable | | | | | |"));
             continue;
         };

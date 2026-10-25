@@ -902,6 +902,22 @@ int32_t kh2_area_spawn(int32_t handle, const char *area, int32_t program, int32_
 
 Spawns the enemies of an area's battle program (`program` = the btl program id, -1 every program; kh2-rs area_groups: the area file's spawn records with their spawn kinds and parameters). Records waiting for a signal are skipped unless with_disabled. Returns the number spawned (at most 256 enemies per Sora). The areas' signals, waves and triggers are not run: the host decides.
 
+### `kh2_enemies_prune`
+
+```c
+int32_t kh2_enemies_prune(int32_t handle);
+```
+
+Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load on demand at their first spawn). Returns the number dropped.
+
+### `kh2_enemies_clear`
+
+```c
+int32_t kh2_enemies_clear(int32_t handle);
+```
+
+Removes every enemy of Sora `handle` and frees the kinds no other enemies use.
+
 ### `kh2_enemies_tick`
 
 ```c

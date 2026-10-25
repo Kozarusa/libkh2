@@ -403,6 +403,11 @@ KH2_API int32_t kh2_enemy_spawn(int32_t handle, const char *kind, float x, float
  * Records waiting for a signal are skipped unless with_disabled. Returns the number spawned (at most
  * 256 enemies per Sora). The areas' signals, waves and triggers are not run: the host decides. */
 KH2_API int32_t kh2_area_spawn(int32_t handle, const char *area, int32_t program, int32_t with_disabled);
+/* Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load
+ * on demand at their first spawn). Returns the number dropped. */
+KH2_API int32_t kh2_enemies_prune(int32_t handle);
+/* Removes every enemy of Sora `handle` and frees the kinds no other enemies use. */
+KH2_API int32_t kh2_enemies_clear(int32_t handle);
 /* One tick of the enemies (after kh2_tick): scripts, movement, reactions, hits both ways. */
 KH2_API int32_t kh2_enemies_tick(int32_t handle);
 KH2_API int32_t kh2_enemy_count(int32_t handle);

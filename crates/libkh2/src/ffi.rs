@@ -2168,3 +2168,23 @@ pub unsafe extern "C" fn kh2_area_spawn(handle: i32, area: *const c_char, progra
         n
     })
 }
+
+/// Drops Sora `handle`'s enemies that are gone (defeated and faded, or fallen out; their indices
+/// shift) and frees the enemy kinds no enemy uses any more (models, motions, scripts). Returns the
+/// number of enemies dropped.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_enemies_prune(handle: i32) -> i32 {
+    with(-1, |l| match l.enemies.get_mut(&handle) {
+        Some(en) => en.prune().0 as i32,
+        None => 0,
+    })
+}
+
+/// Removes every enemy of Sora `handle` and frees the kinds no other Sora's enemies use.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_enemies_clear(handle: i32) -> i32 {
+    with(-1, |l| {
+        l.enemies.remove(&handle);
+        l.enemy_data.as_ref().map_or(0, |d| d.release_unused() as i32)
+    })
+}
