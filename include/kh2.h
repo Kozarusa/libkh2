@@ -259,7 +259,9 @@ KH2_API int32_t kh2_motion_info(int32_t handle, int32_t which, int32_t slot, kh2
 /* Bone matrices of `slot` at `frame` relative to the motion's root; root = (x, y, z, yaw) or NULL. */
 KH2_API int32_t kh2_sample_motion(int32_t handle, int32_t which, int32_t slot, float frame, float *out, uint32_t max_bones, float *root);
 
-/* ---- Party members (kh2-rs party_rules: field following only) ---- */
+/* ---- Party members (kh2-rs party_rules + party_battle: field follow; with spawned enemies
+ * kh2_party_tick runs the battle subset: target choice, action records, attack motions, weapons, damage
+ * reported as kh2_enemy_event hits. No member scripts, limits, Cure or items.) ---- */
 typedef struct kh2_member_state {
     float pos[3];
     float yaw;

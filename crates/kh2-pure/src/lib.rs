@@ -62,3 +62,15 @@ pub mod abilities {
 #[path = "../../../../kh2-rs/crates/kh2-game-core/src/party_rules.rs"]
 #[allow(dead_code)]
 pub mod party_rules;
+
+/// kh2-rs `party_battle` (target choice, action records and choice, approach), from its source by `build.rs`.
+#[allow(dead_code, clippy::all)]
+pub mod party_battle {
+    include!(concat!(env!("OUT_DIR"), "/party_battle.rs"));
+}
+
+/// kh2-rs `rng` (the game's generator and the party members' `getRand` / roll), from its source by `build.rs`.
+#[allow(dead_code, clippy::all)]
+pub mod rng {
+    include!(concat!(env!("OUT_DIR"), "/rng.rs"));
+}

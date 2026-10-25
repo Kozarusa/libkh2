@@ -250,6 +250,7 @@ pub struct Spells {
     memory: HashMap<u32, HitMemory>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn new_attack(attacks: &mut Vec<SpellAttack>, next: &mut u32, atkp: &[Atkp], id: u16, kind: u32, radius: f32, height: f32, slot: u8) -> Option<usize> {
     let base_row = rules::attack_row(atkp, id, kind)?;
     *next += 1;

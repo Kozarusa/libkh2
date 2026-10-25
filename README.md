@@ -171,7 +171,11 @@ drive, level and EXP are in `kh2_state` (disc test `items_heal_through_the_use_m
 
 Party members (`kh2_party_add`, `kh2_party_tick`): Donald and Goofy follow Sora in the field with
 kh2-rs's `party_rules` (follow points, follow step with the AI class's thresholds, steer), their
-own `prty` speeds and idle/walk/run motions; no battle AI or attacks (disc test `donald_and_goofy_follow_sora`).
+own `prty` speeds and idle/walk/run motions (disc test `donald_and_goofy_follow_sora`). With enemies spawned
+they fight: kh2-rs `party_battle` (target choice of style 0, the AI class records from the executable,
+`choose`, feasibility, approach step, slot remap), attack motions with their weapons (staff 75,
+shield 49) and damage on enemy hurt shapes, reported as enemy `Hit` events (disc test
+`donald_and_goofy_fight_an_enemy`). decided: no member scripts, limits, Cure, items; members are not hit.
 
 Enemies (`kh2_enemy_spawn`, `kh2_enemies_tick`): any kind of kh2-rs's list (Shadow, Soldier, Dusk and
 50 more) under its own BDX script through kh2-rs's interpreter and its script host compiled in

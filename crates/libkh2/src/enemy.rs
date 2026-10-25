@@ -668,7 +668,7 @@ impl Enemies {
     }
 
     /// kh2-rs `enemy::receive_hits` for one hit: HP, then the victim reaction of the row.
-    fn receive(e: &mut Enemy, atk: &Atkp, dmg: i32, dir: Vec3, reaction: &crate::data::Reaction) {
+    pub(crate) fn receive(e: &mut Enemy, atk: &Atkp, dmg: i32, dir: Vec3, reaction: &crate::data::Reaction) {
         let useless = rules::is_ineffective(e.stats.weakness[(atk.element as usize).min(6)], e.stats.weakness[6]);
         kh2_enemy_host::enemy_obj::note_hit_row(atk.id as i16, atk.enemy_reaction, atk.element);
         e.hp = (e.hp - dmg).max(e.min_hp);

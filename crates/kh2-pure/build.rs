@@ -96,7 +96,38 @@ fn items() {
     std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("items.rs"), out).unwrap();
 }
 
+/// kh2-rs `kh2-party/src/party_battle.rs` (the party members' battle rules) without its one line that
+/// re-exports two names of a Bevy module (`shared::party`), which nothing in the file uses.
+fn party_battle() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-party/src/party_battle.rs");
+    println!("cargo:rerun-if-changed={}", src.display());
+    let text = std::fs::read_to_string(&src).expect("party_battle.rs");
+    let line = "pub use crate::shared::party::{hp_change, HpChange};";
+    assert!(text.contains(line), "party_battle.rs changed its re-export line");
+    let text = text.replace(line, "").replace("//!", "//");
+    std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("party_battle.rs"), text).unwrap();
+}
+
+/// kh2-rs `kh2-game-core/src/rng.rs` (the game's generator, shared by the party members' choices)
+/// with `word_of`, which reads a state file through kh2-rs's JSON reader, answering nothing (no
+/// state file in libkh2: the generator starts from the game's boot seed).
+fn rng() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-game-core/src/rng.rs");
+    println!("cargo:rerun-if-changed={}", src.display());
+    let mut text = std::fs::read_to_string(&src).expect("rng.rs");
+    let sig = "fn word_of(text: &str) -> Option<u64> {";
+    let a = text.find(sig).expect("rng.rs word_of");
+    let end = close(text.as_bytes(), a + sig.len());
+    text.replace_range(a..end, "fn word_of(_text: &str) -> Option<u64> {
+    None
+}");
+    let text = text.replace("//!", "//");
+    std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("rng.rs"), text).unwrap();
+}
+
 fn main() {
+    rng();
+    party_battle();
     items();
     abilities();
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-game-core/src/shared/drive.rs");

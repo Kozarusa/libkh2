@@ -2,7 +2,7 @@
 
 1. [x] Enemies under their BDX scripts.
 2. [x] Spell flight.
-3. [ ] Party attacks and AI.
+3. [x] Party attacks and AI (battle subset: style 0 target, action records, attack motions, damage; no scripts/limits/Cure).
 4. [ ] Limits / reaction command offers.
 5. [ ] Level-up rewards, state save/load, replay with enemies.
 6. [ ] Viewer with enemies and party fighting.

@@ -763,3 +763,40 @@ fn spells_fly_and_hit_enemies() {
         assert!(hits.iter().any(|h| h.0 == want), "slot {slot}: atkp {want} hits");
     }
 }
+
+#[test]
+fn donald_and_goofy_fight_an_enemy() {
+    use kh2::enemy::{EnemyEvent, Enemies};
+    use kh2::party::{tick_battle, Follower};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let party = d.party().expect("party data");
+    let w = floor();
+    for (k, m) in party.members.iter().enumerate() {
+        eprintln!("member {k} {}: class {}, weapon {}, records {:?}", m.model, m.class, m.weapon.is_some(), party.ai.get(&m.class).map(|a| a.records.len()));
+    }
+    let mut s = standing(&game, &w);
+    s.max_hp = 999;
+    s.hp = 999;
+    let mut en = Enemies::new(data.clone());
+    en.spawn("M_EX990", Vec3::new(0.0, 0.0, 500.0), std::f32::consts::PI, &w);
+    for e in en.list.iter_mut() {
+        e.rt = None;
+        e.hp = 100000;
+    }
+    let mut fs = vec![Follower::new(&party, 0, Vec3::new(-100.0, 0.0, -50.0)), Follower::new(&party, 1, Vec3::new(100.0, 0.0, -50.0))];
+    let mut hits = Vec::new();
+    for _ in 0..1200 {
+        s.tick(&w, &Input::default());
+        tick_battle(&party, &mut fs, s.motor.pos, s.motor.yaw, &w, game.params.sstm.fall_max, true, Some((&mut en, &game.params)));
+        en.tick(&mut s, &w, game.params.sstm.fall_max);
+        for ev in en.events.drain(..) {
+            if let EnemyEvent::Hit { atkp, damage, .. } = ev {
+                hits.push((atkp, damage));
+            }
+        }
+    }
+    eprintln!("party hits {hits:?}; members at {:?}", fs.iter().map(|f| f.motor.pos).collect::<Vec<_>>());
+    assert!(!hits.is_empty(), "the members hit the enemy");
+}

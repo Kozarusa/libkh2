@@ -1109,9 +1109,11 @@ pub extern "C" fn kh2_party_add(handle: i32, member: i32) -> i32 {
 pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
     with(-1, |l| {
         let (Some(p), Some(s)) = (l.party.clone(), usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref)) else { return -1 };
-        let (pos, yaw, fall, pose) = (s.motor.pos, s.motor.yaw, s.game.params.sstm.fall_max, s.pose);
+        let (pos, yaw, fall, pose, params) = (s.motor.pos, s.motor.yaw, s.game.params.sstm.fall_max, s.pose, s.game.params.clone());
         if let Some(list) = l.followers.get_mut(&handle) {
-            crate::party::tick(&p, list, pos, yaw, &l.world, fall, pose);
+            // With spawned enemies the members fight (the battle subset of `party.rs`).
+            let en = l.enemies.get_mut(&handle).map(|e| (e, &params));
+            crate::party::tick_battle(&p, list, pos, yaw, &l.world, fall, pose, en);
         }
         0
     })
