@@ -1862,3 +1862,69 @@ fn the_struggle_glue_knocks_out_what_kh2_rs_orbs_knocked_out_says() {
     }
     assert_eq!(checked, 20);
 }
+
+/// Seifer's bat hits Sora (round 8): his script swings (atkp 1043 / 1298 / 1535 on his own attack
+/// shapes, group 1 / 2) when Sora does not keep him in hit reactions; every hit on Sora knocks
+/// Sora's orbs out. (The round-7 test pressed attack every 4 ticks: Seifer never left his
+/// reactions, so he never swung.)
+#[test]
+fn seifers_bat_hits_sora_and_knocks_his_orbs_out() {
+    use kh2::enemy::{EnemyEvent, Enemies};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let w = World::from_coct(&d.coct("tt04").expect("collision"));
+    let mut en = Enemies::new(data.clone());
+    let mut run = kh2::area::AreaRun::set_up(&mut d, "tt04", 184, &mut en, &w);
+    let e0 = en.list[0].pos();
+    let mut s = Sora::new(game.clone(), e0 + Vec3::new(0.0, 0.0, -200.0));
+    let mut hits = std::collections::BTreeMap::new();
+    for t in 0..3600 {
+        s.hp = 999;
+        let ep = en.list[0].pos();
+        let to = ep - s.motor.pos;
+        let stick = if to.length() > 150.0 { [to.x / to.length(), to.z / to.length()] } else { [0.0, 0.0] };
+        s.target = Some(kh2::sora::Target { pos: ep + Vec3::Y * 80.0, radius: 40.0, half_height: 80.0 });
+        s.tick(&w, &Input { stick, cam_look: [0.0, 1.0], attack: t % 90 == 0, ..Default::default() });
+        en.tick(&mut s, &w, game.params.sstm.fall_max);
+        for ev in en.events.drain(..) {
+            if let EnemyEvent::HitSora { atkp, .. } = ev {
+                *hits.entry(atkp).or_insert(0) += 1;
+            }
+        }
+        run.tick_mission(&s, &mut en, &w);
+    }
+    let m = run.mission.as_ref().expect("mission");
+    eprintln!("Seifer's hits on Sora by atkp {hits:?}, counters {:?}", m.counters());
+    assert!(hits.values().sum::<i32>() > 0, "the bat reaches Sora");
+    assert!(m.counters()[0] < 100, "Sora lost orbs");
+}
+
+/// A hit the opponent took before the enemies' tick (a member's or a summon's, in
+/// `kh2_party_tick` / the summon tick) still knocks its orbs out at the mission frame.
+#[test]
+fn hits_from_members_before_the_enemy_tick_knock_orbs_out() {
+    use kh2::area::AreaRun;
+    use kh2::enemy::Enemies;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let w = World::from_coct(&d.coct("tt04").expect("collision"));
+    let mut en = Enemies::new(data.clone());
+    let mut run = AreaRun::set_up(&mut d, "tt04", 184, &mut en, &w);
+    let mut s = Sora::new(game.clone(), en.list[0].pos() + Vec3::new(0.0, 0.0, -2000.0));
+    for _ in 0..400 {
+        s.tick(&w, &Input::default());
+        en.tick(&mut s, &w, game.params.sstm.fall_max);
+        run.tick_mission(&s, &mut en, &w);
+    }
+    let before = run.mission.as_ref().unwrap().counters()[1];
+    // A class-0 reaction (3 orbs) landed by a member's hit, then the library's enemy tick.
+    let r = (0u8..40).find(|&r| kh2_enemy_host::struggle::orbs_knocked_out(r, 100) == 3).expect("a 3-orb reaction");
+    en.list[0].struck.push(r);
+    s.tick(&w, &Input::default());
+    en.tick(&mut s, &w, game.params.sstm.fall_max);
+    run.tick_mission(&s, &mut en, &w);
+    let after = run.mission.as_ref().unwrap().counters()[1];
+    assert_eq!(before - after, 3, "{before} -> {after}");
+}

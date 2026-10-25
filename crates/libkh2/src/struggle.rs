@@ -108,8 +108,9 @@ impl Struggle {
             for &r in &sora.reactions_taken {
                 st::knock_out(a, c, true, r, flip(sora.motor.pos + Vec3::Y * CENTRE));
             }
-            for e in &en.list {
-                for &r in &e.struck {
+            // Every hit since the last mission frame: Sora's, the members' and the summons' (taken here).
+            for e in &mut en.list {
+                for r in std::mem::take(&mut e.struck) {
                     st::knock_out(a, c, false, r, flip(e.pos() + Vec3::Y * CENTRE));
                 }
             }

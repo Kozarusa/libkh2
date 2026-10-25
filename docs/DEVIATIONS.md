@@ -54,11 +54,9 @@ Enemies and reaction commands
   M_EX850 waits for such a set-up and stays idle (see `ENEMY-KINDS.md`).
 - The mission manager (kh2-rs struggle.rs, `kh2_mission_state`) starts with an area run whose
   program has a mission command. Approximations: an object's centre is its feet + 80 cm (no body
-  shape points); only the hits taken inside `kh2_enemies_tick` knock orbs out (a member's or a
-  summon's hits in their own tick calls are not counted); the result menu (record 0x1a), the game
+  shape points); the result menu (record 0x1a), the game
   over, the layout events' pictures and the bit-3 collect latch are reported, not run; the sounds
-  are handed over by number. The opponents' bat attacks never hit Sora: kh2-rs has no Struggle
-  weapon objects, so the opponents only lose orbs (measured: `the_struggle_mission_runs_its_clock_orbs_and_result`).
+  are handed over by number. Every hit counts for the orbs, Sora's, the members' and the summons' (`hits_from_members_before_the_enemy_tick_knock_orbs_out`); the opponents' bats hit Sora with their own attack shapes when he leaves them room to swing (`seifers_bat_hits_sora_and_knocks_his_orbs_out`).
 - No camera: every enemy counts as on screen. No clashes. Prize drops are reported as counts.
 - A defeat by a party member pays no experience (the event carries the values).
 - Talks are the host's to start (`kh2_talk_begin`: the library does the player's side, the camera and the lock; the dialogue, the target's motion and its facing after the talk are the host's). A talk record on a bone is read through the bones the host gives, else the rest pose (kh2-rs reads the last pose).
@@ -68,3 +66,11 @@ Enemies and reaction commands
 Inputs the original cannot get
 - Positions must be finite and within 1e7 units; sticks are held to -1..1; maximum HP / MP to
   9999; a damage query to 0..999,999 (fuzz-driven bounds, beyond anything the game holds).
+
+Limits deal no damage (measured round 8, a dead end without new kh2-rs source): a limit file
+(`limit/us/<name>.bar`) holds the limit's script (type 3), the `LIMI` set (type 0x14: a BAR of
+per-participant motion sets, the A9xx sub-motions libkh2 already plays, whose motions carry no
+attack triggers), the effect file (type 18, PAX), its sounds, gauge pictures and voice. The scripts
+call only motions (host 2.47), effects (2.50) and PAX elements (2.59) and create no object (no host
+1.0). So the damage can only come from the PAX elements' own hit data, which kh2-rs does not decode
+(no PAX hit volumes, no kind-5000 object), and libkh2 loads no effect files.

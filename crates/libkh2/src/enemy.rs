@@ -328,7 +328,7 @@ pub struct Enemy {
     pub in_air: bool,
     pub hits: Vec<(bool, u8, i16)>,
     /// The effective reactions of the hits this enemy took this tick (the Struggle's orbs read them,
-    /// kh2-rs `enemy_orb_loss`). Cleared at the start of `Enemies::tick`.
+    /// kh2-rs `enemy_orb_loss`), whoever hit it (Sora, a member, a summon); the mission takes them, at most 64 wait.
     pub struck: Vec<u8>,
     /// Hits landed by this enemy's attacks: (trigger start) of the motion slot that landed them.
     pub landed: HashSet<(Option<usize>, i16)>,
@@ -535,8 +535,10 @@ impl Enemies {
     /// `receive_hits`), against Sora: his attacks hit them, theirs hit him.
     pub fn tick(&mut self, sora: &mut Sora, world: &World, fall_max: f32) {
         self.trace.tick += 1;
+        // The mission manager takes the reactions (Struggle::tick); without one only the last few stay.
         for e in &mut self.list {
-            e.struck.clear();
+            let n = e.struck.len().saturating_sub(64);
+            e.struck.drain(..n);
         }
         self.spawn_created(world);
         self.apply_remote();

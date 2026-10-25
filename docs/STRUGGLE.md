@@ -35,6 +35,7 @@ The disc test `the_struggle_mission_runs_its_clock_orbs_and_result` plays the th
 100 orbs are knocked out of the opponent, the 60 s clock runs out (end "time"), the script sends 159
 (Sora has more orbs: 144 to 166 against 0).
 
-Not done: the opponents' bat attacks still never hit Sora (kh2-rs has no Struggle weapon objects),
-the result menu (record 0x1a) and the game over are reported (`menu`, `game_over`), not run; the
+The opponents swing their bats under their own scripts and hit Sora with their own attack shapes (atkp 1043 / 1298 / 1535 for Seifer) whenever Sora does not keep them in hit reactions: `seifers_bat_hits_sora_and_knocks_his_orbs_out` (27 hits in 60 s, Sora's orbs 100 -> 72). The round-7 test pressed attack every 4 ticks, which kept Seifer reacting, so he never swung. Members' and summons' hits knock orbs out as Sora's do.
+
+Not done: the result menu (record 0x1a) and the game over are reported (`menu`, `game_over`), not run; the
 layout events' pictures are not drawn (their timing is kept). See `DEVIATIONS.md`.
