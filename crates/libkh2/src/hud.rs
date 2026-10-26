@@ -18,9 +18,9 @@
 use kh2_enemy_host::hud_gauge::{self as hg, dg, g, DriveGauge, DriveMode, DriveTables, PanelEvent, PanelState};
 use kh2_enemy_host::hud_target as ht;
 use kh2_enemy_host::hud_menu::{self as hm, CommandMenu, Label, MenuEntry, MenuPage, Reaction, Tables};
-use kh2_image::font::{Atlas, Font, FontSet};
+use kh2_image::font::{Font, FontSet};
 use kh2_image::seqd::{Ext, Player, Quad, Seqd};
-use kh2_image::text::{self, ColorTable, Kind, Messages, Style};
+use kh2_image::text::{self, ColorTable, Messages, Style};
 use kh2_tables::tables::Cmd;
 
 use crate::data::Disc;
@@ -146,8 +146,9 @@ struct TextSys {
     messages: Option<Messages>,
     world_messages: Option<Messages>,
     colors: Option<ColorTable>,
-    /// Texture by (atlas, palette row), and the icon atlas.
-    pages: Vec<((u8, usize), u32)>,
+    /// Texture by atlas key (kh2fm-rs `AtlasKey`: companion, atlas, plane, palette row; Final Mix's
+    /// Japanese atlases have two planes), and the icon atlas.
+    pages: Vec<(kh2_image::font::AtlasKey, u32)>,
     icons: u32,
     world: usize,
 }
@@ -165,18 +166,13 @@ impl TextSys {
         let l = text::layout(&self.set, self.colors.as_ref(), &label.tokens, &style, at);
         let mut all = text::shadows(&l.quads, font.mode, label.style.color[3]);
         all.extend(l.quads.iter().copied());
-        let key = |a: Atlas| match a {
-            Atlas::Sys => 0u8,
-            Atlas::Evt => 1,
-        };
         all.iter()
             .filter_map(|q| {
-                let tex = match q.kind {
-                    Kind::Glyph(page) => self.pages.iter().find(|(k, _)| *k == (key(font.atlas), font.clut_row() + page as usize))?.1,
-                    Kind::Icon => self.icons,
-                    // decided: the Final Mix disc's Japanese glyphs need the font set's Japanese companion (kh2fm-rs
-                    // `FontSet::japanese`), not loaded yet: they are not drawn.
-                    Kind::Japanese(_) => return None,
+                // kh2fm-rs `hud_text::TextSys::quads`: the glyph's page picks the plane (pages 0 / 1 plane 0, 2 / 3
+                // plane 1) and the palette row; a Japanese-marked glyph the companion set's atlas.
+                let tex = match kh2_image::font::AtlasKey::of(q.kind, label.style.font) {
+                    Some(k) => self.pages.iter().find(|(x, _)| *x == k)?.1,
+                    None => self.icons,
                 };
                 let [x0, y0, x1, y1] = q.pos;
                 let [u0, v0, u1, v1] = q.uv;
@@ -399,8 +395,10 @@ impl Hud {
             hud.menu_file = Some(hud.files.len() - 1);
         }
         // Fonts and messages (kh2-rs `TextSys::load`).
+        // kh2fm-rs `hud_text::load_fonts` without the English import (one disc): the Final Mix disc's
+        // `msg/jp` files (read through the `msg/us` names) are the Japanese font set with two planes.
         if let (Ok(info), Ok(image)) = (disc.read("msg/us/fontinfo.bar"), disc.read("msg/us/fontimage.bar"))
-            && let Some(set) = FontSet::parse(&info, &image)
+            && let Some(set) = FontSet::parse(&info, &image).map(|s| s.with_script(kh2_image::font::Script::Japanese))
         {
             let messages = disc.read("msg/us/sys.bar").ok().and_then(|b| Messages::from_bar(&b));
             let world_messages = disc.read(&format!("msg/us/{world}.bar")).ok().and_then(|b| Messages::from_bar(&b));
@@ -409,18 +407,9 @@ impl Hud {
                 ColorTable::parse(e.iter().find(|e| e.tag == "ftst")?.data)
             });
             let mut pages = Vec::new();
-            for id in 0..6 {
-                let f = Font::get(id);
-                let key = (if matches!(f.atlas, Atlas::Sys) { 0u8 } else { 1 }, f.clut_row());
-                if pages.iter().any(|(k, _)| *k == key) {
-                    continue;
-                }
-                for page in 0..2 {
-                    let k = (key.0, key.1 + page);
-                    let (w, h, rgba) = set.atlas_rgba_ps2(f.atlas, key.1 + page);
-                    hud.textures.push(Texture { width: w as u32, height: h as u32, rgba });
-                    pages.push((k, (hud.textures.len() - 1) as u32));
-                }
+            for (k, (w, h, rgba)) in set.textures() {
+                hud.textures.push(Texture { width: w as u32, height: h as u32, rgba });
+                pages.push((k, (hud.textures.len() - 1) as u32));
             }
             let (w, h, rgba) = set.icons_rgba_ps2();
             hud.textures.push(Texture { width: w as u32, height: h as u32, rgba });
