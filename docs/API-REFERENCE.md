@@ -39,8 +39,8 @@ libkh2: Sora's controller from Kingdom Hearts II as an embeddable library (libsm
 
 The version this header describes; kh2_version() returns the library's (same packing).
 
-- `KH2_VERSION_MAJOR` = `1`
-- `KH2_VERSION_MINOR` = `2`
+- `KH2_VERSION_MAJOR` = `2`
+- `KH2_VERSION_MINOR` = `0`
 - `KH2_VERSION_PATCH` = `0`
 - `KH2_VERSION` = `((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)`
 
@@ -322,6 +322,14 @@ int32_t kh2_set_growth(int32_t handle, uint8_t high_jump, uint8_t quick_run, uin
 
 Growth abilities 0..5 (fmab rows): High Jump, Quick Run (Square while moving), Aerial Dodge (jump in the air), Glide (hold Square while falling).
 
+### `kh2_set_dodge_roll`
+
+```c
+int32_t kh2_set_dodge_roll(int32_t handle, uint8_t level);
+```
+
+Final Mix's Dodge Roll level (0..5, growth group 4): moving + a Square tap rolls (motion A180, AirSlideStarTime of invincibility); held past 10 ticks it becomes the Quick Run when learned.
+
 ### `kh2_set_pose_enabled`
 
 ```c
@@ -573,7 +581,7 @@ kh2-rs shared::drive::rules
 int32_t kh2_drive_setup(int32_t handle, uint8_t points, uint8_t max_points, uint32_t owned_mask, const uint8_t *levels);
 ```
 
-Gauge points / maximum, owned forms (bit n = form n, 1..4), form levels by form id (6 bytes, may be NULL).
+Gauge points / maximum, owned forms (bit n = form n; Final Mix: 1 Valor, 2 Wisdom, 3 Limit, 4 Master, 5 Final, 6 Anti is never owned), form levels by form id (7 bytes, may be NULL).
 
 ### `kh2_drive_gain`
 

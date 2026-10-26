@@ -17,6 +17,30 @@ out or simplifies some parts of its own. Both lists are here. kh2-rs keeps its o
 - Render-side items (camera field of view, lighting, effects) are not the library's: it draws
   nothing.
 
+## Final Mix against the USA branch (2.0.0)
+
+`main` reads the Final Mix disc (`SLPM_666.75`) through kh2fm-rs; the `usa` branch (tag
+`usa-final`) is the USA build and gets no further work. What differs:
+
+- Forms: Final Mix numbering (Valor 1, Wisdom 2, Limit 3, Master 4, Final 5, Anti 6): seven form
+  slots in `kh2_drive_setup` (7 level bytes, owned bits 1..5) and in save records (format 4; a
+  version-3 record of the USA build does not load). Limit Form enters with its own body
+  (`W_EX010_KH1F`, one keyblade) and the Dodge Roll growth group; its own limit commands (kh2fm-rs
+  `Kh1LimitStarted`, the KH1 scripts) are not wired into `kh2_limit_*` yet.
+- Dodge Roll: `kh2_set_dodge_roll`; moving + a Square tap plays A180, a hold past 10 ticks becomes
+  the Quick Run when learned (kh2fm-rs rules; no `KH2_FM_ROLL` switch: the ability decides). The
+  invincibility is fmab `AirSlideStarTime` of the Quick Run row (0 at level 1 on the disc).
+- Ground mover: kh2fm-rs's `Motor::ground_velocity` (speed along the stick); the USA build used the
+  oracle-tested `ground_step` that kh2fm-rs does not have. The A / B against kh2fm-rs's Sora matches
+  (0.5 cm over 1080 ticks, 0.7 cm over 960 with the wall recoil).
+- Damage: libkh2 keeps kh2fm-rs's damage rule (the USA formula); the Final Mix executable's damage
+  (FM 0x1a1e1c, 1172 bytes against 648) and attacker bonuses (FM 0x1a2340) differ from it in 368 and
+  1954 of 3000 oracle cases (`tests/oracle.rs`, report only; `KH2_ORACLE_STRICT=1` fails). Not yet
+  known whether the differences are rules or the test's input layout (FM may move status fields).
+- Text: the Final Mix disc's messages are Japanese; the HUD's Japanese glyphs (`kh2_image` text kind
+  `Japanese`, the font set's Japanese companion) are not drawn yet. kh2fm-rs's English text import
+  (a USA disc copy in the user's config folder) is not used: libkh2 reads one disc.
+
 ## libkh2's own
 
 Sora

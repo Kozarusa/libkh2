@@ -1,5 +1,5 @@
 #!/bin/sh
-# Lists what changed in ../kh2-rs since the commit libkh2 was checked against (KH2RS_COMMIT), in
+# Lists what changed in ../kh2fm-rs (the Final Mix tree; the `usa` branch uses ../kh2-rs) since the commit libkh2 was checked against (KH2RS_COMMIT), in
 # the files libkh2 compiles in place and the files it transcribes. Read-only: only `git diff`.
 # Exit 1 when any of them changed. Run from the repository root.
 set -e
@@ -10,7 +10,7 @@ compiled="$compiled crates/kh2-game-core/src/shared/abilities.rs crates/kh2-part
 transcribed="crates/kh2-player/src/sora.rs crates/kh2-game-core/src/skel.rs crates/kh2-game-core/src/camera.rs crates/kh2-player/src/drive.rs crates/kh2-player/src/magic.rs crates/kh2-game-core/src/combat.rs crates/kh2-game-core/src/shared/sora.rs crates/kh2-party/src/party.rs crates/kh2-enemy/src/enemy_ai.rs crates/kh2-enemy/src/enemy.rs crates/kh2-player/src/magic.rs crates/kh2-party/src/friend_ai.rs crates/kh2-party/src/limit_visual.rs crates/kh2-party/src/summon.rs crates/kh2-enemy/src/enemy.rs crates/kh2-game-core/src/shared/struggle.rs crates/kh2-game-core/src/shared/summon.rs"
 deps="crates/kh2-bdx crates/kh2-anim crates/kh2-map crates/kh2-model crates/kh2-tables crates/kh2-archive crates/kh2-bar crates/kh2-iso crates/kh2-ps2 crates/kh2-sheets sheets"
 head=$(git -C "$kh2rs" rev-parse HEAD)
-echo "kh2-rs pinned $pinned, now $head"
+echo "kh2fm-rs pinned $pinned, now $head"
 status=0
 for group in compiled transcribed deps; do
     eval files=\$$group

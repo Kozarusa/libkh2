@@ -5,10 +5,12 @@ Sora's controller from Kingdom Hearts II as an embeddable library, in the spirit
 collision triangles and per-tick input, libkh2 runs Sora's movement and attack logic and answers
 his position, facing, state, motion and frame, the live attack windows and his posed skeleton.
 
-libkh2 ships no game data. It reads the user's own disc image (the USA PS2 release) at `kh2_init`;
+libkh2 ships no game data. It reads the user's own disc image (Kingdom Hearts II Final Mix, the
+Japanese PS2 release `SLPM_666.75`; from 2.0.0 the only disc it opens) at `kh2_init`;
 nothing from the disc is stored in this repository or compiled into the library.
 
-The movement and attack rules are [kh2-rs](../kh2-rs)'s, several of them oracle-tested against
+The movement and attack rules are kh2fm-rs's (`../kh2fm-rs`, the Final Mix copy of the kh2-rs game
+project), several of them oracle-tested against
 the original executable there; libkh2 compiles kh2-rs's pure modules in place without Bevy and adds
 a plain-struct controller, a C ABI and examples. `DESIGN.md` says exactly what is reused, what is
 new glue, and what v1 does not cover.
@@ -22,7 +24,7 @@ with `docs/FOR-HOST-AUTHORS.md` (tick order, units, collision, a C loop, common 
 ## Status and what a human must test
 
 Tested here on every change (`scripts/ci.ps1`): Windows 10, MSVC, Rust release build, .NET 9, the
-USA disc image; 53 disc tests, golden replays, fuzz, the C layout check, the binding diff, oracle
+Final Mix disc image; 55 disc tests, golden replays, fuzz, the C layout check, the binding diff, oracle
 tests against the original executable (kh2-ee), the package scan, a 10-minute soak.
 
 Not tested here, a human should run first:
@@ -53,7 +55,7 @@ All read the disc image from the argument or `KH2_ISO`. The packaged form (`scri
 
 ```
 cargo build --release -p libkh2                                   # target/release/kh2.dll
-set KH2_ISO=<path to your Kingdom Hearts II (USA) disc image>     # PowerShell: $env:KH2_ISO="..."
+set KH2_ISO=<path to your Kingdom Hearts II Final Mix disc image>     # PowerShell: $env:KH2_ISO="..."
 python examples/python/kh2_run.py                                 # Sora, Donald and Goofy vs a Soldier
 cargo run --release -p libkh2-viewer                              # a window: E spawns enemies, J attacks
 powershell -ExecutionPolicy Bypass -File scripts/package.ps1      # dist/libkh2 for a host engine
@@ -71,8 +73,17 @@ game is in `docs/DEVIATIONS.md`, speed and memory in `docs/PERFORMANCE.md`, the 
 
 ## Build
 
-Needs Rust 1.88+ and the kh2-rs source tree next to this folder (`../kh2-rs`, read-only).
-Get that tree with `git clone https://github.com/Kozarusa/kh2-rust-rewrite.git kh2-rs` in the folder that holds libkh2 (the folder must be named `kh2-rs`). No game data is in either repository: libkh2 reads your own Kingdom Hearts II disc image when it starts.
+Needs Rust 1.88+ and, next to this folder, the kh2fm-rs source tree (`../kh2fm-rs`, read-only; the
+commit libkh2 was checked against is in `KH2RS_COMMIT`). The kh2fm-rs tree is not public: ask the
+project owner for it. Branches:
+
+- `main` (2.x): Final Mix. Needs `../kh2fm-rs` and the Final Mix disc image (`KH2_ISO`, or
+  `KH2_ISO_FM` for the tests); a USA disc is refused at `kh2_init`.
+- `usa` (tag `usa-final`, 1.2.0): the USA release. Needs the public kh2-rs tree as `../kh2-rs`
+  (`git clone https://github.com/Kozarusa/kh2-rust-rewrite.git kh2-rs`) and the USA disc image. No
+  further work happens there.
+
+No game data is in any of these repositories: libkh2 reads your own disc image when it starts.
 
 ```
 cargo build --release -p libkh2         # target/release/kh2.dll (+ kh2.dll.lib), libkh2.so / .dylib elsewhere
@@ -105,7 +116,7 @@ drops print on stderr. `KH2_VIEWER_FRAMES=600` runs a scripted fight and quits
 (`KH2_VIEWER_SHOT=<file.ppm>` keeps the last frame).
 
 ```
-cargo run --release -p libkh2-viewer -- "<path to Kingdom Hearts II (USA).iso>"        # test room
+cargo run --release -p libkh2-viewer -- "<path to Kingdom Hearts II - Final Mix (Japan).iso>"        # test room
 cargo run --release -p libkh2-viewer -- "<iso>" tt00                                   # an area's collision
 ```
 
@@ -120,7 +131,7 @@ Unity: `unity/Kh2.cs` (P/Invoke bindings and a `MonoBehaviour` driver) and the s
 ## API tour
 
 ```c
-kh2_init("Kingdom Hearts II (USA).iso");        /* or NULL with KH2_ISO set */
+kh2_init("Kingdom Hearts II - Final Mix (Japan).iso");        /* or NULL with KH2_ISO set */
 kh2_surfaces_load(tris, n);                     /* or kh2_surfaces_load_map("tt00") */
 int32_t h = kh2_create(0, 0, 0);
 for (;;) {                                      /* every 1/60 s */

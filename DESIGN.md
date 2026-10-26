@@ -9,6 +9,15 @@ attack windows and, optionally, the posed skeleton. Game data is read from the u
 The code that decides how Sora moves is kh2-rs's (`..\kh2-rs`, a read-only sibling). libkh2 adds
 glue, a C ABI and examples. This document records what is reused, what is new, and why.
 
+**Edition (2.0.0).** `main` builds against `..\kh2fm-rs`, the Final Mix copy of kh2-rs (same crate
+layout plus `kh2-exe`, the per-edition executable addresses), and reads only the Final Mix disc. Where
+this document says kh2-rs, the file is now kh2fm-rs's copy. What changed in the reuse: the ground
+mover is kh2fm-rs's `Motor::ground_velocity` (kh2fm-rs has no `ground_step` / `ground_motion`); the
+drive rules take a form numbering (`form::Numbering::FINAL_MIX`, `drive::IDS`: Limit Form 3, Master
+4, Final 5, Anti 6); the spans of `hud_menu` and `limit` grew by Final Mix's extra menu kind and
+`running_command`; `limit_script`'s two `Animator` readers get a small stand-in struct. The USA build
+is the `usa` branch (DEVIATIONS.md "Final Mix against the USA branch").
+
 ## 1. What kh2-rs has, and what is tied to Bevy
 
 | Piece (kh2-rs) | Crate | Bevy? | Oracle-tested against the original executable? |

@@ -1,5 +1,5 @@
 # Everything a change must pass, in one run (Windows PowerShell 5.1+).
-#   powershell -ExecutionPolicy Bypass -File scripts/ci.ps1            (KH2_ISO set: the disc tests run too)
+#   powershell -ExecutionPolicy Bypass -File scripts/ci.ps1            (KH2_ISO_FM or KH2_ISO = the Final Mix disc: the disc tests run too)
 # Steps: release build, clippy, the test suite (synthetic, disc, golden, layout, oracle, objects,
 # package, soak skipped unless KH2_SOAK_SECS), a longer fuzz run, the binding diff (DLL / kh2.h /
 # Kh2.cs), the API reference check, the package build and its scan, the C# example build.
@@ -15,7 +15,8 @@ function Step($name, [scriptblock]$body) {
     if ($LASTEXITCODE -ne 0) { $script:failed += $name; Write-Host "!! $name failed ($LASTEXITCODE)" }
 }
 try {
-    if (-not $env:KH2_ISO) { Write-Host "note: KH2_ISO is not set; the disc tests skip themselves" }
+    if ($env:KH2_ISO_FM) { $env:KH2_ISO = $env:KH2_ISO_FM }
+    if (-not $env:KH2_ISO) { Write-Host "note: neither KH2_ISO_FM nor KH2_ISO is set; the disc tests skip themselves" }
     Step "build" { cargo build --release -p libkh2 }
     Step "clippy" { cargo clippy --release -p libkh2 --all-targets -- -D warnings }
     Step "tests" { cargo test --release }

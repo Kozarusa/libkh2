@@ -166,7 +166,7 @@ fn with<R>(fallback: R, f: impl FnOnce(&mut Lib) -> R) -> R {
     }
 }
 
-/// `kh2_init`: opens the disc (NULL: the `KH2_ISO` environment variable) and loads Sora. 0 on
+/// `kh2_init`: opens the disc (NULL: the `KH2_ISO` environment variable; the Final Mix disc only) and loads Sora. 0 on
 /// success, -1 on error (`kh2_last_error`).
 ///
 /// # Safety

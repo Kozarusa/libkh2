@@ -87,12 +87,13 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_set_hp, kh2_revive, kh2_set_high_jump, kh2_set_magic_levels, kh2_set_mp, kh2_set_weapon_set, kh2_set_pose_enabled | c | setters | `hits_flinch_blow_knock_out_and_guard`, `level_one_spells_cast_pay_and_charge` |
 | kh2_set_abilities, kh2_set_loadout, kh2_get_loadout_block | b | shared/abilities.rs (12 of 42 verified, e.g. `scan_gate_matches_the_game`; the block itself read) | `the_loadout_sets_combo_lengths_growth_and_survival` |
 | kh2_set_growth | b | the `fmab` rows through abilities.rs | `growth_abilities_use_the_fmab_rows` |
+| kh2_set_dodge_roll | c | kh2fm-rs `square_ground` / `dash_step` transcribed (FM 0x178eb0, the A180 trigger 34 at tick 10) | `the_dodge_roll_taps_and_holds` |
 | kh2_bone_count, kh2_bone_parents, kh2_motion_tag, kh2_motion_slot_count | c | the loaded model / motion set | `any_motion_slot_samples_like_the_animator` |
 | kh2_get_bones, kh2_get_rest_bones, kh2_motion_slot, kh2_motion_info, kh2_sample_motion | b | kh2-anim pose and blend, kh2-model rest pose (read); anim.rs transcribes kh2-rs skel.rs | `any_motion_slot_samples_like_the_animator` |
 | kh2_get_attack_volumes | b | the motion's attack triggers (kh2-anim, read) | `the_ground_and_air_combos_play_the_attack_table` |
 | kh2_jump_height | b | `prty` JumpHeight / High Jump row through motor.rs | `a_held_jump_peaks_at_the_jump_height_and_lands` |
 | kh2_cast | b | magic_rules.rs (17 of 78 verified, e.g. `orig_17bbc0_matches_the_game`; the cast flow read) and spell.rs's transcription (c) | `level_one_spells_cast_pay_and_charge`, `spells_fly_and_hit_enemies`, `a_homing_shot_turns_by_its_rate` |
-| kh2_damage, kh2_drive_outgoing_damage | a | the damage formula `kh2::enemy::damage` against the original FUN_001a0610 in kh2-ee (libkh2 `oracle.rs::orig_1a0610_damage_matches_the_game`, 3000 cases; it found and fixed two differences of kh2-rs's formula), the boosts FUN_001a0a18 / FUN_001a0aa8 (`orig_1a0a18_1a0aa8_attacker_bonuses_match_the_game`) | `spells_report_attack_stages_with_disc_rows_and_damage` |
+| kh2_damage, kh2_drive_outgoing_damage | b (a on the `usa` branch) | the damage formula `kh2::enemy::damage` against the original FUN_001a0610 in kh2-ee (libkh2 `oracle.rs::orig_1a0610_damage_matches_the_game`, 3000 cases; it found and fixed two differences of kh2-rs's formula), the boosts FUN_001a0a18 / FUN_001a0aa8 (`orig_1a0a18_1a0aa8_attacker_bonuses_match_the_game`) | `spells_report_attack_stages_with_disc_rows_and_damage` |
 | kh2_use_item | a | items.rs item effect (`item_effect_matches_the_game`); the use motion is glue | `items_heal_through_the_use_motion_and_defeats_raise_the_level` |
 | kh2_set_level | a | the status rebuild (`orig_19f920_matches_the_game`) with the `lvup` rows | `level_ups_give_the_lvup_rows_abilities_and_the_record_saves` |
 | kh2_report_defeat, kh2_give_bonus | b | experience and `bons` rows (progress.rs spans, read) | `items_heal_through_the_use_motion_and_defeats_raise_the_level`, `bonus_levels_member_levels_and_form_ability_lists` |
@@ -129,8 +130,12 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_camera_tick | a | camera_rules.rs rig (15 of 74 verified, `orig_13f600_matches_the_game`, `orig_13f740_matches_the_game`); camera.rs drives it as kh2-rs `camera::tick` | `the_field_camera_follows_collides_and_locks_on`, `a_talk_locks_sora_and_cuts_the_camera_to_the_talk_view` |
 | kh2_camera_reset | c | the table row choice | `the_field_camera_follows_collides_and_locks_on` |
 
-Totals (127 functions): class a 7 (kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
-kh2_camera_tick, kh2_damage, kh2_drive_outgoing_damage, kh2_area_setup), class b 51, class c 69:
+Totals (128 functions, Final Mix): class a 5 (kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
+kh2_camera_tick, kh2_area_setup), class b 53, class c 70. The classes rest
+on kh2fm-rs's ledger, whose oracle evidence was gathered on the USA executable (its `main-fm` image
+rows carry the Final Mix addresses); kh2_damage and kh2_drive_outgoing_damage moved from a to b in 2.0.0 because the Final Mix
+damage function (FM 0x1a1e1c) is a changed function and libkh2's oracle test against it differs in
+368 of 3000 cases (docs/DEVIATIONS.md):
 most of the game rules are kh2-rs code read from the original but not oracle-tested; the records,
 setters and the transcribed Bevy flows are glue.
 

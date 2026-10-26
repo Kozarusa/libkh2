@@ -2,6 +2,20 @@
 
 The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry names what a host sees.
 
+## 2.0.0 (round 12): Final Mix
+
+- The library reads the Kingdom Hearts II Final Mix disc (`SLPM_666.75`) and only it: `kh2_init`
+  refuses another disc. It builds against `../kh2fm-rs` (the Final Mix copy of kh2-rs, not public;
+  `KH2RS_COMMIT`). The USA build is the `usa` branch (tag `usa-final`, 1.2.0).
+- Forms in the Final Mix numbering (Limit Form 3, Master 4, Final 5, Anti 6): `kh2_drive_setup`
+  takes 7 level bytes; save records are format 4 (USA records do not load). Limit Form enters and
+  reverts with its own body.
+- Dodge Roll: `kh2_set_dodge_roll` (Square tap while moving: A180; hold: Quick Run).
+- Ground movement is kh2fm-rs's; the A / B against kh2fm-rs's Sora matches within 0.7 cm.
+- Damage: the oracle test now runs the Final Mix executable's damage and differs (report only,
+  docs/DEVIATIONS.md); kh2_damage is class b.
+- Tests read `KH2_ISO_FM` (or `KH2_ISO`); the golden replays were regenerated on Final Mix.
+
 ## 1.2.0 (round 11)
 
 - HUD: Sora's HP / MP panel and drive gauge (kh2-rs `hud_gauge`, the node core: parents, anchors,

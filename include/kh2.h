@@ -19,8 +19,8 @@
 #include <stdint.h>
 
 /* The version this header describes; kh2_version() returns the library's (same packing). */
-#define KH2_VERSION_MAJOR 1
-#define KH2_VERSION_MINOR 2
+#define KH2_VERSION_MAJOR 2
+#define KH2_VERSION_MINOR 0
 #define KH2_VERSION_PATCH 0
 #define KH2_VERSION ((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)
 
