@@ -129,7 +129,7 @@ drops print on stderr. `KH2_VIEWER_FRAMES=600` runs a scripted fight and quits
 (`KH2_VIEWER_SHOT=<file.ppm>` keeps the last frame).
 
 ```
-cargo run --release -p libkh2-viewer -- "<path to Kingdom Hearts II - Final Mix (Japan).iso>"        # test room
+cargo run --release -p libkh2-viewer -- "<path to your Final Mix disc image>"        # test room
 cargo run --release -p libkh2-viewer -- "<iso>" tt00                                   # an area's collision
 ```
 
@@ -144,7 +144,7 @@ Unity: `unity/Kh2.cs` (P/Invoke bindings and a `MonoBehaviour` driver) and the s
 ## API tour
 
 ```c
-kh2_init("Kingdom Hearts II - Final Mix (Japan).iso");        /* or NULL with KH2_ISO set */
+kh2_init("<your Final Mix disc image>");        /* or NULL with KH2_ISO set */
 kh2_surfaces_load(tris, n);                     /* or kh2_surfaces_load_map("tt00") */
 int32_t h = kh2_create(0, 0, 0);
 for (;;) {                                      /* every 1/60 s */
