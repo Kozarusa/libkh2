@@ -1,3 +1,20 @@
+# Remaining (v2.2.0, Final Mix)
+
+Valuable items still open (in rough order of value to a host):
+
+1. HUD: banners and experience popups, message / tutorial windows, mission panels (kh2fm-rs
+   `hud_banner`, `hud_msgwin`, `hud_tutorial`, `hud_mission` exist to port).
+2. Oracle coverage: the player actor's movers (jump curve, wall slide), the attack-table choice, the
+   hit reaction choice and the cast flow need a laid-out actor in kh2-ee (docs/FAITHFULNESS.md).
+3. Reflect / Magnet details: the clash table by attack type, the enemy's clash reaction, Final
+   Magnet's global flag; the effect elements of every spell.
+4. The unexamined Final Mix functions of docs/FM-CHANGED.md (motion request, magic availability,
+   mover modes, the attack handler's callback).
+5. Audio: the footstep stop step and dust; the music's level against a like-for-like reference.
+6. The writer of status +0x240 (the low-HP step's ratio); the difficulties' EXP rules.
+7. 92 abilities unused (mostly party members' and forms'); M_EX210 / M_EX690's unserved host calls.
+8. Human checks: Unity, Linux / macOS, by-ear audio, by-eye HUD and spells against the game.
+
 # Remaining (v2.0.0, Final Mix)
 
 - [x] Damage on Final Mix (2.1.0): layout, not rules, plus the new low-HP step; open: who writes

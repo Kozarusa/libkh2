@@ -20,7 +20,7 @@
 
 /* The version this header describes; kh2_version() returns the library's (same packing). */
 #define KH2_VERSION_MAJOR 2
-#define KH2_VERSION_MINOR 1
+#define KH2_VERSION_MINOR 2
 #define KH2_VERSION_PATCH 0
 #define KH2_VERSION ((KH2_VERSION_MAJOR << 16) | (KH2_VERSION_MINOR << 8) | KH2_VERSION_PATCH)
 
@@ -118,7 +118,9 @@ typedef struct kh2_volume {
 /* Opens the disc image (NULL: the KH2_ISO environment variable) and loads Sora's model, motion
  * set, keyblade, attack table and movement parameters. Nothing is copied out of the disc. */
 KH2_API int32_t kh2_init(const char *iso_path);
+/* The library version, (major << 16) | (minor << 8) | patch; compare with KH2_VERSION. */
 KH2_API uint32_t kh2_version(void);
+/* Frees every Sora, HUD, audio engine and the disc; kh2_init may be called again. Safe without kh2_init. */
 KH2_API void kh2_terminate(void);
 /* The last error message; returns its full length. */
 KH2_API uint32_t kh2_last_error(char *buf, uint32_t len);
@@ -132,6 +134,7 @@ KH2_API void kh2_set_collision(uint32_t group, int32_t solid);
 
 /* Creates a Sora at (x, y, z); settles on a floor within a step below. Returns a handle. */
 KH2_API int32_t kh2_create(float x, float y, float z);
+/* Frees Sora `handle` and everything attached to it (party, enemies, HUD, limit, summon); the handle becomes invalid. */
 KH2_API void kh2_delete(int32_t handle);
 /* Warps Sora (velocity and jump cleared). */
 KH2_API int32_t kh2_set_position(int32_t handle, float x, float y, float z, float yaw);
@@ -140,11 +143,13 @@ KH2_API int32_t kh2_set_position(int32_t handle, float x, float y, float z, floa
 KH2_API int32_t kh2_tick(int32_t handle, const kh2_inputs *inputs, kh2_state *state);
 /* Two ticks with the same input: one 30 Hz field frame. */
 KH2_API int32_t kh2_tick_field(int32_t handle, const kh2_inputs *inputs, kh2_state *state);
+/* Writes Sora's state (position cm, velocity cm/tick, yaw rad, state, motion) to `*state` (caller-owned). 0, or -1 for a bad handle / NULL. */
 KH2_API int32_t kh2_get_state(int32_t handle, kh2_state *state);
 
 /* The host's lock-on target point (an enemy's target-shape centre, radius, half height). It feeds
  * the attack table's range tests and the attack's lunge, turn and leap. */
 KH2_API int32_t kh2_set_target(int32_t handle, float x, float y, float z, float radius, float half_height);
+/* Clears the lock-on target. 0, or -1 for a bad handle. */
 KH2_API int32_t kh2_clear_target(int32_t handle);
 /* The host found that the current swing touched something: lets the combo chain go on. */
 KH2_API int32_t kh2_report_hit(int32_t handle);
@@ -153,6 +158,7 @@ KH2_API int32_t kh2_report_hit(int32_t handle);
  * push or blow), damage = HP taken (the host computes it), dir = from the attacker toward Sora.
  * Returns 0 ignored (invincible / down), 1 guarded, 2 no flinch, 3 flinch, 4 blown, -1 unknown row. */
 KH2_API int32_t kh2_hit_taken(int32_t handle, int32_t atkp, int32_t damage, float dir_x, float dir_y, float dir_z);
+/* Sets HP and maximum HP (clamped to 0..=max). 0, or -1 for a bad handle. */
 KH2_API int32_t kh2_set_hp(int32_t handle, int32_t hp, int32_t max_hp);
 /* Stands up from KH2_STATE_DOWN with full HP; auto != 0: stand up by itself after 180 ticks. */
 KH2_API int32_t kh2_revive(int32_t handle, int32_t automatic);
@@ -188,6 +194,7 @@ KH2_API int32_t kh2_bone_count(int32_t handle, int32_t which);
 KH2_API int32_t kh2_get_bones(int32_t handle, int32_t which, int32_t space, float *out, uint32_t max_bones);
 /* Rest pose (bind matrices, model space). */
 KH2_API int32_t kh2_get_rest_bones(int32_t handle, int32_t which, float *out, uint32_t max_bones);
+/* Writes the parent index of each bone (-1 for the root) of body `which` (0 Sora, 1 keyblade, 2 second keyblade) to `out` (caller-owned, `max_bones` long). Returns the bone count, or -1. */
 KH2_API int32_t kh2_bone_parents(int32_t handle, int32_t which, int32_t *out, uint32_t max_bones);
 
 /* The live attack capsules (world space). Returns the count written. */
@@ -201,7 +208,9 @@ KH2_API float kh2_jump_height(int32_t handle);
 /* Asks for a cast of slot 0 Fire, 1 Blizzard, 2 Thunder, 3 Cure, 4 Magnet, 5 Reflect; tried for up
  * to 30 ticks until the state and MP allow it. The host spawns the spell on KH2_EV_SPELL_FIRED. */
 KH2_API int32_t kh2_cast(int32_t handle, int32_t slot);
+/* Sets the six magic levels (Fire, Blizzard, Thunder, Cure, Magnet, Reflect; 0 = not owned, 1..3). 0, or -1. */
 KH2_API int32_t kh2_set_magic_levels(int32_t handle, const uint8_t levels[6]);
+/* Sets MP and maximum MP (clamped to 0..=max). 0, or -1. */
 KH2_API int32_t kh2_set_mp(int32_t handle, int32_t mp, int32_t max_mp);
 
 #define KH2_EV_CAST_STARTED 1   /* slot, cast_kind, motion, voice */
@@ -259,6 +268,7 @@ typedef struct kh2_item_info {
 KH2_API int32_t kh2_item_info(int32_t id, kh2_item_info_t *out);
 /* Sora's equipment (item ids: weapon, armor, accessories; up to 16). Default: the Kingdom Key. */
 KH2_API int32_t kh2_set_equipment(int32_t handle, const uint16_t *ids, uint32_t count);
+/* Sets party member `slot`'s equipment to `count` item ids (`ids` caller-owned); its status is rebuilt. 0, or -1. */
 KH2_API int32_t kh2_party_set_equipment(int32_t handle, int32_t slot, const uint16_t *ids, uint32_t count);
 /* Drive form `form` (1..5): its ability list at its level (fmlv grants + growth ability). */
 KH2_API int32_t kh2_form_abilities(int32_t handle, int32_t form, uint16_t *out, uint32_t max);
@@ -269,6 +279,7 @@ KH2_API int32_t kh2_granted_abilities(int32_t handle, uint16_t *out, uint32_t ma
  * form, enemies, party. save writes when cap is enough and returns the size; load returns 0, or -1
  * with nothing changed for a record that is not valid. */
 KH2_API int32_t kh2_state_save(int32_t handle, uint8_t *out, uint32_t cap);
+/* Restores a record written by kh2_state_save (`bytes`, `len`, caller-owned; format 4 on Final Mix). 0, or -1 for a damaged or older record. */
 KH2_API int32_t kh2_state_load(int32_t handle, const uint8_t *bytes, uint32_t len);
 /* Takes the oldest event: 1 written, 0 none left. */
 KH2_API int32_t kh2_poll_event(int32_t handle, kh2_event *out);
@@ -277,17 +288,20 @@ KH2_API int32_t kh2_poll_event(int32_t handle, kh2_event *out);
 /* Gauge points / maximum, owned forms (bit n = form n; Final Mix: 1 Valor, 2 Wisdom, 3 Limit, 4 Master,
  * 5 Final, 6 Anti is never owned), form levels by form id (7 bytes, may be NULL). */
 KH2_API int32_t kh2_drive_setup(int32_t handle, uint8_t points, uint8_t max_points, uint32_t owned_mask, const uint8_t *levels);
+/* Adds `percent` of one drive point to the gauge (100 = one point), outside a form. 0, or -1. */
 KH2_API int32_t kh2_drive_gain(int32_t handle, int32_t percent);
 /* A landed hit with its atkp row: the combo latch plus the row's DriveDrain. */
 KH2_API int32_t kh2_report_hit_atkp(int32_t handle, int32_t atkp);
 /* Enter form 1..4 (the Anti / Final roll may pick another): returns the form entered or -1. The
  * body swaps when the change motion ends (KH2_EV_FORM_CHANGED); bones change with it. */
 KH2_API int32_t kh2_drive_enter(int32_t handle, int32_t form);
+/* Reverts to base Sora as the Revert command does: 0, or -1 when refused (Anti form in battle, a change running) or a bad handle. */
 KH2_API int32_t kh2_drive_revert(int32_t handle);
 /* objentry ids of the form's body and hand 0 / hand 1 weapons (-1 none). */
 KH2_API int32_t kh2_drive_objects(int32_t handle, int32_t out[3]);
 /* The keyblade item the second hand takes on the next entry (default 41, the Kingdom Key). */
 KH2_API int32_t kh2_drive_set_second_keyblade(int32_t handle, int32_t item);
+/* The damage Sora deals of attack type `atk_type` after the current form's rule (Anti's factor). Returns the damage, or -1. */
 KH2_API int32_t kh2_drive_outgoing_damage(int32_t handle, int32_t atk_type, int32_t damage);
 
 /* ---- Animation export (any slot, independent of what Sora plays; see docs/SKINNING.md) ---- */
@@ -297,9 +311,11 @@ typedef struct kh2_motion_desc {
     int32_t has_root_motion;
     char tag[8];            /* e.g. "A300" */
 } kh2_motion_desc;
+/* The number of motion slots of body `which` (0 Sora, 1 keyblade, 2 second keyblade), or -1. */
 KH2_API int32_t kh2_motion_slot_count(int32_t handle, int32_t which);
 /* variant: 0 battle + weapon, 1 battle, 2 field, 3 field + weapon (the game's fallback applies). */
 KH2_API int32_t kh2_motion_slot(int32_t handle, int32_t which, int32_t motion_id, int32_t variant);
+/* Writes slot `slot`'s frame range, rate and tag (body `which`) to `*out` (caller-owned). 0, or -1 for an empty slot. */
 KH2_API int32_t kh2_motion_info(int32_t handle, int32_t which, int32_t slot, kh2_motion_desc *out);
 /* Bone matrices of `slot` at `frame` relative to the motion's root; root = (x, y, z, yaw) or NULL. */
 KH2_API int32_t kh2_sample_motion(int32_t handle, int32_t which, int32_t slot, float frame, float *out, uint32_t max_bones, float *root);
@@ -350,7 +366,9 @@ KH2_API int32_t kh2_party_set_items(int32_t handle, int32_t slot, const uint16_t
 KH2_API int32_t kh2_party_add(int32_t handle, int32_t member);
 /* One tick of the followers (after kh2_tick). */
 KH2_API int32_t kh2_party_tick(int32_t handle);
+/* Writes party member `slot`'s state (position cm, HP, MP, motion) to `*out`. 0, or -1. */
 KH2_API int32_t kh2_party_state(int32_t handle, int32_t slot, kh2_member_state *out);
+/* Writes party member `slot`'s bone matrices (16 floats each, `space` 0 model / 1 world) to `out` (caller-owned, `max_bones` matrices). Returns the bone count, or -1. */
 KH2_API int32_t kh2_party_bones(int32_t handle, int32_t slot, int32_t space, float *out, uint32_t max_bones);
 
 /* ---- Limits (kh2-rs limit.rs rules + limit_script.rs: Sora's limit commands with Donald and Goofy)
@@ -380,8 +398,11 @@ typedef struct kh2_limit_event {
 KH2_API int32_t kh2_limit_status(int32_t handle, uint16_t *cmds, int32_t *status, uint32_t max);
 /* 0, or minus the status code. A sub-command of the running limit goes to its script (event 23). */
 KH2_API int32_t kh2_limit_start(int32_t handle, int32_t cmd);
+/* The world id the limit rows are filtered by (0: only world-free rows). 0, or -1. */
 KH2_API int32_t kh2_limit_set_world(int32_t handle, int32_t world);
+/* Writes the running limit's state (kh2_limit_state_t) to `*out` (caller-owned). 0, or -1. */
 KH2_API int32_t kh2_limit_state(int32_t handle, kh2_limit_state_t *out);
+/* Pops the oldest limit event into `*out`: 1 written, 0 none, -1 bad handle. */
 KH2_API int32_t kh2_poll_limit_event(int32_t handle, kh2_limit_event *out);
 
 /* ---- Summons (kh2-rs summon.rs flow + drive_rules: Stitch, Genie, Chicken Little, Peter Pan)
@@ -415,14 +436,18 @@ typedef struct kh2_summon_event {
 } kh2_summon_event;
 /* The Summon Effects option: 1 plays the arrival as an event. */
 KH2_API int32_t kh2_summon_set_arrival_event(int32_t handle, int32_t on);
+/* Sets the owned summon charms (`count` item ids, caller-owned). 0, or -1. */
 KH2_API int32_t kh2_summon_set_owned(int32_t handle, const uint16_t *items, uint32_t count);
 /* Writes up to max command ids and status codes (0 available, 1 not a summon, 2 charm not owned,
  * 3 busy, 4 party missing, 5 in a form, 6 not enough drive points, 7 airborne); returns the count. */
 KH2_API int32_t kh2_summon_status(int32_t handle, uint16_t *cmds, int32_t *status, uint32_t max);
 /* 0, or minus the status code; KH2_SUMMON_DISMISS dismisses. */
 KH2_API int32_t kh2_summon(int32_t handle, int32_t cmd);
+/* Writes the summon's state (who, position cm, gauge) to `*out`. 0, or -1. */
 KH2_API int32_t kh2_summon_state(int32_t handle, kh2_summon_state_t *out);
+/* Writes the summon's bone matrices (16 floats each, `space` 0 model / 1 world) to `out` (`max_bones` matrices). Returns the count, or -1. */
 KH2_API int32_t kh2_summon_bones(int32_t handle, int32_t space, float *out, uint32_t max_bones);
+/* Pops the oldest summon event into `*out`: 1 written, 0 none, -1 bad handle. */
 KH2_API int32_t kh2_poll_summon_event(int32_t handle, kh2_summon_event *out);
 
 /* ---- Enemies (their own BDX scripts through kh2-rs's interpreter and script host) ---- */
@@ -444,6 +469,7 @@ KH2_API int32_t kh2_area_run(int32_t handle, const char *area, int32_t program);
 KH2_API int32_t kh2_area_raise_event(int32_t handle, int32_t event, int32_t arg);
 /* Takes the events the groups raised: up to max (id, argument) pairs into out; returns the count. */
 KH2_API int32_t kh2_area_take_events(int32_t handle, int32_t *out, uint32_t max);
+/* Ends the area run (its groups and waves); its enemies stay (kh2_enemies_clear removes them). 0, or -1. */
 KH2_API int32_t kh2_area_end(int32_t handle);
 
 /* The mission manager an area run's program starts (opcode 0x15; kh2-rs struggle.rs compiled from
@@ -500,7 +526,9 @@ typedef struct kh2_talk_request {
     float dist;
     float height;
 } kh2_talk_request;
+/* Starts a talk with the townsperson `model` (NULL or a name) at `*target`, with its bones (NULL or 16 x `bone_count` floats): Sora is locked until kh2_talk_end and the camera cuts to the talk view; the request is written to `*out` (may be NULL). 0, or -1. */
 KH2_API int32_t kh2_talk_begin(int32_t handle, const char *model, const kh2_talk_target *target, const float *bones, uint32_t bone_count, kh2_talk_request *out);
+/* Ends the talk: Sora's control and the field camera return. 0, or -1. */
 KH2_API int32_t kh2_talk_end(int32_t handle);
 
 /* Sound and effect cues (docs/SOUND-AND-EFFECTS.md): what the original plays or starts, from the
@@ -581,6 +609,7 @@ typedef struct kh2_submesh {
     int32_t texture;          /* global texture id, -1 none */
     int32_t transparent;      /* 1: alpha-blended, draw after the opaque ones */
 } kh2_submesh;
+/* Skins the current pose on the CPU: `owner` 0 Sora (`part` 0 body, 1 keyblade, 2 second keyblade), 1 a member slot, 2 an enemy index, 3 the summon; `space` 0 model, 1 world. Writes the sizes to `*out` (may be NULL); read the arrays with kh2_mesh_get. 0, or -1. */
 KH2_API int32_t kh2_mesh_prepare(int32_t handle, int32_t owner, int32_t part, int32_t space, kh2_mesh_info *out);
 /* positions 3, normals 3, uvs 2, colors 4 (1.0 = neutral 0x80) floats a vertex; any pointer NULL;
  * -1 when a capacity is smaller than the mesh. */
@@ -615,8 +644,11 @@ typedef struct kh2_hud_event {
     int32_t kind;        /* 1 attack, 2 magic (value slot), 3 item (value id), 4 drive (value form), 5 reaction (value command) */
     int32_t value;
 } kh2_hud_event;
+/* Loads the field HUD of world code `world` (e.g. "tt"; the disc's field2d and fonts) for Sora `handle`. 0, or -1 when the files are missing. */
 KH2_API int32_t kh2_hud_load(int32_t handle, const char *world);
+/* The menu buttons of this tick (KH2_HUD_* bits: up, down, confirm, back). 0, or -1. */
 KH2_API int32_t kh2_hud_input(int32_t handle, uint32_t buttons);
+/* The Items page: `count` item ids and counts (caller-owned). 0, or -1. */
 KH2_API int32_t kh2_hud_set_items(int32_t handle, const uint16_t *ids, const uint8_t *counts, uint32_t count);
 /* Returns the draw list's sprite count. */
 KH2_API int32_t kh2_hud_tick(int32_t handle);
@@ -625,10 +657,13 @@ KH2_API int32_t kh2_hud_area_card(int32_t handle, const char *area);
 /* Shows system message `message` on the INFORMATION bar (a mission's objective, its header +6): 1 shown,
  * 0 no such message, -1 no HUD. The bar waits 180 ticks, scrolls the text out and closes. */
 KH2_API int32_t kh2_hud_info(int32_t handle, uint32_t message);
+/* Copies up to `max` sprites of the last kh2_hud_tick to `out` (caller-owned; 512 x 448 HUD units, y down). Returns the number in the list (may exceed `max`), or -1. */
 KH2_API int32_t kh2_hud_draw_list(int32_t handle, kh2_hud_sprite *out, uint32_t max);
+/* Pops the oldest menu choice into `*out`: 1 written, 0 none, -1. */
 KH2_API int32_t kh2_hud_poll_event(int32_t handle, kh2_hud_event *out);
 /* Returns the HUD texture count; fills width / height of texture id when id >= 0. */
 KH2_API int32_t kh2_hud_texture_info(int32_t handle, int32_t id, uint32_t *width, uint32_t *height);
+/* Copies texture `id`'s RGBA8 pixels (row-major from the top, straight alpha; width x height x 4 bytes from kh2_hud_texture_info) to `out` (`cap` bytes). Returns the byte count, or -1. Textures can be added by later calls (party faces): query kh2_hud_texture_info for new ids. */
 KH2_API int32_t kh2_hud_texture_get(int32_t handle, int32_t id, uint8_t *out, uint32_t cap);
 
 /* Moving collision objects (like libsm64's surface objects): triangles in the object's own space
@@ -641,7 +676,9 @@ typedef struct kh2_object_transform {
 } kh2_object_transform;
 /* Returns the object id (> 0). transform NULL: the origin. */
 KH2_API int32_t kh2_surface_object_create(const kh2_surface *tris, uint32_t count, const kh2_object_transform *transform);
+/* Moves collision object `id` to `*transform` (position cm, yaw rad); Sora standing on it moves along. 0, or -1. */
 KH2_API int32_t kh2_surface_object_move(int32_t id, const kh2_object_transform *transform);
+/* Removes collision object `id`. 0, or -1. */
 KH2_API int32_t kh2_surface_object_delete(int32_t id);
 
 /* The audio engine (like libsm64's sm64_audio_tick): Sora's sound cues (and his party's, enemies',
@@ -650,6 +687,7 @@ KH2_API int32_t kh2_surface_object_delete(int32_t id);
  * Init once (returns 48000), then feed the audio device: kh2_audio_tick(h, out, frames) writes
  * 2 * frames interleaved samples. Voices, footsteps and music are not played. */
 KH2_API int32_t kh2_audio_init(void);
+/* Plays the cues waiting and renders `frames` stereo frames (16-bit, 48 kHz, interleaved) into `out` (caller-owned, 2 x `frames` samples). 0, or -1 without kh2_audio_init. */
 KH2_API int32_t kh2_audio_tick(int32_t handle, int16_t *out, uint32_t frames);
 /* The listener for volume and pan (position cm, forward, up; usually the camera's). Without one every
  * sound plays centred at full level. */
@@ -670,6 +708,7 @@ KH2_API int32_t kh2_enemies_clear(int32_t handle);
 KH2_API int32_t kh2_enemies_set_mission(int32_t handle, int32_t on, int32_t c0, int32_t c1, int32_t c2);
 /* One tick of the enemies (after kh2_tick): scripts, movement, reactions, hits both ways. */
 KH2_API int32_t kh2_enemies_tick(int32_t handle);
+/* The number of enemies of Sora `handle` (living and dying), or -1. */
 KH2_API int32_t kh2_enemy_count(int32_t handle);
 typedef struct kh2_enemy_state {
     int32_t id;
@@ -683,7 +722,9 @@ typedef struct kh2_enemy_state {
     float alpha;          /* the script's fade */
     int32_t enmp;
 } kh2_enemy_state_t;
+/* Writes enemy `index`'s state (id, model, position cm, yaw, HP, motion) to `*out`. 0, or -1 for a bad index. */
 KH2_API int32_t kh2_enemy_state(int32_t handle, int32_t index, kh2_enemy_state_t *out);
+/* Writes enemy `index`'s bone matrices (16 floats each, `space` 0 model / 1 world) to `out` (`max_bones` matrices). Returns the count, or -1. */
 KH2_API int32_t kh2_enemy_bones(int32_t handle, int32_t index, int32_t space, float *out, uint32_t max_bones);
 #define KH2_EN_HIT 1        /* Sora hit it: atkp, damage, value = HP left */
 #define KH2_EN_HIT_SORA 2   /* it hit Sora: atkp, damage, value = kh2_hit_taken result */
@@ -697,6 +738,7 @@ typedef struct kh2_enemy_event {
     int32_t kind, id, atkp, damage, value, enmp, lvpm_experience, enmp_experience;
     uint32_t prizes[9];
 } kh2_enemy_event;
+/* Pops the oldest enemy event (KH2_EN_*) into `*out`: 1 written, 0 none, -1 bad handle. */
 KH2_API int32_t kh2_poll_enemy_event(int32_t handle, kh2_enemy_event *out);
 
 /* ---- Reaction commands (kh2-rs reaction_cmd + reaction_parts: the objects' reaction parts touching

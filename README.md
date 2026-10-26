@@ -24,7 +24,7 @@ with `docs/FOR-HOST-AUTHORS.md` (tick order, units, collision, a C loop, common 
 ## Status and what a human must test
 
 Tested here on every change (`scripts/ci.ps1`): Windows 10, MSVC, Rust release build, .NET 9, the
-Final Mix disc image; 60 disc tests, golden replays, fuzz, the C layout check, the binding diff, oracle
+Final Mix disc image; 63 disc tests, golden replays, fuzz, the C layout check, the binding diff, oracle
 tests against the original executable (kh2-ee), the package scan, a 10-minute soak.
 
 Not tested here, a human should run first:
@@ -185,6 +185,10 @@ kh2_delete(h); kh2_terminate();
   and `kh2_last_error` says why. Pointers are only read during the call.
 * `KH2_VERSION` in `kh2.h` and `kh2_version()` (major << 16 | minor << 8 | patch); the C example
   refuses a library whose major.minor differs.
+* Semantic versions: major = the disc or the C ABI changes incompatibly, minor = additions only
+  (a host built for x.y runs on x.z, z >= y; ignore event kinds you do not know), patch = fixes.
+  Deprecated entries stay for the whole major version. Moving from 1.x (USA) to 2.x (Final Mix):
+  `docs/MIGRATION.md`.
 * Linux / macOS: `examples/build_min.sh` and the Rust build are written for them but untested
   here (only Windows with MSVC was run).
 

@@ -4,6 +4,8 @@ The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry name
 
 ## 2.2.0 (round 14)
 
+- API: every function in `kh2.h` documented (units, ownership, errors); `docs/MIGRATION.md` (1.x to 2.x)
+  and the version policy in the README.
 - Oracle tests against the Final Mix executable: growth levels, the form timer (length, change,
   whole points), the difficulty step.
 - Reflect: the guard for the barrier's life (read from the spell file's particle data), clashes with
