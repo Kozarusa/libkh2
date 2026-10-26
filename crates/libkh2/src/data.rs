@@ -23,6 +23,10 @@ pub const KEYBLADE_MODEL: &str = "W_EX010";
 /// fields libkh2 uses).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SwingConsts {
+    /// DAT_0037a960: the jump height of the air wall recoil's launch.
+    pub recoil_height: f32,
+    /// DAT_0037a968: the factor on the facing of the air wall recoil's launch.
+    pub recoil_facing: f32,
     /// DAT_0037a970: no turn while the target is this close (horizontal units).
     pub turn_min_gap: f32,
     /// DAT_0037a988: the trigger parameter's unit for the turn rate.
@@ -32,7 +36,7 @@ pub struct SwingConsts {
 impl SwingConsts {
     pub fn from_exe(exe: &[u8]) -> Option<SwingConsts> {
         let f = |va: u32| kh2_game_core::reaction_rules::exe_f32(exe, va);
-        Some(SwingConsts { turn_min_gap: f(0x37a970)?, turn_unit: f(0x37a988)? })
+        Some(SwingConsts { recoil_height: f(0x37a960)?, recoil_facing: f(0x37a968)?, turn_min_gap: f(0x37a970)?, turn_unit: f(0x37a988)? })
     }
 }
 

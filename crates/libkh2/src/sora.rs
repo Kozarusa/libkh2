@@ -323,6 +323,17 @@ pub struct Sora {
     pub push: Option<kh2_game_core::reaction_rules::Push>,
     pub blow: Option<kh2_game_core::reaction_rules::Blow>,
     pub blown_back: bool,
+    /// The air wall recoil plays on the jump mover it launched (kh2-rs `Sora::air_recoil`).
+    pub air_recoil: bool,
+    /// The wall cast per attack window (body 0 / 1 / 2 = keyblade, second keyblade, body; the
+    /// window's start frame): the first volume's centre of the last tick, and the windows that
+    /// already bounced off a wall (kh2-rs `combat::detect_hits` `wall_prev` / `landed`).
+    pub wall_prev: std::collections::HashMap<(u8, i16), Vec3>,
+    pub wall_done: std::collections::HashSet<(u8, i16)>,
+    /// Ticks the wall cast's volume centres lag behind the pose (0, the original's order: the
+    /// volumes are filled from this frame's matrices). kh2-rs casts on Bevy transforms two frames
+    /// old (the body's propagated transform and the keyblade's bone attachment); 2 reproduces it.
+    pub wall_cast_lag: u8,
     /// Stand up by itself after 180 ticks down (kh2-rs's stand-in where no game over runs).
     pub auto_revive: bool,
     pub mp: i32,
@@ -440,6 +451,10 @@ impl Sora {
             push: None,
             blow: None,
             blown_back: false,
+            air_recoil: false,
+            wall_prev: Default::default(),
+            wall_done: Default::default(),
+            wall_cast_lag: 0,
             auto_revive: false,
             mp: max_mp,
             max_mp,
@@ -745,6 +760,12 @@ impl Sora {
         };
         self.reactions_taken.clear();
         self.consume_reaction();
+        // The wall cast of the swing (kh2-rs Sim::Detect / Sim::SoraHurt), on the pose and place the
+        // last tick left: kh2-rs steps the pose (Sim::Pose) before the controller and tests the
+        // attack volumes on the body's transform of the frame before.
+        if self.pose {
+            self.wall_test(world);
+        }
         let attack = input.attack && !self.prev.attack;
         let jump = input.jump && !self.prev.jump;
         let square = input.guard && !self.prev.guard;
@@ -1059,6 +1080,26 @@ impl Sora {
             }
         }
         match self.state {
+            State::Hurt if self.air_recoil => {
+                // kh2-rs `State::Hurt if s.air_recoil`: the recoil runs on the jump mover it launched;
+                // the stick steers only inside an idle range; motion 43's end queues the fall.
+                let idle = self.body.trigger(range::GROUNDED) || self.body.trigger(range::AIR) || self.body.trigger(range::BLEND_TO_IDLE);
+                if idle {
+                    self.motor.air_velocity(dir, move_speed);
+                } else {
+                    self.motor.air_velocity(Vec3::ZERO, 0.0);
+                }
+                if !self.motor.grounded {
+                    airborne_dy = Some(self.motor.jump_dy(fall_max));
+                }
+                if self.body.finished {
+                    self.air_recoil = false;
+                    self.state = if self.motor.grounded { State::Ground } else { State::Air };
+                    if self.state == State::Air {
+                        self.body.play(motion(id::FALL), true, BLEND_FALL);
+                    }
+                }
+            }
             State::Hurt => {
                 self.motor.vel *= 0.85;
                 if !self.motor.grounded {
@@ -1135,6 +1176,17 @@ impl Sora {
                 self.motor.vel = Vec3::ZERO;
                 self.body.restart(motion(id::LAND), false, 0.0);
             }
+        } else if landed && was_air && self.state == State::Hurt && self.air_recoil {
+            // kh2-rs: landing in the air recoil plays the landing motion unless trigger 49 is set.
+            self.air_recoil = false;
+            if !self.body.trigger(TRIGGER_NO_LANDING_MOTION_49) {
+                self.state = State::Ground;
+                self.timer = 0.0;
+                self.hits = 0;
+                self.finishers = 1;
+                self.motor.vel = Vec3::ZERO;
+                self.body.restart(motion(id::LAND), false, 0.0);
+            }
         } else if landed && was_air {
             // kh2-rs `sora::land`.
             self.hits = 0;
@@ -1170,6 +1222,99 @@ impl Sora {
                 w.pose_now();
             }
         }
+    }
+
+    /// kh2-rs `combat::detect_hits` (the terrain part) and `sora::receive_wall_hits`: the first
+    /// attack volume of each live window casts a segment from its centre of the last tick to this
+    /// tick's against the attack-blocking terrain (`combat::wall_cast`, with the row's FloorCheck);
+    /// a row with BG Hit that touches a wall during an attack plays the generic recoil
+    /// (`reaction_rules::wall_recoil`: motion 41 on the ground, pushed backwards along the facing,
+    /// or 43 in the air, launched up and back), takes one off the combo counter and sets the hit
+    /// latch. A window that hit a target casts nothing (decided: the hit latch of the swing stands
+    /// in for kh2-rs's per-window record).
+    fn wall_test(&mut self, world: &World) {
+        let mut live = std::collections::HashSet::new();
+        let mut hit: Option<i16> = None;
+        let bodies: [(u8, Option<&Anim>, Mat4); 3] = [(0, self.weapon.as_ref(), self.weapon_matrix()), (1, self.weapon2.as_ref(), self.weapon2_matrix()), (2, Some(&self.body), self.body_matrix())];
+        for (b, anim, root) in bodies {
+            let Some(anim) = anim else { continue };
+            let Some(tr) = anim.triggers() else { continue };
+            let wins: Vec<(i16, i16, i16)> = tr
+                .active(anim.gframe())
+                .filter(|r| r.id == range::ATTACK || r.id == range::ATTACK_COMBO)
+                .filter_map(|r| Some((r.start, *r.params.first()?, *r.params.get(1)?)))
+                .collect();
+            for (start, atkp, group) in wins {
+                let key = (b, start);
+                if !live.insert(key) {
+                    continue;
+                }
+                let Some(s) = anim.rig.model.shapes.iter().find(|s| s.kind == kh2_model::collision::kind::ATTACK && s.group as i16 == group) else { continue };
+                let m = match s.bone {
+                    Some(i) => root * anim.pose.get(i).copied().unwrap_or(Mat4::IDENTITY),
+                    None => root,
+                };
+                let centre = m.transform_point3(Vec3::from(s.offset)) + Vec3::Y * s.lift;
+                // `wall_cast_lag`: the centre of that many ticks ago (each delay stage is one more key).
+                let mut centre = centre;
+                for d in 1..=self.wall_cast_lag {
+                    let k = (key.0 + 10 * d, key.1);
+                    live.insert(k);
+                    centre = self.wall_prev.insert(k, centre).unwrap_or(centre);
+                }
+                let prev = self.wall_prev.insert(key, centre);
+                if hit.is_some() || self.wall_done.contains(&key) || self.connected {
+                    continue;
+                }
+                let (Some(prev), Some(row)) = (prev, self.game.params.atkp(atkp)) else { continue };
+                if row.flags & 1 == 0 {
+                    continue;
+                }
+                let (p, q) = (prev * 0.01, centre * 0.01);
+                let mask = kh2_map::flags::ATTACK_COLLIDE;
+                let touched = world.cast_m(p, q, mask).or_else(|| (row.floor_check != 0).then(|| world.cast_m(q, q - Vec3::Y * (row.floor_check as f32 * 0.01), mask)).flatten());
+                if touched.is_some() {
+                    self.wall_done.insert(key);
+                    hit = Some(atkp);
+                }
+            }
+        }
+        self.wall_prev.retain(|k, _| live.contains(k));
+        self.wall_done.retain(|k| live.contains(k));
+        let Some(atkp) = hit else { return };
+        self.connected = true;
+        if !matches!(self.state, State::Attack { .. }) {
+            return;
+        }
+        use kh2_game_core::reaction_rules::{wall_recoil, Push, ReflectFields};
+        let game = self.game.clone();
+        let (Some(row), Some(reaction)) = (game.params.atkp(atkp), game.params.reaction.as_ref()) else { return };
+        let Some(rc) = wall_recoil(&ReflectFields::from_atkp(row), false, !self.motor.grounded, &reaction.consts) else { return };
+        let slot = self.body.rig.mset.slot(rc.motion as usize, PlayerState::BattleWeapon);
+        self.body.restart(slot, false, 2.0);
+        let air = rc
+            .airborne
+            .then(|| game.params.swing.as_ref())
+            .flatten()
+            .filter(|_| rc.push_power > 0.0)
+            .map(|c| ((self.motor.forward() * c.recoil_facing).with_y(0.0).normalize_or_zero() * (rc.push_power * game.params.sstm.hit_back_to_jump), c.recoil_height));
+        self.motor.vel = Vec3::ZERO;
+        self.push = None;
+        self.air_recoil = false;
+        if let Some((vel, h)) = air {
+            self.motor.vel = vel;
+            self.motor.start_leap(h);
+            self.air_recoil = true;
+        } else {
+            self.push = Push::new(-self.motor.forward(), rc.push_power, 0.0, &reaction.consts);
+        }
+        if rc.refund_combo_step {
+            self.hits = self.hits.saturating_sub(1);
+        }
+        self.state = State::Hurt;
+        self.finishers = 1;
+        self.queued_attack = false;
+        self.timer = 0.0;
     }
 
     /// The `magc` row and command cost of a magic slot at its level (kh2-rs `MagicData::slots`,

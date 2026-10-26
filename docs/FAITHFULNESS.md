@@ -160,3 +160,24 @@ controller states are large state machines on the actor object that need the who
   within the disc's `sstm` LockOnRange, as kh2-rs `nearest` does.
 - `the_scripted_replay_is_stable_on_the_disc`, `battle_replays_the_same`: golden traces of the glue
   (no kh2-rs trace exists to compare: kh2-rs runs only under Bevy).
+
+## A / B against kh2-rs's own Sora (round 11)
+
+`ab_against_kh2_rs_sora` (tests/disc.rs) replays the per-tick `trace` lines of kh2-rs's app
+(`KH2_TRACE=1 KH2_TURBO=1`, `KH2_KEYS`, tt04 from the same start) through `Sora::tick` on tt04's
+collision and compares the positions tick by tick (`KH2_AB_TRACE=<trace>`, `KH2_AB_KEYS=<the same
+keys>`; skipped without the file).
+
+| Scenario | Ticks | Worst | Notes |
+|---|---|---|---|
+| walk W 2-6 s, jump at 7 s | 899 | 0.5 cm | ground walk, run, jump and landing |
+| three J presses at 2 / 2.4 / 2.8 s toward the wall, jump at 4 s, J at 4.2 s | 779 | 0.7 cm | the ground combo bounces off the wall (A320), the air attack too (A350) |
+
+Divergence found and fixed: libkh2 had no attack wall recoil (kh2-rs `combat::detect_hits` terrain
+cast + `sora::receive_wall_hits`); at tick 141 kh2-rs entered Hurt A320 and libkh2 swung on (202 cm
+apart). Ported as `Sora::wall_test`. Remaining difference, by design: kh2-rs casts on Bevy
+transforms two frames old (the body's propagated transform and the keyblade's bone attachment), so
+its recoil starts two ticks later than the library's (24.6 cm worst with `KH2_AB_LAG=0`). The
+library casts on this tick's matrices, the original's order (FUN_001894d0 fills the volumes from the
+current bone matrices); `Sora::wall_cast_lag = 2` reproduces kh2-rs and the test uses it.
+

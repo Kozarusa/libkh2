@@ -2407,3 +2407,84 @@ fn music_and_placed_sounds_render() {
     eprintln!("placed swing: near {near:.0}, far {far:.0}");
     assert!(near > 0.0 && far < near, "farther is quieter");
 }
+
+/// A / B against kh2-rs's own Sora (round 11): `KH2_AB_TRACE=<file>` holds the per-tick `trace` lines
+/// of kh2-rs's app (`KH2_TRACE=1`, `KH2_TURBO=1`, `KH2_SCREENSHOT` / `KH2_KEYS=2:W:4,7:Space:0.5` on
+/// tt04: W from tick 120 to 360, Space from 420 to 450). libkh2 runs the same input on tt04's
+/// collision from the same start and the positions are compared tick by tick. Skipped without the file
+/// (docs/FAITHFULNESS.md "A / B").
+#[test]
+fn ab_against_kh2_rs_sora() {
+    let Ok(path) = std::env::var("KH2_AB_TRACE") else { return };
+    let Some(mut d) = disc() else { return };
+    let text = std::fs::read_to_string(&path).expect("trace");
+    let num = |s: &str| -> Vec<f32> { s.split_whitespace().filter_map(|v| v.parse().ok()).collect() };
+    let rows: Vec<(String, Vec3, f32)> = text
+        .lines()
+        .filter_map(|l| {
+            let state = l.split_whitespace().nth(1)?.to_string();
+            let pos = num(l.split("pos (").nth(1)?.split(')').next()?);
+            let yaw = l.split("yaw ").nth(1)?.split_whitespace().next()?.parse().ok()?;
+            Some((state, Vec3::new(pos[0], pos[1], pos[2]), yaw))
+        })
+        .collect();
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = World::from_coct(&d.coct("tt04").expect("collision"));
+    let mut s = Sora::new(game.clone(), rows[0].1);
+    s.motor.yaw = rows[0].2;
+    s.motor.grounded = true;
+    // kh2-rs's wall cast runs on transforms two frames old (`Sora::wall_cast_lag`); `KH2_AB_LAG=0`
+    // compares the library's own order.
+    s.wall_cast_lag = std::env::var("KH2_AB_LAG").ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+    let (mut worst, mut first_off) = (0f32, None);
+    // `KH2_AB_KEYS`: the same `t:key[:hold]` list kh2-rs's `KH2_KEYS` took (seconds; hold 0.05 s by default),
+    // as tick windows (60 a second); W is the stick forward (the camera looks along +Z).
+    let spec = std::env::var("KH2_AB_KEYS").unwrap_or_else(|_| "2:W:4,7:Space:0.5".into());
+    let keys: Vec<(String, usize, usize)> = spec
+        .split(',')
+        .filter_map(|it| {
+            let mut p = it.split(':');
+            let at: f32 = p.next()?.parse().ok()?;
+            let k = p.next()?.to_string();
+            let hold: f32 = p.next().and_then(|h| h.parse().ok()).unwrap_or(0.05);
+            Some((k, (at * 60.0).round() as usize, ((at + hold) * 60.0).round() as usize))
+        })
+        .collect();
+    let held = |k: &str, i: usize| keys.iter().any(|(n, a, b)| n == k && (*a..*b).contains(&i));
+    for (i, r) in rows.iter().enumerate().skip(1) {
+        let stick = if held("W", i) { [0.0, 1.0] } else { [0.0, 0.0] };
+        s.tick(&w, &Input { stick, cam_look: [0.0, 1.0], jump: held("Space", i), attack: held("J", i), ..Default::default() });
+        let dpos = s.motor.pos.distance(r.1);
+        worst = worst.max(dpos);
+        if dpos > 2.0 && first_off.is_none() {
+            first_off = Some((i, s.motor.pos, r.1, format!("{:?}", s.state), r.0.clone()));
+        }
+        if i % 60 == 0 || first_off.as_ref().is_some_and(|f| i < f.0 + 6) {
+            eprintln!("tick {i}: libkh2 {:?} {:?} | kh2-rs {} {:?} | d {dpos:.1}", s.state, s.motor.pos.round(), r.0, r.1);
+        }
+    }
+    eprintln!("A/B: {} ticks, worst position difference {worst:.1} cm, first over 2 cm {first_off:?}", rows.len());
+}
+
+/// kh2-rs `receive_wall_hits`: the first swing (atkp 126, BG Hit) toward tt04's wall bounces off it:
+/// Hurt with motion 41 (A320), pushed back along the facing.
+#[test]
+fn a_swing_into_a_wall_recoils() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = World::from_coct(&d.coct("tt04").expect("collision"));
+    let mut s = Sora::new(game.clone(), Vec3::new(-2015.0, 40.0, 1190.0));
+    s.motor.grounded = true;
+    let (mut recoiled, mut furthest) = (None, 0f32);
+    for i in 0..200 {
+        s.tick(&w, &Input { cam_look: [0.0, 1.0], attack: matches!(i, 120 | 144 | 168), ..Default::default() });
+        furthest = furthest.max(s.motor.pos.z);
+        if recoiled.is_none() && s.state == State::Hurt {
+            recoiled = Some((i, s.body.tag().to_string()));
+        }
+    }
+    let (at, tag) = recoiled.expect("the swing recoils off the wall");
+    eprintln!("wall recoil at tick {at}: {tag}, furthest z {furthest:.0}, now {:.0}", s.motor.pos.z);
+    assert_eq!(tag, "A320");
+    assert!(s.motor.pos.z < furthest - 30.0, "pushed back from the wall");
+}
