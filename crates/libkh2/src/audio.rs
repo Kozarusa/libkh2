@@ -71,7 +71,7 @@ pub struct Audio {
 /// The `objentry` row's `NeoStatus` of `model` (kh2fm-rs `neo_status`).
 fn neo_status(disc: &mut Disc, model: &str) -> Option<u16> {
     let rows = kh2_tables::load::<kh2_tables::tables::Objentry>(&mut disc.0, &kh2_tables::tables::OBJENTRY).ok()?.rows;
-    rows.iter().find(|r| r.model_name == model).map(|r| r.neo_status as u16)
+    rows.iter().find(|r| r.model_name == model).map(|r| r.neo_status)
 }
 
 /// The `arif` record's voice bank of an area such as `tt04` (kh2fm-rs `arif_record`: world by the
@@ -201,6 +201,7 @@ impl Audio {
 
     /// kh2fm-rs `play_voices`: line `line` of a voice bank by the speaker slot's priority rule, at
     /// least `MIN_VOLUME`, centred when loud.
+    #[allow(clippy::too_many_arguments)]
     fn voice(&mut self, disc: &mut Disc, speaker: &str, file: &str, in_bar: bool, line: u16, priority: u8, pos: Option<glam::Vec3>) -> bool {
         let Some(bank) = self.vsb(disc, file, in_bar) else { return false };
         let Some((sample, rate)) = bank.line(line as usize) else { return false };
