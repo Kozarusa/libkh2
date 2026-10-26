@@ -96,7 +96,7 @@ fn main() {
     let mut sora = Sora::new(game.clone(), start);
     sora.motor.grounded = true;
     sora.drive.points = kh2_game_core::drive_rules::Points { whole: 9, fraction: 0, max: 9 };
-    sora.drive.owned = [false, true, true, true, true, false];
+    sora.drive.owned = [false, true, true, true, true, true, false];
     let mut party_rng = kh2::party::PartyRng::default();
     let mut followers: Vec<kh2::party::Follower> = party.as_ref().map(|p| (0..2).map(|m| kh2::party::Follower::new(p, m, start + Vec3::new(if m == 0 { -150.0 } else { 150.0 }, 0.0, -150.0))).collect()).unwrap_or_default();
     let mut camera = Camera::new(0);
@@ -136,7 +136,7 @@ fn main() {
         }
         if pressed(Key::G) {
             let l = if sora.growth.high_jump == 0 { 3 } else { 0 };
-            sora.growth = kh2::sora::Growth { high_jump: l, quick_run: l, aerial_dodge: l, glide: l };
+            sora.growth = kh2::sora::Growth { high_jump: l, quick_run: l, aerial_dodge: l, glide: l, dodge_roll: l };
         }
         if (pressed(Key::E) || (scripted && frame == 1))
             && let Some(en) = enemies.as_mut()

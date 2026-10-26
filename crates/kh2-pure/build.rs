@@ -37,7 +37,7 @@ fn close(b: &[u8], from: usize) -> usize {
 /// the Kingdom Key's item id, is restated) and the methods over `progress::Progress` (each removed
 /// with its doc comment, brace-matched).
 fn abilities() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-game-core/src/shared/abilities.rs");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates/kh2-game-core/src/shared/abilities.rs");
     println!("cargo:rerun-if-changed={}", src.display());
     let mut text = std::fs::read_to_string(&src).expect("kh2-rs abilities.rs");
     text = text.replace("use crate::data::KINGDOM_KEY;", "const KINGDOM_KEY: u16 = 41;").replace("//!", "//");
@@ -83,7 +83,7 @@ fn span(text: &str, start: &str, last_fn: &str) -> String {
 /// against FUN_001a12a0) and the defeat payout (`kh2-game-core/src/progress.rs`: `defeat_payout`):
 /// the pure spans of two Bevy files.
 fn items() {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates");
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates");
     let items = base.join("kh2-party/src/items.rs");
     let progress = base.join("kh2-game-core/src/progress.rs");
     println!("cargo:rerun-if-changed={}", items.display());
@@ -102,7 +102,7 @@ fn items() {
 /// kh2-rs `kh2-party/src/party_battle.rs` (the party members' battle rules) without its one line that
 /// re-exports two names of a Bevy module (`shared::party`), which nothing in the file uses.
 fn party_battle() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-party/src/party_battle.rs");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates/kh2-party/src/party_battle.rs");
     println!("cargo:rerun-if-changed={}", src.display());
     let text = std::fs::read_to_string(&src).expect("party_battle.rs");
     let line = "pub use crate::shared::party::{hp_change, HpChange};";
@@ -115,7 +115,7 @@ fn party_battle() {
 /// with `word_of`, which reads a state file through kh2-rs's JSON reader, answering nothing (no
 /// state file in libkh2: the generator starts from the game's boot seed).
 fn rng() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-game-core/src/rng.rs");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates/kh2-game-core/src/rng.rs");
     println!("cargo:rerun-if-changed={}", src.display());
     let mut text = std::fs::read_to_string(&src).expect("rng.rs");
     let sig = "fn word_of(text: &str) -> Option<u64> {";
@@ -133,7 +133,7 @@ fn rng() {
 /// `window_at`; the one name it takes from a Bevy module (`shared::reaction::EXECUTE_EVENT`, 0x7f)
 /// is restated, and the test-only disc scan is dropped.
 fn reaction_cmd() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-party/src/reaction_cmd.rs");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates/kh2-party/src/reaction_cmd.rs");
     println!("cargo:rerun-if-changed={}", src.display());
     let text = std::fs::read_to_string(&src).expect("reaction_cmd.rs");
     let mut out = span(&text, "/// Range trigger id of the offer.", "pub fn window_at");
@@ -156,7 +156,7 @@ fn reaction_cmd() {
 
 /// kh2-rs `shared/party.rs`'s pure span: `HpChange` and `hp_change` (FUN_00186238, the party HP method).
 fn party_hp() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-game-core/src/shared/party.rs");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates/kh2-game-core/src/shared/party.rs");
     println!("cargo:rerun-if-changed={}", src.display());
     let text = std::fs::read_to_string(&src).expect("shared/party.rs");
     let out = span(&text, "/// What `FUN_00186238`", "pub fn hp_change");
@@ -170,7 +170,7 @@ fn main() {
     party_battle();
     items();
     abilities();
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-game-core/src/shared/drive.rs");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates/kh2-game-core/src/shared/drive.rs");
     println!("cargo:rerun-if-changed={}", src.display());
     let text = std::fs::read_to_string(&src).expect("kh2-rs drive.rs");
     let start = text.find("pub mod rules {").expect("`pub mod rules {` in drive.rs");

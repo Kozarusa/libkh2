@@ -36,6 +36,8 @@ pub const SCALE: f32 = 0.01;
 
 /// kh2-rs `data::Stats` (the status block a hit reads), the same fields.
 pub mod data {
+    /// kh2-rs `data::LOGIC_HZ`: the simulation's ticks a second.
+    pub const LOGIC_HZ: f32 = 60.0;
     #[derive(Clone, Copy, Debug, Default, PartialEq)]
     pub struct Stats {
         pub level: i32,
@@ -117,19 +119,19 @@ pub mod progress {
 }
 
 pub mod shared {
-    #[path = "../../../../../kh2-rs/crates/kh2-game-core/src/shared/enemy.rs"]
+    #[path = "../../../../../kh2fm-rs/crates/kh2-game-core/src/shared/enemy.rs"]
     pub mod enemy;
-    #[path = "../../../../../kh2-rs/crates/kh2-game-core/src/shared/enemy_obj.rs"]
+    #[path = "../../../../../kh2fm-rs/crates/kh2-game-core/src/shared/enemy_obj.rs"]
     pub mod enemy_obj;
-    #[path = "../../../../../kh2-rs/crates/kh2-game-core/src/shared/reaction.rs"]
+    #[path = "../../../../../kh2fm-rs/crates/kh2-game-core/src/shared/reaction.rs"]
     #[allow(dead_code)]
     pub mod reaction;
     /// `shared/struggle.rs`: the mission manager's state (header, layouts, counters, clock, the end).
-    #[path = "../../../../../kh2-rs/crates/kh2-game-core/src/shared/struggle.rs"]
+    #[path = "../../../../../kh2fm-rs/crates/kh2-game-core/src/shared/struggle.rs"]
     #[allow(dead_code, clippy::all)]
     pub mod struggle;
     /// `shared/prize.rs`: the prize records and constants the orbs use.
-    #[path = "../../../../../kh2-rs/crates/kh2-game-core/src/shared/prize.rs"]
+    #[path = "../../../../../kh2fm-rs/crates/kh2-game-core/src/shared/prize.rs"]
     #[allow(dead_code, clippy::all)]
     pub mod prize;
     /// `shared/summon.rs`'s `KidOp` and `GENIE_NEO` (span by `build.rs`).
@@ -139,7 +141,7 @@ pub mod shared {
     }
 }
 
-#[path = "../../../../kh2-rs/crates/kh2-enemy/src/enemy_obj.rs"]
+#[path = "../../../../kh2fm-rs/crates/kh2-enemy/src/enemy_obj.rs"]
 pub mod enemy_obj;
 
 /// kh2-rs `enemy_ai::AiTrace` without the log output: it counts the host calls by class, so the
@@ -180,14 +182,14 @@ pub mod enemy_ai {
     }
 }
 
-#[path = "../../../../kh2-rs/crates/kh2-enemy/src/enemy_host.rs"]
+#[path = "../../../../kh2fm-rs/crates/kh2-enemy/src/enemy_host.rs"]
 #[allow(dead_code, clippy::all)]
 pub mod enemy_host;
 
 include!(concat!(env!("OUT_DIR"), "/kinds.rs"));
 
 /// kh2-rs `kh2-party/src/friend_host.rs`: the party members' script host (the enemy host plus host group 10).
-#[path = "../../../../kh2-rs/crates/kh2-party/src/friend_host.rs"]
+#[path = "../../../../kh2fm-rs/crates/kh2-party/src/friend_host.rs"]
 #[allow(dead_code, unused_imports, clippy::all)]
 pub mod friend_host;
 
@@ -228,6 +230,35 @@ pub mod limit_script {
     use kh2_bdx::{Call, Host, HostTable, Program, Runtime, Value};
 
     use crate::limit::{LimitArg, LimitReceiver, LimitScriptEvent, LimitStarted, LimitTask};
+
+    /// The few fields of kh2-rs's `skel::Animator` the limit script reads (the player's motion clock).
+    #[derive(Clone, Debug, Default)]
+    pub struct Animator {
+        pub frame: f32,
+        pub prev_frame: f32,
+        pub gframe: f32,
+        pub motion: Option<AnimMotion>,
+        pub triggers: Option<std::sync::Arc<kh2_anim::Triggers>>,
+    }
+
+    /// A motion's first frame and rate.
+    #[derive(Clone, Copy, Debug, Default)]
+    pub struct AnimMotion {
+        pub frame_start: f32,
+        pub fps: f32,
+    }
+
+    impl Animator {
+        pub fn motion(&self) -> Option<AnimMotion> {
+            self.motion
+        }
+        pub fn gframe(&self) -> f32 {
+            self.gframe
+        }
+        pub fn triggers(&self) -> Option<&kh2_anim::Triggers> {
+            self.triggers.as_deref()
+        }
+    }
     include!(concat!(env!("OUT_DIR"), "/limit_script.rs"));
 }
 

@@ -5,6 +5,18 @@
 //! (`DriveRequest::Enter`, the change task, the form timer, `do_revert`) and
 //! `DriveRules::object_files` without Bevy.
 
+use kh2_tables::player::form::{Form, Numbering, SLOTS};
+
+/// The form numbering of the disc libkh2 reads: the Final Mix one (Limit Form is form 3, Master 4,
+/// Final 5, Anti 6; kh2fm-rs `form::Numbering::FINAL_MIX`).
+pub const IDS: Numbering = Numbering::FINAL_MIX;
+
+/// The growth-ability group of form `id` (High Jump 0, Quick Run 1, Aerial Dodge 2, Glide 3, Dodge
+/// Roll 4; kh2fm-rs `Form::growth_group`).
+pub fn growth_group(id: u8) -> Option<usize> {
+    IDS.form(id).and_then(Form::growth_group)
+}
+
 use std::sync::Arc;
 
 use kh2_anim::moveset::Moveset;
@@ -103,9 +115,10 @@ impl DriveData {
     /// the keyblade item of the second hand (kh2-rs `rules::take_form_keyblade`: Valor, Master and
     /// Final take one; 0 for the others).
     pub fn files(&self, form: u8, world: u16, hand1_item: u16) -> Option<FormFiles> {
-        let rec = rules::memt_merge(&self.memt, world, |_| false);
-        let obj = rules::merged_form_object(&rec, form)?;
-        self.object_files(obj, if matches!(form, 1 | 3 | 4) { hand1_item } else { 0 })
+        let rec = rules::memt_merge_forms(&self.memt, world, |_| false);
+        let obj = rules::merged_form_object(&rec, IDS, form)?;
+        let two_blades = matches!(IDS.form(form), Some(Form::Valor | Form::Master | Form::Final));
+        self.object_files(obj, if two_blades { hand1_item } else { 0 })
     }
 
     /// The keyblade items (item type 2), for the host's choice of the second blade.
@@ -147,8 +160,8 @@ pub struct DriveState {
     pub form: u8,
     pub in_form: bool,
     /// Form levels by form id, and which forms are owned.
-    pub level: [u8; 6],
-    pub owned: [bool; 6],
+    pub level: [u8; SLOTS],
+    pub owned: [bool; SLOTS],
     pub timer: rules::FormTimer,
     pub counters: rules::Counters,
     pub rng: rules::Lcg,
@@ -166,8 +179,8 @@ impl Default for DriveState {
             points: rules::Points { whole: 0, fraction: 0, max: 3 },
             form: 0,
             in_form: false,
-            level: [1; 6],
-            owned: [false; 6],
+            level: [1; SLOTS],
+            owned: [false; SLOTS],
             timer: Default::default(),
             counters: Default::default(),
             rng: rules::Lcg(1),

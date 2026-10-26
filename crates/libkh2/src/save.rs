@@ -7,14 +7,14 @@
 //! out of any form. The status (strength, magic, defense) is rebuilt from the level, as the game's
 //! status rebuild does (FUN_0019f920).
 //!
-//! Layout, little-endian: "KH2S", u16 version (3: the given bonus rewards and the equipment after the abilities), then the fields in the order of `save`.
+//! Layout, little-endian: "KH2S", u16 version (4: seven form slots, Final Mix; 3: the given bonus rewards and the equipment after the abilities), then the fields in the order of `save`.
 
 use glam::Vec3;
 
 use crate::sora::Sora;
 
 const MAGIC: &[u8; 4] = b"KH2S";
-const VERSION: u16 = 3;
+const VERSION: u16 = 4;
 const MAX_LIST: usize = 256;
 
 struct W(Vec<u8>);
@@ -87,8 +87,8 @@ struct Record {
     equipment: Vec<u16>,
     drive_whole: i32,
     drive_max: i32,
-    owned: [bool; 6],
-    form_levels: [u8; 6],
+    owned: [bool; 7],
+    form_levels: [u8; 7],
     pos: Vec3,
     yaw: f32,
 }
@@ -112,7 +112,7 @@ impl Sora {
         w.list(&self.equipment);
         w.i32(i32::from(self.drive.points.whole));
         w.i32(i32::from(self.drive.points.max));
-        for k in 0..6 {
+        for k in 0..7 {
             w.u8(self.drive.owned[k] as u8);
         }
         for v in self.drive.level {
@@ -153,11 +153,11 @@ impl Sora {
             let equipment = r.list()?;
             let drive_whole = r.i32()?;
             let drive_max = r.i32()?;
-            let mut owned = [false; 6];
+            let mut owned = [false; 7];
             for v in &mut owned {
                 *v = r.u8()? != 0;
             }
-            let mut form_levels = [0u8; 6];
+            let mut form_levels = [0u8; 7];
             for v in &mut form_levels {
                 *v = r.u8()?;
             }

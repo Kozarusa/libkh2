@@ -20,7 +20,7 @@ fn state(h: i32) -> Kh2State {
 
 #[test]
 fn a_moving_platform_carries_sora() {
-    let Ok(iso) = std::env::var("KH2_ISO") else { return eprintln!("skipped: no KH2_ISO") };
+    let Ok(iso) = std::env::var("KH2_ISO_FM").or_else(|_| std::env::var("KH2_ISO")) else { return eprintln!("skipped: no KH2_ISO") };
     let iso = CString::new(iso).unwrap();
     assert_eq!(unsafe { kh2_init(iso.as_ptr()) }, 0);
     // A floor far below and a 400 x 400 platform (its own space: top at y 0) at height 200.

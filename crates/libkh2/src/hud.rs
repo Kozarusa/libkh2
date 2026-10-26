@@ -174,6 +174,9 @@ impl TextSys {
                 let tex = match q.kind {
                     Kind::Glyph(page) => self.pages.iter().find(|(k, _)| *k == (key(font.atlas), font.clut_row() + page as usize))?.1,
                     Kind::Icon => self.icons,
+                    // decided: the Final Mix disc's Japanese glyphs need the font set's Japanese companion (kh2fm-rs
+                    // `FontSet::japanese`), not loaded yet: they are not drawn.
+                    Kind::Japanese(_) => return None,
                 };
                 let [x0, y0, x1, y1] = q.pos;
                 let [u0, v0, u1, v1] = q.uv;

@@ -276,7 +276,7 @@ impl Summons {
             return;
         }
         let gain = rules::summon_gauge_change(&data.tuning, f32::from(drive_drain));
-        let lost = self.timer.change(&data.drive, GaugeMode::Summon, 0, gain);
+        let lost = self.timer.change(&data.drive, GaugeMode::Summon, crate::drive::IDS, 0, gain);
         self.add_exp(data, lost);
     }
 
@@ -339,7 +339,7 @@ impl Summons {
         if self.gauge == GaugeMode::Summon {
             let factor = sora.loadout.as_ref().map_or(1.0, |l| l.block().summon_drain);
             let drain = rules::drain_per_tick(&data.drive, battle, factor);
-            let lost = self.timer.change(&data.drive, GaugeMode::Summon, 0, -drain);
+            let lost = self.timer.change(&data.drive, GaugeMode::Summon, crate::drive::IDS, 0, -drain);
             self.add_exp(data, lost);
             if self.timer.left <= 0.0 && self.state == 2 && !self.leaving {
                 self.leave(false);

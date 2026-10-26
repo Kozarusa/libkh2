@@ -17,7 +17,7 @@ use std::sync::Arc;
 use glam::{Mat4, Quat, Vec3};
 use kh2_anim::moveset::{self, key, Action, Chain, Probe, Scene, Windows};
 use kh2_anim::{id, triggers::range, PlayerState};
-use kh2_game_core::motor::{ground_motion, ground_step, wrap_angle, GroundConsts, GroundMotionIn, GroundStep, GroundStepIn, Jump, Motor};
+use kh2_game_core::motor::{wrap_angle, Jump, Motor};
 use kh2_game_core::world::World;
 
 use crate::anim::{Anim, Rig};
@@ -44,6 +44,70 @@ const HIGH_JUMP_MOTION: usize = 201;
 const AERIAL_DODGE_MOTION: usize = 202;
 const QUICK_RUN_MOTION: usize = 203;
 const QUICK_RUN_END_MOTION: usize = 204;
+/// The Dodge Roll's motion (kh2fm-rs `DODGE_ROLL_ID` 209, tag A180 in P_EX100.mset; Final Mix only).
+pub const DODGE_ROLL_MOTION: usize = 209;
+/// kh2fm-rs `DODGE_ROLL_TAG`.
+pub const DODGE_ROLL_TAG: &str = "A180";
+/// kh2fm-rs `TAP_TICKS`: a Square press while moving released before this many ticks is the roll;
+/// still held then it is the Quick Run (A180's frame trigger 34 at tick 10, FM 0x189c78).
+pub const TAP_TICKS: f32 = 10.0;
+
+/// kh2fm-rs `shared::sora::Dash`: the phase of a Square dash.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dash {
+    /// Pressed while moving, still held, fewer than `TAP_TICKS` ticks ago.
+    #[default]
+    Pending,
+    /// Released within `TAP_TICKS`: the dodge roll.
+    Roll,
+    /// Held past `TAP_TICKS` with Quick Run learned: the Quick Run.
+    Run,
+}
+
+/// What a Square press on the ground does (kh2fm-rs `SquareGround`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SquareGround {
+    Guard,
+    Roll,
+    QuickRun,
+}
+
+/// kh2fm-rs `square_ground` (FM 0x178eb0): still = the guard; moving with Dodge Roll learned = the
+/// roll; moving with only Quick Run = Quick Run at the press; neither = the guard. libkh2 has no
+/// `KH2_FM_ROLL` switch: the roll is the Dodge Roll ability's, as in the game.
+pub fn square_ground(moving: bool, dodge_roll: u8, quick_run: u8) -> SquareGround {
+    if !moving {
+        SquareGround::Guard
+    } else if dodge_roll >= 1 {
+        SquareGround::Roll
+    } else if quick_run >= 1 {
+        SquareGround::QuickRun
+    } else {
+        SquareGround::Guard
+    }
+}
+
+/// kh2fm-rs `dash_step`: one tick of a Square dash; the new phase and whether the dash stops now.
+pub fn dash_step(phase: Dash, held: bool, ticks: f32, quick_run: u8, run_left: f32) -> (Dash, bool) {
+    match phase {
+        Dash::Pending if !held => (Dash::Roll, ticks >= TAP_TICKS),
+        Dash::Pending if ticks >= TAP_TICKS => {
+            if quick_run >= 1 {
+                (Dash::Run, run_left <= 0.0)
+            } else {
+                (Dash::Roll, true)
+            }
+        }
+        Dash::Pending => (Dash::Pending, false),
+        Dash::Roll => (Dash::Roll, ticks >= TAP_TICKS),
+        Dash::Run => (Dash::Run, !held || run_left <= 0.0),
+    }
+}
+
+/// kh2fm-rs `dodge_roll_slot`: motion 209 when it is A180, else the first A180 of the set.
+pub fn dodge_roll_slot(mset: &kh2_anim::Mset, state: PlayerState) -> Option<usize> {
+    mset.slot(DODGE_ROLL_MOTION, state).filter(|&s| mset.get(s).is_some_and(|x| x.tag == DODGE_ROLL_TAG)).or_else(|| mset.by_tag(DODGE_ROLL_TAG).next())
+}
 const GLIDE_MOTION: usize = 205;
 const GLIDE_LEFT_MOTION: usize = 206;
 const GLIDE_RIGHT_MOTION: usize = 207;
@@ -58,6 +122,16 @@ pub struct Growth {
     pub quick_run: u8,
     pub aerial_dodge: u8,
     pub glide: u8,
+    /// Final Mix's fifth growth kind (growth group 4, Limit Form's chain).
+    pub dodge_roll: u8,
+}
+
+impl Growth {
+    /// The levels with only group `group` (kh2fm-rs `Form::growth_group`) at `level`.
+    pub fn only(group: Option<usize>, level: u8) -> Growth {
+        let at = |g: usize| if group == Some(g) { level } else { 0 };
+        Growth { high_jump: at(0), quick_run: at(1), aerial_dodge: at(2), glide: at(3), dodge_roll: at(4) }
+    }
 }
 /// The bone the keyblade hangs from (kh2-rs `shared::sora::HAND_BONES[0]`).
 pub const HAND_BONE: usize = 178;
@@ -314,6 +388,8 @@ pub struct Sora {
     pub growth: Growth,
     pub dash_time: f32,
     pub dash_brake: f32,
+    /// The phase of the Square dash (roll or Quick Run).
+    pub dash: Dash,
     pub aerial_dodge_ready: bool,
     /// Invincible ticks left (Quick Run's AirSlideStarTime, hurt reactions).
     pub invuln: f32,
@@ -444,6 +520,7 @@ impl Sora {
             growth: Growth::default(),
             dash_time: 0.0,
             dash_brake: 0.0,
+            dash: Dash::Pending,
             aerial_dodge_ready: false,
             invuln: 0.0,
             hp: max_hp,
@@ -829,22 +906,14 @@ impl Sora {
             State::Ground => {
                 self.hits = 0;
                 self.finishers = 1;
-                let ground_in = GroundStepIn { dir: [dir.x, 0.0, dir.z, move_speed], ..Default::default() };
-                self.motor.vel = match ground_step(&ground_in, &GroundConsts::USA, 1.0) {
-                    GroundStep::Walk { out, .. } if move_speed > 0.0 && dir.length_squared() > 1e-12 => Vec3::new(out[0], 0.0, out[2]),
-                    _ => Vec3::ZERO,
-                };
-                let class = ground_motion(&GroundMotionIn { speed: move_speed, walk: prty.walk_speed, run: prty.run_speed, ..Default::default() }, &GroundConsts::USA).class;
+                // kh2fm-rs `State::Ground`: the stick's speed along the stick direction.
+                self.motor.ground_velocity(dir, move_speed);
                 if move_speed > 0.0 {
                     self.motor.turn_to_step(dir, prty.turn_speed, TICK_STEP);
                 }
                 let landing = self.body.slot == motion(id::LAND) && !self.body.finished;
                 if move_speed > 0.0 || !landing {
-                    let m = match class {
-                        0 => id::IDLE,
-                        1 => id::WALK,
-                        _ => id::RUN,
-                    };
+                    let m = if move_speed <= 0.0 { id::IDLE } else if move_speed < prty.run_speed { id::WALK } else { id::RUN };
                     self.body.play(motion(m), true, BLEND_LOCOMOTION);
                 }
                 if jump {
@@ -856,17 +925,21 @@ impl Sora {
                     // the guard (FUN_00178080, key 11).
                     // USA rule (kh2-rs `square_ground_for` without the roll): moving with Quick Run
                     // learned = Quick Run at the press (FUN_00178108), else the guard.
-                    let quick = move_speed > 0.0 && self.growth.quick_run >= 1;
+                    let act = square_ground(move_speed > 0.0, self.growth.dodge_roll, self.growth.quick_run);
                     if self.square_explicit(false, Windows { free: true, combo: false }, false, &c, &mut keep_out) {
-                    } else if quick && let Some(f) = game.params.fmab(self.growth.quick_run) {
+                    } else if act != SquareGround::Guard && let Some(f) = game.params.fmab(self.growth.quick_run.max(1)) {
+                        // kh2fm-rs `State::Ground` Square: AirSlideSpeed along the stick, AirSlideBrake,
+                        // AirSlideStarTime of invincibility; the roll shows A180, the Quick Run motion 203.
                         self.state = State::QuickRun;
                         self.timer = 0.0;
+                        self.dash = if act == SquareGround::Roll { Dash::Pending } else { Dash::Run };
                         self.motor.yaw = dir.x.atan2(dir.z);
                         self.motor.vel = dir * f.air_slide_speed;
                         self.dash_time = f.air_slide_time;
                         self.dash_brake = f.air_slide_brake;
                         self.invuln = f.air_slide_star_time;
-                        self.body.restart(motion(QUICK_RUN_MOTION), false, 0.0);
+                        let start = if act == SquareGround::Roll { dodge_roll_slot(&rig.mset, pstate) } else { None };
+                        self.body.restart(start.or_else(|| motion(QUICK_RUN_MOTION)), false, 0.0);
                     } else if let Some(g) = moves.by_key(key::GUARD).filter(|g| self.abilities.chain(self.hits, self.finishers, false, false).check(g).is_ok()).cloned()
                         && let Some(slot) = motion(g.motion as usize)
                     {
@@ -966,19 +1039,32 @@ impl Sora {
                 }
             }
             State::QuickRun => {
-                // FUN_001c1660: the clock runs while Square is held; a release or the end stops.
+                // kh2fm-rs `State::QuickRun`: the clock runs while Square is held; a tap lets the roll
+                // (A180) play out, a hold past `TAP_TICKS` turns it into the Quick Run.
                 if input.guard {
                     self.dash_time -= 1.0;
                 }
                 let end = motion(QUICK_RUN_END_MOTION);
-                if self.body.slot != end && (!input.guard || self.dash_time <= 0.0) {
-                    if let Some(f) = game.params.fmab(self.growth.quick_run.max(1)) {
-                        self.dash_brake = f.air_slide_stop_brake;
+                let stopping = self.body.slot == end;
+                let roll_slot = dodge_roll_slot(&rig.mset, pstate);
+                let rolling = roll_slot.is_some() && self.body.slot == roll_slot;
+                if !stopping {
+                    let (phase, stop) = dash_step(self.dash, input.guard, self.timer, self.growth.quick_run, self.dash_time);
+                    self.dash = phase;
+                    if rolling && phase == Dash::Run {
+                        self.body.restart(motion(QUICK_RUN_MOTION), false, 0.0);
                     }
-                    self.body.restart(end, false, 0.0);
+                    if stop && rolling && self.dash == Dash::Roll {
+                        if let Some(f) = game.params.fmab(self.growth.quick_run.max(1)) {
+                            self.dash_brake = f.air_slide_stop_brake;
+                        }
+                    } else if stop && let Some(f) = game.params.fmab(self.growth.quick_run.max(1)) {
+                        self.dash_brake = f.air_slide_stop_brake;
+                        self.body.restart(end, false, 0.0);
+                    }
                 }
                 self.motor.vel *= self.dash_brake;
-                if self.body.slot == end && (self.body.finished || self.motor.vel.length() < prty.walk_speed) {
+                if (self.body.slot == end && (self.body.finished || self.motor.vel.length() < prty.walk_speed)) || (rolling && self.dash == Dash::Roll && self.body.finished) {
                     self.state = State::Ground;
                 }
             }
@@ -1437,17 +1523,20 @@ impl Sora {
         let data = self.game.drive.clone().ok_or("no drive tables")?;
         let st = &mut self.drive;
         let can_act = st.change.is_none() && self.hp > 0 && !matches!(self.state, State::Down | State::Blown);
-        let ctx = rules::EnterCtx { current_form: st.form, owned: st.owned, points: st.points.whole, donald: st.donald, goofy: st.goofy, locked: !can_act };
+        let ids = crate::drive::IDS;
+        let ctx = rules::EnterCtx { ids, current_form: st.form, owned: st.owned, points: st.points.whole, donald: st.donald, goofy: st.goofy, locked: !can_act };
         let row = rules::check_enter(&data.forms, chosen, &ctx).map_err(|e| format!("{e:?}"))?;
         let battle = self.battle_ticks > 0.0;
         let roll = rules::RollCtx {
+            ids,
             chosen,
-            may_anti: rules::companions_ok(kh2_tables::player::form::ANTI, st.donald, st.goofy),
+            may_anti: rules::companions_ok(ids, ids.anti(), st.donald, st.goofy),
+            anti_certain: false,
             battle,
-            final_owned: st.owned[kh2_tables::player::form::FINAL as usize],
+            final_owned: st.owned[ids.final_form() as usize],
             story_flag: true,
             points: st.points.whole,
-            final_cost: data.form(kh2_tables::player::form::FINAL).map_or(u8::MAX, |f| f.cost),
+            final_cost: data.form(ids.final_form()).map_or(u8::MAX, |f| f.cost),
             anti_factor: 1,
         };
         let rolled = rules::choose_form(&data.tuning, &data.levels, &roll, st.counters, &mut st.rng);
@@ -1456,7 +1545,7 @@ impl Sora {
         let st = &mut self.drive;
         st.counters = rolled.counters;
         if rolled.gave_final {
-            st.owned[kh2_tables::player::form::FINAL as usize] = true;
+            st.owned[ids.final_form() as usize] = true;
         }
         st.points.spend(data.form(entered).map_or(row.cost, |f| f.cost));
         st.form = entered;
@@ -1475,7 +1564,7 @@ impl Sora {
     /// Back to base Sora (kh2-rs `do_revert`). False when no form is active or a change runs.
     pub fn drive_revert(&mut self, by_command: bool) -> bool {
         use kh2_game_core::drive_rules as rules;
-        if !self.drive.in_form || self.drive.change.is_some() || (by_command && !rules::can_revert(self.drive.form, self.battle_ticks > 0.0)) {
+        if !self.drive.in_form || self.drive.change.is_some() || (by_command && !rules::can_revert(crate::drive::IDS, self.drive.form, self.battle_ticks > 0.0)) {
             return false;
         }
         let Some((body, weapon, moves, leaps, growth)) = self.base.take() else { return false };
@@ -1531,9 +1620,9 @@ impl Sora {
                 self.drive.files = Some(a.files.clone());
                 let level = self.drive.level[to as usize];
                 // In a form the form's own growth ability is the only one (kh2-rs `Growth`).
-                let g = rules::growth_level(&data.levels, to, level);
-                self.growth = Growth { high_jump: if to == 1 { g } else { 0 }, quick_run: if to == 2 { g } else { 0 }, aerial_dodge: if to == 3 { g } else { 0 }, glide: if to == 4 { g } else { 0 } };
-                self.drive.timer = rules::FormTimer::start(&data.tuning, to, level);
+                let g = rules::growth_level(&data.levels, crate::drive::IDS, to, level);
+                self.growth = Growth::only(crate::drive::growth_group(to), g);
+                self.drive.timer = rules::FormTimer::start(&data.tuning, crate::drive::IDS, to, level);
                 self.drive.in_form = true;
                 if self.loadout.is_some() {
                     let list = self.form_abilities();
@@ -1573,7 +1662,7 @@ impl Sora {
         if self.drive.in_form && self.drive.change.is_none() {
             let drain = rules::drain_per_tick(&data.tuning, self.battle_ticks > 0.0, 1.0);
             let form = self.drive.form;
-            self.drive.timer.add(form, -drain);
+            self.drive.timer.add(crate::drive::IDS, form, -drain);
             if self.drive.timer.expired() {
                 self.drive_revert(false);
             }
@@ -1587,7 +1676,7 @@ impl Sora {
         let Some(drain) = self.game.params.atkp(atkp).map(|a| a.drive_drain).filter(|&d| d != 0) else { return };
         if self.drive.in_form {
             let form = self.drive.form;
-            self.drive.timer.add(form, -(drain as f32) * data.tuning.form_hit_loss);
+            self.drive.timer.add(crate::drive::IDS, form, -(drain as f32) * data.tuning.form_hit_loss);
         } else if self.drive.change.is_none() {
             self.drive.points.gain(drain as i32);
         }
@@ -1743,8 +1832,8 @@ impl Sora {
         let _ = level;
         let level = self.drive.level[form as usize];
         let mut list = kh2_game_core::drive_rules::granted_abilities(&d.levels, form, level);
-        let g = kh2_game_core::drive_rules::growth_level(&d.levels, form, level);
-        if (1..=4).contains(&form) && let Some(id) = r.growth_ability(form as usize - 1, g) {
+        let g = kh2_game_core::drive_rules::growth_level(&d.levels, crate::drive::IDS, form, level);
+        if let Some(id) = crate::drive::growth_group(form).and_then(|k| r.growth_ability(k, g)) {
             list.push(id);
         }
         list
@@ -1753,7 +1842,7 @@ impl Sora {
     fn sync_loadout(&mut self) {
         let Some(l) = &self.loadout else { return };
         self.abilities = Abilities { bits: l.bits(), max_ground: l.ground_combo(), max_air: l.air_combo(), max_finishers: l.finishers() };
-        self.growth = Growth { high_jump: l.growth(0), quick_run: l.growth(1), aerial_dodge: l.growth(2), glide: l.growth(3) };
+        self.growth = Growth { high_jump: l.growth(0), quick_run: l.growth(1), aerial_dodge: l.growth(2), glide: l.growth(3), dodge_roll: l.growth(4) };
     }
 
     /// Starts an item use (kh2-rs `items.rs`: motion request 9 with blend 8, FUN_00175e20). False

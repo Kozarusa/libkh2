@@ -608,7 +608,16 @@ pub extern "C" fn kh2_set_high_jump(handle: i32, level: u8) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_set_growth(handle: i32, high_jump: u8, quick_run: u8, aerial_dodge: u8, glide: u8) -> i32 {
     sora_do(handle, -1, |s, _| {
-        s.growth = crate::sora::Growth { high_jump: high_jump.min(5), quick_run: quick_run.min(5), aerial_dodge: aerial_dodge.min(5), glide: glide.min(5) };
+        s.growth = crate::sora::Growth { high_jump: high_jump.min(5), quick_run: quick_run.min(5), aerial_dodge: aerial_dodge.min(5), glide: glide.min(5), dodge_roll: s.growth.dodge_roll };
+        0
+    })
+}
+
+/// Final Mix's Dodge Roll level (0..5): kh2fm-rs `square_ground` / `dash_step`.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_set_dodge_roll(handle: i32, level: u8) -> i32 {
+    sora_do(handle, -1, |s, _| {
+        s.growth.dodge_roll = level.min(5);
         0
     })
 }
@@ -927,13 +936,13 @@ pub unsafe extern "C" fn kh2_poll_event(handle: i32, out: *mut Kh2Event) -> i32 
 /// `levels` is NULL or points to 6 bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kh2_drive_setup(handle: i32, points: u8, max_points: u8, owned_mask: u32, levels: *const u8) -> i32 {
-    let lv: Option<[u8; 6]> = (!levels.is_null()).then(|| unsafe { std::ptr::read(levels as *const [u8; 6]) });
+    let lv: Option<[u8; 7]> = (!levels.is_null()).then(|| unsafe { std::ptr::read(levels as *const [u8; 7]) });
     sora_do(handle, -1, |s, _| {
         let d = &mut s.drive;
         d.points.max = max_points;
         d.points.whole = points.min(max_points);
         d.points.fraction = 0;
-        d.owned = std::array::from_fn(|i| owned_mask >> i & 1 != 0 && i != 5);
+        d.owned = std::array::from_fn(|i| owned_mask >> i & 1 != 0 && i != crate::drive::IDS.anti() as usize);
         if let Some(l) = lv {
             d.level = l;
         }
@@ -1018,7 +1027,7 @@ pub unsafe extern "C" fn kh2_drive_objects(handle: i32, out: *mut i32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_drive_outgoing_damage(handle: i32, atk_type: i32, damage: i32) -> i32 {
     sora_do(handle, -1, |s, _| match s.game.drive.as_ref() {
-        Some(d) => kh2_game_core::drive_rules::outgoing_damage(&d.tuning, if s.drive.in_form { s.drive.form } else { 0 }, atk_type as u8, damage),
+        Some(d) => kh2_game_core::drive_rules::outgoing_damage(&d.tuning, crate::drive::IDS, if s.drive.in_form { s.drive.form } else { 0 }, atk_type as u8, damage),
         None => damage,
     })
 }

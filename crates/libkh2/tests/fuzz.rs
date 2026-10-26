@@ -143,6 +143,7 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
             14 => {
                 kh2_set_high_jump(h, r.byte());
                 kh2_set_growth(h, r.byte(), r.byte(), r.byte(), r.byte());
+        kh2_set_dodge_roll(h, r.byte());
                 kh2_set_pose_enabled(h, r.int());
             }
             15 => {
@@ -489,7 +490,7 @@ fn phase(seed: u64, steps: usize) -> Vec<String> {
 fn the_c_api_survives_random_calls() {
     let steps: usize = std::env::var("KH2_FUZZ_STEPS").ok().and_then(|v| v.parse().ok()).unwrap_or(4000);
     let seed: u64 = std::env::var("KH2_FUZZ_SEED").ok().and_then(|v| v.parse().ok()).unwrap_or(0x5eed_1234_abcd);
-    let iso = std::env::var("KH2_ISO").ok();
+    let iso = std::env::var("KH2_ISO_FM").or_else(|_| std::env::var("KH2_ISO")).ok();
     std::panic::set_hook(Box::new(|info| {
         PANICS.lock().unwrap_or_else(|e| e.into_inner()).push(info.to_string());
     }));

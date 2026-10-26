@@ -65,7 +65,7 @@ fn span(text: &str, start: &str, last: &str) -> String {
 /// thread (`ScriptRun` and its host), cut from their Bevy files: the spans named below, the Bevy
 /// systems and the `Progress` method left out.
 fn limits() {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-party/src");
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates/kh2-party/src");
     let read = |f: &str| {
         let p = base.join(f);
         println!("cargo:rerun-if-changed={}", p.display());
@@ -84,6 +84,7 @@ fn limits() {
         ("impl LimitHits {", "pub fn add"),
         ("/// How many of the enemy hits of a frame", "pub fn counted_hits"),
         ("/// The whole timer ticks one frame removes", "pub fn timer_ticks"),
+        ("/// FM 0x1b5af0 (host 7.27 calls it)", "pub fn running_command"),
     ] {
         out.push_str(&span(&l, a, b));
         if a == "impl LimitHits {" {
@@ -106,7 +107,7 @@ fn limits() {
 /// kh2-rs `kh2-player/src/player_reaction.rs`'s pure span: the paired motions of a motion set
 /// (`Paired`, `paired_entries`, `sub_name`, `RELEASE_AFTER`).
 fn player_reaction() {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-player/src/player_reaction.rs");
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates/kh2-player/src/player_reaction.rs");
     println!("cargo:rerun-if-changed={}", p.display());
     let s = std::fs::read_to_string(&p).expect("player_reaction.rs");
     let mut out = span(&s, "/// Ticks Sora holds the last frame of a paired motion", "const RELEASE_AFTER");
@@ -122,7 +123,7 @@ fn player_reaction() {
 /// The two small pieces `friend_host.rs` names outside itself: `party.rs`'s `SpecialOn` and
 /// `fx.rs`'s `hit_rotation`.
 fn friend_bits() {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates");
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates");
     let read = |f: &str| {
         let p = base.join(f);
         println!("cargo:rerun-if-changed={}", p.display());
@@ -137,7 +138,7 @@ fn friend_bits() {
 /// (the command ids, motions, the summon AI object `ai`, Stitch's, Genie's and the scripted classes,
 /// the rules); the Bevy systems after them are left out.
 fn summon_rules() {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-party/src/summon.rs");
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates/kh2-party/src/summon.rs");
     println!("cargo:rerun-if-changed={}", p.display());
     let s = std::fs::read_to_string(&p).expect("summon.rs");
     let a = s.find("pub mod cmd {").expect("summon.rs cmd");
@@ -158,7 +159,7 @@ fn summon_rules() {
     text.push_str(&span(&s, "fn locomotion_want", "fn locomotion_want").replacen("fn locomotion_want", "pub fn locomotion_want", 1));
     std::fs::write(Path::new(&std::env::var("OUT_DIR").unwrap()).join("summon_rules.rs"), text).unwrap();
     // `shared/summon.rs`'s two pure names the modules use: `KidOp` and `GENIE_NEO`.
-    let q = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-game-core/src/shared/summon.rs");
+    let q = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates/kh2-game-core/src/shared/summon.rs");
     println!("cargo:rerun-if-changed={}", q.display());
     let t = std::fs::read_to_string(&q).expect("shared/summon.rs");
     let mut out = span(&t, "pub enum KidOp", "pub enum KidOp");
@@ -173,7 +174,7 @@ fn summon_rules() {
 /// records, signals, trigger table, kind-2 waves, defeated tables, ring placement, kind-6 groups, counters) and
 /// `shared/struggle.rs`'s `ORB_POOL_TYPE`, `mission_command`, `Trig`.
 fn area_groups() {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates");
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates");
     let read = |f: &str| {
         let p = base.join(f);
         println!("cargo:rerun-if-changed={}", p.display());
@@ -190,7 +191,7 @@ fn area_groups() {
 /// `MissionHost`, `knock_out`, `note_event`) and `kh2-player/src/prize.rs`'s prize rules (launch,
 /// flight, rest, reach, draw-in, the floor sweep) that the orbs run on. `MissionHost` is made public.
 fn struggle() {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates");
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates");
     let read = |f: &str| {
         let p = base.join(f);
         println!("cargo:rerun-if-changed={}", p.display());
@@ -248,7 +249,7 @@ fn struggle() {
     }
     let m = read("kh2-hud/src/hud_menu.rs");
     for (a, b) in [
-        ("/// Menu pages that can be open at once", "const KINDS"),
+        ("/// Menu pages that can be open at once", "const FM_NEW_KIND_ROW"),
         ("/// Tables the menu code reads from the executable", "pub struct MenuTables"),
         ("pub struct Tables {", "pub struct Tables"),
         ("fn word(exe: &[u8], va: usize)", "fn word"),
@@ -368,7 +369,7 @@ fn main() {
     friend_bits();
     player_reaction();
     limits();
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2-rs/crates/kh2-enemy/src/kinds");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../kh2fm-rs/crates/kh2-enemy/src/kinds");
     println!("cargo:rerun-if-changed={}", dir.display());
     let mut stems: Vec<String> = std::fs::read_dir(&dir)
         .expect("kh2-enemy/src/kinds")

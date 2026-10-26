@@ -179,7 +179,12 @@ pub struct Disc(pub kh2_archive::Archive, pub std::path::PathBuf);
 
 impl Disc {
     pub fn open(iso: &Path) -> Result<Disc, LoadError> {
-        kh2_archive::Archive::open(iso).map(|a| Disc(a, iso.to_path_buf())).map_err(err("opening the disc"))
+        let a = kh2_archive::Archive::open(iso).map_err(err("opening the disc"))?;
+        // libkh2 reads one disc, the Final Mix one (SLPM_666.75); the USA disc is the `usa` branch's.
+        if a.edition() != kh2_archive::Edition::FinalMix {
+            return Err(LoadError(format!("{}: not the Kingdom Hearts II Final Mix disc ({:?}); this build reads only Final Mix", iso.display(), a.edition())));
+        }
+        Ok(Disc(a, iso.to_path_buf()))
     }
 
     /// A second reader of the same image.

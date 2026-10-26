@@ -126,7 +126,7 @@ pub fn present(followers: &[crate::party::Follower], data: &crate::party::PartyD
 impl Limits {
     fn party(&self, data: &LimitData, sora: &Sora, present: &[u8]) -> Party {
         let all = data.rows.iter().filter_map(|r| r.ability_bit).filter(|&b| b < 128).fold(0u128, |a, b| a | 1 << b);
-        Party { present: present.to_vec(), abilities: self.abilities.unwrap_or(all), form: if sora.drive.in_form { sora.drive.form } else { 0 }, world: self.world, locked: false, mp: sora.mp, summon_gauge: false, summons: Vec::new(), busy: self.task.is_some() }
+        Party { ids: crate::drive::IDS, present: present.to_vec(), abilities: self.abilities.unwrap_or(all), form: if sora.drive.in_form { sora.drive.form } else { 0 }, world: self.world, locked: false, mp: sora.mp, summon_gauge: false, summons: Vec::new(), busy: self.task.is_some() }
     }
 
     /// FUN_001b3e38 for each limit command: Ok, or why it is refused.

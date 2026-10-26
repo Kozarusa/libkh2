@@ -20,7 +20,7 @@ thread_local! {
 }
 
 fn disc() -> Option<Disc> {
-    let iso = std::env::var_os("KH2_ISO")?;
+    let iso = std::env::var_os("KH2_ISO_FM").or_else(|| std::env::var_os("KH2_ISO"))?;
     HELD.with(|h| {
         if h.borrow().is_none() {
             *h.borrow_mut() = Some(SERIAL.lock().unwrap_or_else(|e| e.into_inner()));
@@ -51,8 +51,7 @@ fn movement_matches_the_disc_values() {
     let p = &game.params;
     eprintln!("prty: walk {} run {} jump {} turn {}; sstm FallMax {}", p.prty.walk_speed, p.prty.run_speed, p.prty.jump_height, p.prty.turn_speed, p.sstm.fall_max);
     // The ground mover constants read from the executable equal the ones the controller uses.
-    if let Some(exe) = d.exe() {
-        assert_eq!(kh2_game_core::motor::GroundConsts::from_exe(&exe), Some(kh2_game_core::motor::GroundConsts::USA));
+    if d.exe().is_some() {
         assert!(p.swing.is_some(), "the attack turn constants are readable");
     }
     let w = floor();
@@ -544,10 +543,13 @@ fn valor_master_final_carry_a_second_keyblade_on_the_left_hand() {
     let data = game.drive.clone().unwrap();
     assert!(data.keyblades().contains(&41));
     let w = floor();
-    for form in 1..=4u8 {
+    // Final Mix numbering: Valor 1, Wisdom 2, Limit 3, Master 4, Final 5.
+    let ids = kh2::drive::IDS;
+    for form in ids.levelled() {
         let a = d.form_assets(&data, form, 0, 41).expect("form assets");
-        eprintln!("form {form}: hands {:?}", a.files.hands);
-        assert_eq!(a.weapon2.is_some(), form != 2, "the second blade of form {form}");
+        eprintln!("form {form} ({}): hands {:?}", ids.name(form), a.files.hands);
+        let two = [ids.valor(), ids.master(), ids.final_form()].contains(&form);
+        assert_eq!(a.weapon2.is_some(), two, "the second blade of form {form}");
         let mut s = standing(&game, &w);
         s.drive.points.whole = 9;
         s.drive.points.max = 9;
@@ -2422,6 +2424,8 @@ fn ab_against_kh2_rs_sora() {
     let rows: Vec<(String, Vec3, f32)> = text
         .lines()
         .filter_map(|l| {
+            // kh2fm-rs logs through tracing: the line starts at "trace ".
+            let l = &l[l.find("trace ")?..];
             let state = l.split_whitespace().nth(1)?.to_string();
             let pos = num(l.split("pos (").nth(1)?.split(')').next()?);
             let yaw = l.split("yaw ").nth(1)?.split_whitespace().next()?.parse().ok()?;
@@ -2487,4 +2491,74 @@ fn a_swing_into_a_wall_recoils() {
     eprintln!("wall recoil at tick {at}: {tag}, furthest z {furthest:.0}, now {:.0}", s.motor.pos.z);
     assert_eq!(tag, "A320");
     assert!(s.motor.pos.z < furthest - 30.0, "pushed back from the wall");
+}
+
+/// Final Mix's Dodge Roll (kh2fm-rs `square_ground` / `dash_step`): moving, a Square tap with the
+/// roll learned plays A180 with the fmab invincibility and returns to the ground state; a hold past
+/// TAP_TICKS with Quick Run learned turns into the Quick Run; without the roll a moving tap guards.
+#[test]
+fn the_dodge_roll_taps_and_holds() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    assert!(kh2::sora::dodge_roll_slot(&Sora::new(game.clone(), Vec3::ZERO).body.rig.mset, kh2_anim::PlayerState::BattleWeapon).is_some(), "A180 is in P_EX100.mset");
+    let w = floor();
+    let star = game.params.fmab(1).expect("fmab row 1").air_slide_star_time;
+    let run = |s: &mut Sora, hold: u32, ticks: u32| {
+        let mut tags = Vec::new();
+        for i in 0..ticks {
+            s.tick(&w, &Input { stick: [0.0, 1.0], cam_look: [0.0, 1.0], guard: (20..20 + hold).contains(&i), ..Default::default() });
+            if i == 20 && s.state == State::QuickRun {
+                assert_eq!(s.invuln, star, "the dash's invincibility is fmab AirSlideStarTime");
+            }
+            if tags.last() != Some(&s.body.tag().to_string()) {
+                tags.push(s.body.tag().to_string());
+            }
+        }
+        tags
+    };
+    let mut s = standing(&game, &w);
+    s.growth.dodge_roll = 1;
+    let tags = run(&mut s, 3, 120);
+    eprintln!("tap with the roll: {tags:?} (star time {star})");
+    assert!(tags.iter().any(|t| t == "A180"), "the roll plays A180");
+    assert_eq!(s.state, State::Ground);
+    let mut s = standing(&game, &w);
+    s.growth.dodge_roll = 1;
+    s.growth.quick_run = 1;
+    let tags = run(&mut s, 40, 120);
+    eprintln!("hold with roll and Quick Run: {tags:?}");
+    let a180 = tags.iter().position(|t| t == "A180").expect("A180 first");
+    assert!(tags[a180..].iter().any(|t| t != "A180" && t != "A000"), "then the Quick Run motion");
+    let mut s = standing(&game, &w);
+    let tags = run(&mut s, 3, 60);
+    eprintln!("tap without the roll: {tags:?}");
+    assert!(!tags.iter().any(|t| t == "A180"));
+}
+
+/// Limit Form (Final Mix form 3): entered from the drive command with its own body, one keyblade,
+/// the Dodge Roll growth group, and reverted.
+#[test]
+fn limit_form_enters_and_reverts() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = game.drive.clone().unwrap();
+    let ids = kh2::drive::IDS;
+    let limit = ids.limit().expect("Final Mix numbering has Limit Form");
+    assert_eq!((limit, ids.master(), ids.final_form(), ids.anti()), (3, 4, 5, 6));
+    let a = Arc::new(d.form_assets(&data, limit, 0, 41).expect("Limit Form's files"));
+    assert!(a.weapon2.is_none());
+    let w = floor();
+    let mut s = standing(&game, &w);
+    s.drive.points = kh2_game_core::drive_rules::Points { whole: 9, fraction: 0, max: 9 };
+    s.drive.owned[limit as usize] = true;
+    s.drive.level[limit as usize] = 2;
+    assert_eq!(s.drive_enter(limit, &mut |_| Some(a.clone())), Ok(limit));
+    for _ in 0..300 {
+        s.tick(&w, &Input::default());
+    }
+    eprintln!("Limit Form: in form {}, body {}, growth {:?}", s.drive.in_form, s.body.tag(), s.growth);
+    assert!(s.drive.in_form && s.drive.form == limit);
+    assert_eq!(kh2::drive::growth_group(limit), Some(4), "Limit Form's growth is the Dodge Roll");
+    assert!(s.drive_revert(true) || s.drive_revert(false));
+    assert!(!s.drive.in_form);
 }

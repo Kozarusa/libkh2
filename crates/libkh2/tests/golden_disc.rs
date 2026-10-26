@@ -26,7 +26,7 @@ fn room() -> World {
 }
 
 fn setup() -> Option<(Disc, Arc<Game>, World)> {
-    let iso = std::env::var_os("KH2_ISO")?;
+    let iso = std::env::var_os("KH2_ISO_FM").or_else(|| std::env::var_os("KH2_ISO"))?;
     let mut d = Disc::open(std::path::Path::new(&iso)).ok()?;
     let g = Arc::new(d.game().ok()?);
     Some((d, g, room()))
@@ -76,7 +76,7 @@ fn scenarios() {
     run("combos", &mut s, &w, 400, |t, _| input([0.0, 0.0], t % 4 == 0, (200..230).contains(&t), false));
     // Growth abilities at MAX.
     let mut s = sora(&g);
-    s.growth = kh2::sora::Growth { high_jump: 5, quick_run: 5, aerial_dodge: 5, glide: 5 };
+    s.growth = kh2::sora::Growth { high_jump: 5, quick_run: 5, aerial_dodge: 5, glide: 5, dodge_roll: 0 };
     run("growth", &mut s, &w, 300, |t, _| match t {
         0..=59 => input([0.0, 1.0], false, false, t >= 10),
         60..=89 => input([0.0, 1.0], false, true, false),
@@ -116,10 +116,10 @@ fn scenarios() {
     // Drive: Valor in and out, then Master.
     let data = g.drive.clone().unwrap();
     let valor = Arc::new(d.form_assets(&data, 1, 0, 41).unwrap());
-    let master = Arc::new(d.form_assets(&data, 3, 0, 41).unwrap());
+    let master = Arc::new(d.form_assets(&data, kh2::drive::IDS.master(), 0, 41).unwrap());
     let mut s = sora(&g);
     s.drive.points = kh2_game_core::drive_rules::Points { whole: 9, fraction: 0, max: 9 };
-    s.drive.owned = [false, true, false, true, false, false];
+    s.drive.owned = [false, true, false, false, true, false, false];
     run("drive", &mut s, &w, 700, |t, s| {
         match t {
             5 => {
@@ -129,7 +129,7 @@ fn scenarios() {
                 s.drive_revert(true);
             }
             320 => {
-                let _ = s.drive_enter(3, &mut |_| Some(master.clone()));
+                let _ = s.drive_enter(kh2::drive::IDS.master(), &mut |_| Some(master.clone()));
             }
             _ => {}
         }

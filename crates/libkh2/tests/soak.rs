@@ -107,7 +107,7 @@ fn a_long_soak_stays_bounded_and_deterministic() {
         eprintln!("skipped: set KH2_SOAK_SECS (and KH2_ISO)");
         return;
     };
-    let Ok(iso) = std::env::var("KH2_ISO") else { return eprintln!("skipped: no KH2_ISO") };
+    let Ok(iso) = std::env::var("KH2_ISO_FM").or_else(|_| std::env::var("KH2_ISO")) else { return eprintln!("skipped: no KH2_ISO") };
     let iso = CString::new(iso).unwrap();
     assert_eq!(unsafe { kh2_init(iso.as_ptr()) }, 0, "{}", last_error());
     let tt04 = CString::new("tt04").unwrap();

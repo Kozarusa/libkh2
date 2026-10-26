@@ -856,7 +856,7 @@ impl Enemies {
                 sora.drive_hit(atkp);
                 let mut dmg = damage(&atk, &from, &e.stats);
                 if let Some(d) = sora.game.drive.as_ref() {
-                    dmg = kh2_game_core::drive_rules::outgoing_damage(&d.tuning, if sora.drive.in_form { sora.drive.form } else { 0 }, atk.r#type, dmg);
+                    dmg = kh2_game_core::drive_rules::outgoing_damage(&d.tuning, crate::drive::IDS, if sora.drive.in_form { sora.drive.form } else { 0 }, atk.r#type, dmg);
                 }
                 if let Some(l) = &sora.loadout {
                     dmg = kh2_game_core::abilities::attacker_bonuses(l.block(), sora.hits, &atk, dmg);

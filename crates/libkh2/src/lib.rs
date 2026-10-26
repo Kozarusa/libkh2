@@ -31,7 +31,7 @@ pub mod audio;
 
 /// kh2-rs `kh2-player/src/controller_rules.rs` (stick through the camera view, walk/run split,
 /// wanted yaw; oracle-tested against the original in kh2-rs), compiled from kh2-rs's source.
-#[path = "../../../../kh2-rs/crates/kh2-player/src/controller_rules.rs"]
+#[path = "../../../../kh2fm-rs/crates/kh2-player/src/controller_rules.rs"]
 #[allow(dead_code)]
 pub mod controller_rules;
 

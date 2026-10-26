@@ -16,7 +16,7 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-KH2RS = ROOT.parent / 'kh2-rs'
+KH2RS = ROOT.parent / 'kh2fm-rs'
 
 # (kh2-rs path under crates/, how libkh2 uses it)
 FILES = [

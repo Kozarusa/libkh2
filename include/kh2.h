@@ -171,6 +171,9 @@ KH2_API int32_t kh2_set_high_jump(int32_t handle, uint8_t level);
 /* Growth abilities 0..5 (fmab rows): High Jump, Quick Run (Square while moving), Aerial Dodge
  * (jump in the air), Glide (hold Square while falling). */
 KH2_API int32_t kh2_set_growth(int32_t handle, uint8_t high_jump, uint8_t quick_run, uint8_t aerial_dodge, uint8_t glide);
+/* Final Mix's Dodge Roll level (0..5, growth group 4): moving + a Square tap rolls (motion A180,
+ * AirSlideStarTime of invincibility); held past 10 ticks it becomes the Quick Run when learned. */
+KH2_API int32_t kh2_set_dodge_roll(int32_t handle, uint8_t level);
 /* Skeleton evaluation each tick (default on). Off: no bones, no attack volumes. */
 KH2_API int32_t kh2_set_pose_enabled(int32_t handle, int32_t on);
 
@@ -268,7 +271,8 @@ KH2_API int32_t kh2_state_load(int32_t handle, const uint8_t *bytes, uint32_t le
 KH2_API int32_t kh2_poll_event(int32_t handle, kh2_event *out);
 
 /* ---- Drive forms (kh2-rs shared::drive::rules) ---- */
-/* Gauge points / maximum, owned forms (bit n = form n, 1..4), form levels by form id (6 bytes, may be NULL). */
+/* Gauge points / maximum, owned forms (bit n = form n; Final Mix: 1 Valor, 2 Wisdom, 3 Limit, 4 Master,
+ * 5 Final, 6 Anti is never owned), form levels by form id (7 bytes, may be NULL). */
 KH2_API int32_t kh2_drive_setup(int32_t handle, uint8_t points, uint8_t max_points, uint32_t owned_mask, const uint8_t *levels);
 KH2_API int32_t kh2_drive_gain(int32_t handle, int32_t percent);
 /* A landed hit with its atkp row: the combo latch plus the row's DriveDrain. */
