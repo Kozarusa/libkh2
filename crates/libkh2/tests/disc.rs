@@ -1198,6 +1198,9 @@ fn every_enemy_kind_runs() {
             }
         }
         let unserved: u64 = en.unserved_calls().iter().map(|c| c.2).sum();
+        if unserved > 0 {
+            eprintln!("{model}: unserved {:?}", en.unserved_calls());
+        }
         let acts = moved > 10.0 || hit_sora > 0 || motions.len() > 2;
         if !acts && hits == 0 {
             dead.push(model);
@@ -1210,6 +1213,7 @@ fn every_enemy_kind_runs() {
         eprintln!("{l}");
     }
     eprintln!("inert: {dead:?}");
+    assert!(!table.iter().any(|l| !l.ends_with("| 0 |")), "every host call the scripts make is served");
 }
 
 /// The areas' own collision: Sora is put on each area's spawn point and walks.

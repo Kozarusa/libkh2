@@ -2,6 +2,13 @@
 
 The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry names what a host sees.
 
+## 2.4.0 (round 16)
+
+- Oracle tests with a laid-out actor (`tests/common/actor.rs`): the reaction class collapse and the
+  `patn` reaction conversion on Final Mix.
+- Reflect's cone test; host 1.222 served for the enemies' scripts (every kind's calls now served).
+- docs/FM-CHANGED.md: 33 more changed functions named.
+
 ## 2.3.0 (round 15)
 
 - Oracle tests of the jump mover (rise time, launch, curve) against Final Mix; kh2_jump_height is class a.

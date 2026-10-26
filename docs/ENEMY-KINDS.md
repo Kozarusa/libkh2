@@ -8,8 +8,9 @@ each kind on a flat floor, 10 s left to its script with Sora standing 3 m away, 
 attacking it. "moved" is the farthest it went from its spawn point, "motions" the distinct motion
 slots it played, "unserved host calls" the calls its script made that the host does not serve.
 
-The table below is the Final Mix disc's run (2.2.0). M_EX210 and M_EX690 make one host call each that
-the host does not serve (named in the test's log; not ported).
+The table below is the Final Mix disc's run (2.2.0). Every host call the scripts make is served: since 2.4.0 libkh2 answers
+host 1.222 (`objentry_word0`, the object's own objentry id) that M_EX210 and M_EX690 ask for and kh2fm-rs's
+enemy host leaves open.
 Areas: `areas_load_and_sora_walks_on_them`, `area_runs_set_up_groups_and_waves` and
 `area_battle_groups_spawn_and_fight` run on the Final Mix maps (map/jp read through the map/us names).
 
@@ -38,7 +39,7 @@ Reading the table:
 | M_EX110 | M_EX110 | yes | 165 | 8 | 0 | yes | 0 |
 | M_EX120 | M_EX120 | yes | 495 | 9 | 2 | yes | 0 |
 | M_EX130 | M_EX130 | yes | 546 | 13 | 1 | yes | 0 |
-| M_EX210 | M_EX210 | yes | 1456 | 12 | 2 | yes | 1 |
+| M_EX210 | M_EX210 | yes | 1456 | 12 | 2 | yes | 0 |
 | M_EX420 | M_EX420 | yes | 574 | 11 | 1 | yes | 0 |
 | M_EX500 | M_EX500 | yes | 581 | 10 | 0 | yes | 0 |
 | M_EX510 | M_EX510 | yes | 485 | 9 | 0 | yes | 0 |
@@ -56,7 +57,7 @@ Reading the table:
 | M_EX650 | M_EX650 | yes | 849 | 9 | 0 | yes | 0 |
 | M_EX660 | M_EX660 | yes | 1234 | 7 | 1 | yes | 0 |
 | M_EX680 | M_EX680 | yes | 1249 | 12 | 1 | yes | 0 |
-| M_EX690 | M_EX690 | yes | 454 | 11 | 1 | yes | 1 |
+| M_EX690 | M_EX690 | yes | 454 | 11 | 1 | yes | 0 |
 | M_EX700 | M_EX700 | yes | 587 | 10 | 0 | yes | 0 |
 | M_EX710 | M_EX710 | yes | 447 | 10 | 5 | yes | 0 |
 | M_EX730 | M_EX730 | yes | 487 | 11 | 2 | yes | 0 |

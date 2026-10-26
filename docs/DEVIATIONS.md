@@ -168,5 +168,6 @@ Mix only) is not on the USA disc kh2-rs targets: nothing to port.
   no burst. 2.3.0: an enemy window clashes only when the executable's clash table pairs the guard's
   type (3) with the enemy row's type (`ExeConsts::types_clash`, FUN_0018d808), and the enemy plays its
   clash reaction (handler 0x1b2478, `reaction_rules::enemy_clash`: ReflectedMotion and the
-  ReflectHitBack push, nothing when RefactSelf says Nothing). decided: the cone test (ReflectRange /
-  ReflectAngle) and the script action (ReflectAction) are not applied; the fade-out (8) is not counted.
+  ReflectHitBack push, nothing when RefactSelf says Nothing). 2.4.0: the cone test FUN_0018d308 runs
+  both ways (the guard row 573's ReflectRange / ReflectAngle with Sora's facing, the enemy row's with its
+  own). decided: the script action (ReflectAction) is not started; the fade-out (8) is not counted.

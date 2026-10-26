@@ -205,6 +205,53 @@ pub fn low_hp_scale(dmg: i32, hp: i32, max_hp: i32, ratio: f32, percent: i32) ->
     }
 }
 
+/// The enemy host with the calls kh2fm-rs's host leaves open that libkh2 answers: 1.222
+/// (`objentry_word0`, 0x170808: the object's `objentry` id, as the limit script's host answers it).
+struct ObjHost<'a> {
+    inner: BevyHost<'a>,
+    object: u32,
+}
+
+impl<'a> std::ops::Deref for ObjHost<'a> {
+    type Target = BevyHost<'a>;
+    fn deref(&self) -> &BevyHost<'a> {
+        &self.inner
+    }
+}
+
+impl<'a> std::ops::DerefMut for ObjHost<'a> {
+    fn deref_mut(&mut self) -> &mut BevyHost<'a> {
+        &mut self.inner
+    }
+}
+
+impl kh2_bdx::Host for ObjHost<'_> {
+    fn call(&mut self, c: &kh2_bdx::Call) -> kh2_bdx::Value {
+        match c {
+            kh2_bdx::Call::Func { group: 1, index: 222, .. } => kh2_bdx::Value::Int(self.object as i32),
+            _ => self.inner.call(c),
+        }
+    }
+    fn call_with_mem(&mut self, c: &kh2_bdx::Call, mem: &mut dyn kh2_bdx::host::ScriptMem) -> kh2_bdx::Value {
+        match c {
+            kh2_bdx::Call::Func { group: 1, index: 222, .. } => self.call(c),
+            _ => self.inner.call_with_mem(c, mem),
+        }
+    }
+    fn read_mem(&mut self, addr: u32, out: &mut [u8]) -> bool {
+        self.inner.read_mem(addr, out)
+    }
+    fn write_mem(&mut self, addr: u32, data: &[u8]) -> bool {
+        self.inner.write_mem(addr, data)
+    }
+    fn target_parts(&mut self, kind: i32, skip_flagged: bool) -> Option<Vec<kh2_bdx::search::TargetPart>> {
+        self.inner.target_parts(kind, skip_flagged)
+    }
+    fn target_found(&mut self, record: u32, found: Option<(u32, u8)>, walked: u8) {
+        self.inner.target_found(record, found, walked)
+    }
+}
+
 /// Reflect's guard row type (atkp 573: Type 3), the row of the clash table it pairs with.
 const GUARD_TYPE: u8 = 3;
 
@@ -671,7 +718,8 @@ impl Enemies {
             obj.creatable = self.data.creatable.clone();
             obj.next_serial = self.serial;
             if let Some(rt) = e.rt.as_mut() {
-                let mut host = BevyHost { obj, env: &env, trace: &mut self.trace, tag: e.tag.as_str() };
+                let object = self.data.by_object.iter().find(|(_, m)| **m == e.data.kind.model).map_or(0, |(id, _)| *id);
+                let mut host = ObjHost { inner: BevyHost { obj, env: &env, trace: &mut self.trace, tag: e.tag.as_str() }, object };
                 if !e.started {
                     e.started = true;
                     rt.spawn(&mut host, handle);
@@ -953,6 +1001,10 @@ impl Enemies {
                 // the ReflectHitBack push, unless RefactSelf says Nothing).
                 if let (Some(g), Some(row), Some(r)) = (guard, params.atkp(atkp), params.reaction.as_ref())
                     && r.consts.types_clash(GUARD_TYPE, row.r#type)
+                    // The cone test FUN_0018d308 both ways (guard row 573 with Sora's facing, the enemy row with
+                    // its own): `from_other` is the flat direction from the other owner to this one.
+                    && params.atkp(crate::spell::ATKP_REFLECT_GUARD as i16).map_or(true, |gr| rules::reflect_cone(gr.reflect_range, gr.reflect_angle, sora.motor.forward(), (sora.motor.pos - e.obj.motor.pos).with_y(0.0).normalize_or_zero()))
+                    && rules::reflect_cone(row.reflect_range, row.reflect_angle, e.obj.motor.forward(), (e.obj.motor.pos - sora.motor.pos).with_y(0.0).normalize_or_zero())
                     && overlap(&v, &g)
                 {
                     e.landed.insert((slot, start));
