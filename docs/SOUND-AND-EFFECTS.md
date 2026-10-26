@@ -90,7 +90,7 @@ branch and are not used here.
 - The ground mover's stop step and start dust (FUN_0017af10, kh2fm-rs `footsteps`): letting the stick
   go while walking or running cues footstep kind 8 and dust 8 / 9; the first step out of idle cues dust
   10 / 11 (`the_stop_step_and_the_start_dust_cue`).
-- Music level: the PCSX2 references in `Public\SFX` are recordings of play (music, effects and voices
+- Music level: the PCSX2 reference recordings are recordings of play (music, effects and voices
   mixed at the emulator's output level); no recording of music alone exists, so no like-for-like level
   comparison is possible. The library renders the BGM with the IOP's own volume chain (master 0x3fff,
   the BGM header's +0xc volume, the slot volume); not compared further.
