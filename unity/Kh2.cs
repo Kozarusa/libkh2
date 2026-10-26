@@ -271,6 +271,11 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_hud_poll_event(int handle, out HudEvent ev);
     [DllImport(Lib)] public static extern int kh2_hud_texture_info(int handle, int id, out uint width, out uint height);
     [DllImport(Lib)] public static extern int kh2_hud_texture_get(int handle, int id, [Out] byte[] rgba, uint cap);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ObjectTransform { public float posX, posY, posZ, rotX, rotY, rotZ; }
+    [DllImport(Lib)] public static extern int kh2_surface_object_create([In] Surface[] tris, uint count, ref ObjectTransform transform);
+    [DllImport(Lib)] public static extern int kh2_surface_object_move(int id, ref ObjectTransform transform);
+    [DllImport(Lib)] public static extern int kh2_surface_object_delete(int id);
     public const int CamModeFollow = 0, CamModeLook = 1, CamModeLockOn = 2, CamModeTalk = 4, CamModeOverhead = 5, CamModeBehind = 8;
     [DllImport(Lib)] public static extern int kh2_area_spawn(int handle, string area, int program, int withDisabled);
     [DllImport(Lib)] public static extern int kh2_enemy_count(int handle);

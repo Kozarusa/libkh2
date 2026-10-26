@@ -103,6 +103,10 @@ struct Lib {
     mesh: crate::mesh::Skinned,
     /// The field HUD of each Sora (`kh2_hud_load`) and its last draw list.
     huds: std::collections::HashMap<i32, (crate::hud::Hud, Vec<crate::hud::Sprite>)>,
+    /// Moving collision objects (`kh2_surface_object_*`) and the static surfaces they join.
+    objects: Vec<crate::surface_object::Object>,
+    base_surfaces: Option<Vec<Surface>>,
+    next_object: u32,
     summons: std::collections::HashMap<i32, crate::summon::Summons>,
     limits: std::collections::HashMap<i32, crate::limit::Limits>,
     enemy_data: Option<Arc<crate::enemy::EnemyData>>,
@@ -190,7 +194,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, area_runs: Default::default(), area_objects: Vec::new(), textures: Vec::new(), mesh: Default::default(), huds: Default::default(), summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, area_runs: Default::default(), area_objects: Vec::new(), textures: Vec::new(), mesh: Default::default(), huds: Default::default(), objects: Vec::new(), base_surfaces: None, next_object: 1, summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
     0
 }
 
@@ -242,6 +246,8 @@ pub unsafe extern "C" fn kh2_surfaces_load(tris: *const Surface, count: u32) -> 
     }
     with(-1, |l| {
         l.world = world_from_surfaces(tris);
+        l.base_surfaces = None;
+        rebuild_objects(l);
         l.world.tris.len() as i32
     })
 }
@@ -260,6 +266,8 @@ pub unsafe extern "C" fn kh2_surfaces_load_map(area: *const c_char) -> i32 {
     with(-1, |l| match l.disc.coct(&area) {
         Ok(c) => {
             l.world = World::from_coct(&c);
+            l.base_surfaces = None;
+            rebuild_objects(l);
             l.world.tris.len() as i32
         }
         Err(e) => set_error(e),
@@ -399,6 +407,18 @@ fn state_of(s: &Sora) -> Kh2State {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kh2_tick(handle: i32, inputs: *const Kh2Inputs, state: *mut Kh2State) -> i32 {
     let input = if inputs.is_null() { Input::default() } else { input_of(unsafe { &*inputs }) };
+    // A body on a moving object rides with it (`surface_object::ride`), before the tick.
+    with((), |l| {
+        if let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut)
+            && let Some((at, yaw)) = crate::surface_object::ride(&l.objects, s.motor.pos, s.motor.grounded)
+        {
+            s.motor.pos = at;
+            s.motor.yaw = kh2_game_core::motor::fix_radian(s.motor.yaw + yaw);
+        }
+        for o in &mut l.objects {
+            o.before = o.now;
+        }
+    });
     sora_do(handle, -1, |s, w| {
         cap(&mut s.events);
         cap(&mut s.cues);
@@ -3267,5 +3287,95 @@ pub unsafe extern "C" fn kh2_hud_texture_get(handle: i32, id: i32, out: *mut u8,
         }
         unsafe { std::ptr::copy_nonoverlapping(t.rgba.as_ptr(), out, t.rgba.len()) };
         t.rgba.len() as i32
+    })
+}
+
+/// The collision world from the static surfaces plus the objects at their places.
+fn rebuild_objects(l: &mut Lib) {
+    if l.objects.is_empty() {
+        if let Some(base) = l.base_surfaces.take() {
+            let groups = l.world.enabled_groups;
+            l.world = world_from_surfaces(&base);
+            l.world.enabled_groups = groups;
+        }
+        return;
+    }
+    if l.base_surfaces.is_none() {
+        l.base_surfaces = Some(crate::surface_object::surfaces_of(&l.world));
+    }
+    let groups = l.world.enabled_groups;
+    l.world = crate::surface_object::combined(l.base_surfaces.as_deref().unwrap_or(&[]), &l.objects, groups);
+}
+
+/// A surface object's placement: position (cm) and Euler rotation (radians, X then Y then Z).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2ObjectTransform {
+    pub pos: [f32; 3],
+    pub rot: [f32; 3],
+}
+
+fn transform_of(t: *const Kh2ObjectTransform) -> Option<crate::surface_object::Transform> {
+    if t.is_null() {
+        return Some(crate::surface_object::Transform::default());
+    }
+    let t = unsafe { *t };
+    (in_world(t.pos) && t.rot.iter().all(|r| r.is_finite())).then(|| crate::surface_object::Transform { pos: Vec3::from(t.pos), rot: Vec3::from(t.rot) })
+}
+
+/// Creates a moving collision object from `count` triangles in its own space (as
+/// `kh2_surfaces_load` takes them) placed at `transform` (NULL: the origin). Returns its id (> 0).
+///
+/// # Safety
+/// `tris` points to `count` surfaces; `transform` is NULL or points to a `kh2_object_transform`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_surface_object_create(tris: *const Surface, count: u32, transform: *const Kh2ObjectTransform) -> i32 {
+    if tris.is_null() || count == 0 {
+        return set_error("no triangles");
+    }
+    let tris = unsafe { std::slice::from_raw_parts(tris, count.min(65536) as usize) }.to_vec();
+    if !tris.iter().all(|t| t.v.iter().all(|&v| in_world(v))) {
+        return set_error("a vertex is not finite or lies beyond 1e7 units");
+    }
+    let Some(tf) = transform_of(transform) else { return set_error("the transform is not finite") };
+    with(-1, |l| {
+        let id = l.next_object;
+        l.next_object += 1;
+        let m = tf.matrix();
+        l.objects.push(crate::surface_object::Object { id, tris, now: m, before: m });
+        rebuild_objects(l);
+        id as i32
+    })
+}
+
+/// Moves object `id` to `transform`; a body standing on it rides along on its next `kh2_tick`.
+///
+/// # Safety
+/// `transform` points to a `kh2_object_transform`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_surface_object_move(id: i32, transform: *const Kh2ObjectTransform) -> i32 {
+    if transform.is_null() {
+        return set_error("no transform");
+    }
+    let Some(tf) = transform_of(transform) else { return set_error("the transform is not finite") };
+    with(-1, |l| {
+        let Some(o) = l.objects.iter_mut().find(|o| o.id as i32 == id) else { return set_error("no such object") };
+        o.now = tf.matrix();
+        rebuild_objects(l);
+        0
+    })
+}
+
+/// Deletes object `id`.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_surface_object_delete(id: i32) -> i32 {
+    with(-1, |l| {
+        let before = l.objects.len();
+        l.objects.retain(|o| o.id as i32 != id);
+        if l.objects.len() == before {
+            return set_error("no such object");
+        }
+        rebuild_objects(l);
+        0
     })
 }

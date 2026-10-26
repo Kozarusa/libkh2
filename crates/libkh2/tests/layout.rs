@@ -241,6 +241,9 @@ fn asserts() -> String {
     c += &format!("static_assert(sizeof(kh2_hud_event) == {}, \"kh2_hud_event size\");\n", size_of::<Kh2HudEvent>());
     c += &format!("static_assert(offsetof(kh2_hud_event, kind) == {}, \"kh2_hud_event.kind\");\n", offset_of!(Kh2HudEvent, kind));
     c += &format!("static_assert(offsetof(kh2_hud_event, value) == {}, \"kh2_hud_event.value\");\n", offset_of!(Kh2HudEvent, value));
+    c += &format!("static_assert(sizeof(kh2_object_transform) == {}, \"kh2_object_transform size\");\n", size_of::<Kh2ObjectTransform>());
+    c += &format!("static_assert(offsetof(kh2_object_transform, pos) == {}, \"kh2_object_transform.pos\");\n", offset_of!(Kh2ObjectTransform, pos));
+    c += &format!("static_assert(offsetof(kh2_object_transform, rot) == {}, \"kh2_object_transform.rot\");\n", offset_of!(Kh2ObjectTransform, rot));
     c += &format!("static_assert(sizeof(kh2_enemy_state_t) == {}, \"kh2_enemy_state_t size\");\n", size_of::<Kh2EnemyState>());
     c += &format!("static_assert(offsetof(kh2_enemy_state_t, id) == {}, \"kh2_enemy_state_t.id\");\n", offset_of!(Kh2EnemyState, id));
     c += &format!("static_assert(offsetof(kh2_enemy_state_t, pos) == {}, \"kh2_enemy_state_t.pos\");\n", offset_of!(Kh2EnemyState, pos));

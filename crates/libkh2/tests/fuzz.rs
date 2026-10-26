@@ -390,6 +390,15 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 kh2_hud_poll_event(h, if r.chance(4) { std::ptr::null_mut() } else { &mut he });
                 kh2_hud_texture_info(h, r.int(), &mut tw, &mut th);
                 kh2_hud_texture_get(h, r.int(), if r.chance(4) { std::ptr::null_mut() } else { px.as_mut_ptr() }, max(r, 64));
+                if r.chance(30) {
+                    let tri = [Surface { v: [[0.0, 0.0, 0.0], [0.0, 0.0, 100.0], [100.0, 0.0, 0.0]], flags: 1, ..Default::default() }];
+                    let tf = Kh2ObjectTransform { pos: [r.float(), r.float(), r.float()], rot: [r.float(), 0.0, 0.0] };
+                    let oid = kh2_surface_object_create(if r.chance(5) { std::ptr::null() } else { tri.as_ptr() }, max(r, 1), if r.chance(3) { std::ptr::null() } else { &tf });
+                    kh2_surface_object_move(if r.chance(2) { oid } else { r.int() }, if r.chance(4) { std::ptr::null() } else { &tf });
+                    if r.chance(2) {
+                        kh2_surface_object_delete(if r.chance(2) { oid } else { r.int() });
+                    }
+                }
                 let ids = [1u16, 2];
                 let cn = [1u8, 0];
                 kh2_hud_set_items(h, if r.chance(4) { std::ptr::null() } else { ids.as_ptr() }, cn.as_ptr(), max(r, 2));

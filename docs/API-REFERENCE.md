@@ -1296,6 +1296,37 @@ Returns the HUD texture count; fills width / height of texture id when id >= 0.
 int32_t kh2_hud_texture_get(int32_t handle, int32_t id, uint8_t *out, uint32_t cap);
 ```
 
+Moving collision objects (like libsm64's surface objects): triangles in the object's own space placed with a transform the host changes; Sora standing on one rides with it (its translation and the yaw of its rotation) on his next kh2_tick. The collision world is rebuilt when an object is created, moved or deleted (cost: the whole world's triangles).
+
+### `kh2_object_transform`
+
+```c
+typedef struct kh2_object_transform {
+    float pos[3];  /* cm */
+    float rot[3];  /* Euler radians, applied X, then Y, then Z */
+} kh2_object_transform;
+```
+
+### `kh2_surface_object_create`
+
+```c
+int32_t kh2_surface_object_create(const kh2_surface *tris, uint32_t count, const kh2_object_transform *transform);
+```
+
+Returns the object id (> 0). transform NULL: the origin.
+
+### `kh2_surface_object_move`
+
+```c
+int32_t kh2_surface_object_move(int32_t id, const kh2_object_transform *transform);
+```
+
+### `kh2_surface_object_delete`
+
+```c
+int32_t kh2_surface_object_delete(int32_t id);
+```
+
 ### `kh2_enemies_prune`
 
 ```c

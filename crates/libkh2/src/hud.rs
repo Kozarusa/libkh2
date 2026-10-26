@@ -409,7 +409,7 @@ impl Hud {
     }
 
     /// One 60 Hz tick: the menu nodes from the menu (kh2-rs `hud_menu::update`), then the players.
-    pub fn tick(&mut self, sora: &crate::sora::Sora) {
+    pub fn tick(&mut self, _sora: &crate::sora::Sora) {
         // The reaction capsule mirrors the offered command (kh2-rs `mirror_reaction`).
         self.menu.reaction = self.reaction_cmd.and_then(|id| self.cmds.iter().find(|c| c.id == id)).map(|c| Reaction { message: c.message_id as u32, alt: c.flags & 8 != 0, kind7: false });
         if self.menu_file.is_some()
