@@ -92,9 +92,13 @@ tests serialise themselves for this reason.
 
 Magic levels and the last two spells (round 10, `every_spell_at_every_level_casts_with_its_own_row`):
 levels 1 to 3 of Fire, Blizzard, Thunder and Cure use their own `magc` rows, commands, cast kinds
-(0 / 2 / 4) and `atkp` sub rows (0 / 512 / 1024). Magnet casts and pays but makes no attack or pull:
-kh2-rs runs MAGNET_*.mag in the BDX interpreter with its spell host (`magic.rs` `VmCast`), which
-libkh2 does not port. Reflect starts its cast motion but never reaches its trigger 17 (kh2-rs notes
-it sits at frame 0 of the slot Reflect shares with Fire; the library's trigger walk does not reach
-it; a frame-0 rule was tried and did not fix it), so it neither pays nor guards. Limit Form (Final
+(0 / 2 / 4) and `atkp` sub rows (0 / 512 / 1024). Magnet and Reflect cast and pay their MP (round 11
+fixed Reflect: its trigger 17 sits at frame 0 of the cast motion, and the cast motion starts after
+the tick's trigger walk, so the next walk began at frame 0.5 and stepped past it; the first walk on a
+cast motion now starts before frame 0). Their effects are not simulated: Magnet's pull and hits
+(atkp 658, the victims' reaction 5) and Reflect's guard (atkp 573, a type-3 row that clashes with
+enemy attacks) come from their own .mag scripts, which kh2-rs runs in the BDX interpreter with its
+spell host (`magic.rs` `VmCast` / `SpellHost`: the effect handles 1.138 / 1.139, 0.38 / 0.39, the
+attack objects, the persistent blocks of 2.21), about a thousand lines tied to Bevy effect
+entities; porting it is the next step (TODO.md). Limit Form (Final
 Mix only) is not on the USA disc kh2-rs targets: nothing to port.

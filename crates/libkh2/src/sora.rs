@@ -1222,7 +1222,7 @@ impl Sora {
         }
         let _ = c;
         let voice = rules::cast_voice(&row, fin_motion, row.id == 3);
-        self.cast = Some(Cast { slot: row.id, kind, motion_id, motion: mslot, cost, paid: false });
+        self.cast = Some(Cast { slot: row.id, kind, motion_id, motion: mslot, cost, paid: false, walked: false });
         self.events.push(Event::CastStarted { slot: row.id, kind, motion: motion_id, voice });
         true
     }
@@ -1245,7 +1245,19 @@ impl Sora {
         }
         let Some((m, t)) = self.body.motion().zip(self.body.triggers()) else { return };
         let g = |f: f32| f * crate::anim::LOGIC_HZ / m.fps.max(1.0);
-        let from = if slot_before == self.body.slot { g(frame_before) } else { g(self.body.prev_frame) };
+        // The cast motion starts in the tick the cast is accepted, after this walk; the first walk on it
+        // includes its frame 0, where Reflect's trigger 17 sits (kh2-rs magic.rs: the cast slot Fire and
+        // Reflect share carries Reflect's trigger at frame 0, Fire's at 22; `zz_probe` measured the library
+        // stepping past it: the walk of the next tick started at frame 0.5).
+        let from = if !cast.walked {
+            -1.0
+        } else if slot_before == self.body.slot {
+            g(frame_before)
+        } else {
+            g(self.body.prev_frame)
+        };
+        cast.walked = true;
+        self.cast = Some(cast);
         let to = g(self.body.frame);
         if from == to {
             return;
@@ -1983,6 +1995,8 @@ pub struct Cast {
     pub motion: Option<usize>,
     pub cost: u8,
     pub paid: bool,
+    /// The trigger walk has run on the cast motion once (the first walk starts before frame 0).
+    pub walked: bool,
 }
 
 /// The base body kept while a form is active: body, keyblade, attack table, leaps, growth.

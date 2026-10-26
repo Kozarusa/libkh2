@@ -2233,7 +2233,7 @@ fn survey_of_silent_sound_effects() {
 /// Every spell at every level (round 10): the six magic slots (Fire, Blizzard, Thunder, Cure,
 /// Magnet, Reflect) at levels 1 to 3 pick their own `magc` rows and commands (kh2-rs
 /// `magic_rules::pick_row`), cast kinds 0 / 2 / 4 and atkp sub rows 0 / 512 / 1024, start their cast
-/// motion; all but Reflect pay their MP at trigger 17; Fire, Blizzard and Thunder send attack stages,
+/// motion and pay their MP at trigger 17 (Reflect's at frame 0 of its motion); Fire, Blizzard and Thunder send attack stages,
 /// Cure heals. Logged as (10000 + kind, 20000 + motion, atkp, 30000 + sub id).
 #[test]
 fn every_spell_at_every_level_casts_with_its_own_row() {
@@ -2280,8 +2280,7 @@ fn every_spell_at_every_level_casts_with_its_own_row() {
             table.push(format!("slot {slot} L{level}: magc {} cmd {} cost {cost}: started {started} fired {fired} stages {stages} atkp {atkp:?} healed {healed} MP {}", row.id, row.command, s.mp));
             eprintln!("{}", table.last().unwrap());
             assert!(started, "slot {slot} level {level} starts its cast");
-            // Reflect (slot 5) never reaches its trigger 17 in the library (docs/DEVIATIONS.md).
-            assert!(fired || slot == 5, "slot {slot} level {level} pays at trigger 17");
+            assert!(fired, "slot {slot} level {level} pays at trigger 17");
             if slot < 3 {
                 assert!(stages > 0, "slot {slot} level {level} attacks");
             }
