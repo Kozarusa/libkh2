@@ -7,7 +7,7 @@ using System;
 
 static class Program
 {
-    const uint HeaderVersion = (1 << 16) | (1 << 8) | 0;
+    const uint HeaderVersion = (1 << 16) | (2 << 8) | 0;
 
     static Kh2.Surface Tri(float[] a, float[] b, float[] c, uint flags) =>
         new Kh2.Surface { v = new[] { a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2] }, flags = flags };

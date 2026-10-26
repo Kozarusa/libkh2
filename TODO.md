@@ -1,3 +1,15 @@
+# Remaining (v1.2.0)
+
+Round 11 added the HP / MP / drive panel, the target gauge and reticle, the HUD in the viewer,
+Reflect's MP, audio placement, hit sounds and music, the wall recoil and the A / B. Still open:
+
+- HUD: party panels, banners, INFORMATION bar, message / tutorial windows, area-name card, mission
+  panels (the original has no damage / EXP popups to port) (docs/HUD.md).
+- Magnet's pull and hits, Reflect's guard: their .mag scripts in kh2-rs's spell host (`VmCast`).
+- Audio: Sora's voices (the voice table), footsteps (the area's sound info); music is about 15 dB
+  under the reference recording, uncorrected; tt04's music pair is not set by its programs.
+- A / B: two scripted runs on tt04 only; enemies, magic and drive were not compared.
+
 # Remaining (v1.1.0)
 
 Round 10 added meshes, the HUD's command menu, moving collision objects, the audio engine, the

@@ -2,6 +2,20 @@
 
 The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry names what a host sees.
 
+## 1.2.0 (round 11)
+
+- HUD: Sora's HP / MP panel and drive gauge (kh2-rs `hud_gauge`, the node core: parents, anchors,
+  ring wedge clip, reveal), the target gauge and the lock-on reticle (`hud_target`, projected with
+  the library's camera), the danger alarm cue; the viewer draws the HUD over its view and saves PNG
+  frames. Party panels, banners, INFORMATION bar, message / tutorial windows, area card: not yet.
+- Magic: Reflect pays its MP (its trigger 17 at frame 0 was stepped past); every spell at every
+  level fires. Magnet's / Reflect's effects still need kh2-rs's spell host (docs/DEVIATIONS.md).
+- Audio: `kh2_audio_set_listener` (volume and pan, kh2-rs `sound::placement`), hit sounds
+  (`KH2_CUE_HIT`, kh2-rs `PlaySe::hit`), area music `kh2_audio_play_bgm`; loudness measured.
+- Sora: the attack wall recoil (a BG Hit swing into a wall: A320 pushed back, or A350 launched in
+  the air), found by the A / B against kh2-rs's Sora (0.5 / 0.7 cm worst over two scripted runs,
+  docs/FAITHFULNESS.md).
+
 ## 1.1.0 (round 10)
 
 - Runtime meshes like libsm64: `kh2_mesh_prepare` / `kh2_mesh_get` (any body skinned on the CPU by

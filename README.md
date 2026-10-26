@@ -22,7 +22,7 @@ with `docs/FOR-HOST-AUTHORS.md` (tick order, units, collision, a C loop, common 
 ## Status and what a human must test
 
 Tested here on every change (`scripts/ci.ps1`): Windows 10, MSVC, Rust release build, .NET 9, the
-USA disc image; 48 disc tests, golden replays, fuzz, the C layout check, the binding diff, oracle
+USA disc image; 53 disc tests, golden replays, fuzz, the C layout check, the binding diff, oracle
 tests against the original executable (kh2-ee), the package scan, a 10-minute soak.
 
 Not tested here, a human should run first:
@@ -32,6 +32,9 @@ Not tested here, a human should run first:
    `nm` path); unzipping the package there (PowerShell writes backslash paths into the zip).
 3. A real host's audio device fed by `kh2_audio_tick`, and the HUD drawn by a GPU from
    `kh2_hud_draw_list` (only the software rasteriser drew it here).
+4. By ear: the hit sounds, the placed volume / pan and the area music through a real device (the
+   music measured about 15 dB under a PCSX2 recording, docs/SOUND-AND-EFFECTS.md); by eye: the
+   HP / MP panel, drive gauge, target gauge and reticle against the game (docs/HUD.md).
 
 ## Quick start per language
 
