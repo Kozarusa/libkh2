@@ -48,6 +48,23 @@ objects' own banks (`obj/*.apdx`) were not surveyed. The 1,131 silent effects kh
 were not reproduced with this driver on the global banks; their fixes live on an unmerged kh2-rs
 branch and are not used here.
 
+### Round 11: placement, hit sounds, music
+
+- Placement: `kh2_audio_set_listener(pos, forward, up)`; a placed sound takes the volume and pan of
+  kh2-rs `sound::placement` (`kh2_audio::positional::volume_pan`, the source in the listener's frame).
+  Measured: a keyblade swing 2 m in front plays louder than 50 m away (259,619 vs 179,418 energy).
+- Hit sounds: every landed hit is a `KH2_CUE_HIT` cue (the attack row's `EnemyReaction`, the
+  attacker's model: Sora's keyblade, an enemy's own); the engine plays kh2-rs `PlaySe::hit`'s rule
+  (light 0 / 1, heavy 2 / 3 of the attacker's own bank, alternating).
+- Music: `kh2_audio_play_bgm(n)` plays `bgm/musicNNN.bgm` with its wave bank in the field slot.
+  Measured: music 50 renders at -29.6 dBFS RMS; the reference recording of a Twilight Town fight
+  (PCSX2 loopback with music and effects, 25 s) is -14.4 dBFS: the library is about 15 dB quieter,
+  kh2-extras' master level 0.6 and the recording's own output level both unknown in that gap; no
+  correction was applied. tt04's map programs set no music pair (the game picks the field music from
+  elsewhere, not traced).
+- Not played yet: Sora's battle voices (the voice table and the area's bank, kh2-rs `sora_voice`),
+  footsteps (the area's sound info, `footstep_number`).
+
 ## From a cue to a file
 
 The sound number of a trigger-8 cue is `bank * 1000 + index` (kh2-rs `motion_sound_request`):

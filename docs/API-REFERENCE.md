@@ -1103,6 +1103,7 @@ typedef struct kh2_cue {
 } kh2_cue;
 ```
 
+- `KH2_CUE_HIT` = `9` — a landed hit: params[0] the row's EnemyReaction (hit sound class), [1] the row; model the attacker's, pos the victim's
 - `KH2_CUE_COLLISION_GROUP` = `8` — a script switched collision group params[0] on (params[1] 1) or off: show / hide that mesh group
 
 ### `kh2_poll_cue`
@@ -1340,6 +1341,22 @@ The audio engine (like libsm64's sm64_audio_tick): Sora's sound cues (and his pa
 ```c
 int32_t kh2_audio_tick(int32_t handle, int16_t *out, uint32_t frames);
 ```
+
+### `kh2_audio_set_listener`
+
+```c
+int32_t kh2_audio_set_listener(const float *pos, const float *forward, const float *up);
+```
+
+The listener for volume and pan (position cm, forward, up; usually the camera's). Without one every sound plays centred at full level.
+
+### `kh2_audio_play_bgm`
+
+```c
+int32_t kh2_audio_play_bgm(int32_t number);
+```
+
+Plays area music bgm/musicNNN.bgm (number; kh2_area_info.music names an area's), negative stops.
 
 ### `kh2_enemies_prune`
 

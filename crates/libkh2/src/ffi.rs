@@ -1360,6 +1360,25 @@ pub extern "C" fn kh2_enemies_tick(handle: i32) -> i32 {
             for e in en.list.iter().filter(|e| !e.removed) {
                 s.cues_extend(crate::cue::of_anim(&e.anim, crate::cue::Owner::Enemy(e.id), e.data.kind.model, e.pos()));
             }
+            // Hit cues (the hit sounds): Sora's hits with his keyblade's bank, the enemies' with their own.
+            let weapon = if s.drive.in_form { s.drive.files.as_ref().and_then(|f| f.hands[0].as_ref().map(|h| h.1.clone())) } else { None }.unwrap_or_else(|| crate::data::KEYBLADE_MODEL.to_string());
+            let mut hits = Vec::new();
+            for ev in &en.events[before.min(en.events.len())..] {
+                match ev {
+                    crate::enemy::EnemyEvent::Hit { id, atkp, .. } => {
+                        if let (Some(row), Some(e)) = (s.game.params.atkp(*atkp), en.list.iter().find(|e| e.id == *id)) {
+                            hits.push(crate::cue::Cue { kind: crate::cue::Kind::Hit, owner: crate::cue::Owner::Sora, model: weapon.clone(), params: [row.enemy_reaction as i16, *atkp, 0, 0], pos: e.pos(), frame: 0 });
+                        }
+                    }
+                    crate::enemy::EnemyEvent::HitSora { id, atkp, .. } => {
+                        if let (Some(row), Some(e)) = (s.game.params.atkp(*atkp), en.list.iter().find(|e| e.id == *id)) {
+                            hits.push(crate::cue::Cue { kind: crate::cue::Kind::Hit, owner: crate::cue::Owner::Enemy(*id), model: e.data.kind.model.to_string(), params: [row.enemy_reaction as i16, *atkp, 0, 0], pos: s.motor.pos, frame: 0 });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            s.cues_extend(hits);
             for ev in &en.events[before.min(en.events.len())..] {
                 if let crate::enemy::EnemyEvent::Effect { id, effect } = ev
                     && let Some(e) = en.list.iter().find(|e| e.id == *id)
@@ -3427,5 +3446,44 @@ pub unsafe extern "C" fn kh2_audio_tick(handle: i32, out: *mut i16, frames: u32)
         }
         a.tick(&mut l.disc, buf, frames);
         frames as i32
+    })
+}
+
+/// The listener for the audio engine's volume and pan (kh2-rs `sound::placement`): position (cm)
+/// and the forward and up directions (the right axis is forward x up). Pass the camera's.
+///
+/// # Safety
+/// The pointers each point to 3 floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_audio_set_listener(pos: *const f32, forward: *const f32, up: *const f32) -> i32 {
+    if pos.is_null() || forward.is_null() || up.is_null() {
+        return set_error("no listener vectors");
+    }
+    let v = |p: *const f32| unsafe { Vec3::new(*p, *p.add(1), *p.add(2)) };
+    let (at, f, u) = (v(pos), v(forward).normalize_or_zero(), v(up).normalize_or_zero());
+    if !at.is_finite() || f == Vec3::ZERO || u == Vec3::ZERO {
+        return set_error("the listener is not finite");
+    }
+    let r = f.cross(u).normalize_or_zero();
+    with(-1, |l| match l.audio.as_mut() {
+        Some(a) => {
+            a.listener = Some([at, r, u, f]);
+            0
+        }
+        None => set_error("no audio engine (kh2_audio_init)"),
+    })
+}
+
+/// Plays area music `music<number>` (`bgm/musicNNN.bgm`; an area's pair is in `kh2_area_info.music`)
+/// through the audio engine; a negative number stops it. Returns 0, or -1 when the music is missing.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_audio_play_bgm(number: i32) -> i32 {
+    with(-1, |l| {
+        let Some(a) = l.audio.as_mut() else { return set_error("no audio engine (kh2_audio_init)") };
+        if number < 0 {
+            a.stop_bgm();
+            return 0;
+        }
+        if a.play_bgm(&mut l.disc, number as u32) { 0 } else { set_error(format!("no music {number}")) }
     })
 }

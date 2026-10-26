@@ -2363,3 +2363,47 @@ fn the_target_gauge_and_reticle_follow_the_lock() {
     assert_eq!(hud.target, None);
     eprintln!("target: reticle at {at:?}, {n_locked} sprites with the lock");
 }
+
+/// Audio round 11: music through the driver (the first track on the disc), the
+/// hit sounds' classes, and placement: the same sound far from the listener is quieter than near.
+/// Prints the music's loudness; the reference recording of a Twilight Town fight (PCSX2 loopback,
+/// music and effects) measured -14.4 dBFS RMS (docs/SOUND-AND-EFFECTS.md).
+#[test]
+fn music_and_placed_sounds_render() {
+    let Some(mut d) = disc() else { return };
+    let mut audio = kh2::audio::Audio::new(&mut d).expect("audio");
+    // The area scripts of tt04's map programs set no music pair (opcode 0x10); the first track on the disc is used.
+    let music = (0u8..8).find_map(|m| d.area_setup("tt04", [m, 0, 0], 0).music);
+    eprintln!("tt04 music pair {music:?}");
+    let track = music.map(|m| if m[1] != 0xffff { m[1] } else { m[0] } as u32).filter(|&n| audio.play_bgm(&mut d, n)).or_else(|| (0u32..400).find(|&n| audio.play_bgm(&mut d, n))).expect("some music plays");
+    let mut pcm = vec![0i16; 2 * 48000 * 10];
+    for c in pcm.chunks_mut(1600) {
+        let n = c.len() / 2;
+        audio.tick(&mut d, c, n);
+    }
+    let rms = (pcm.iter().map(|&v| (v as f64 / 32768.0).powi(2)).sum::<f64>() / pcm.len() as f64).sqrt();
+    let db = 20.0 * rms.log10();
+    eprintln!("music {track}: 10 s, RMS {rms:.4} ({db:.1} dBFS)");
+    assert!(db > -40.0 && db < -3.0, "music level: {db:.1} dBFS");
+    audio.stop_bgm();
+    // Placement: a keyblade swing sound beside the listener, then 50 m away.
+    audio.listener = Some([Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::Z]);
+    let level = |audio: &mut kh2::audio::Audio, d: &mut Disc, at: Vec3| {
+        for _ in 0..60 {
+            let mut b = [0i16; 1600];
+            audio.tick(d, &mut b, 800);
+        }
+        assert!(audio.play_at(d, "W_EX010", 500, 0, Some(at)), "the swing sound plays");
+        let mut sum = 0f64;
+        for _ in 0..30 {
+            let mut b = [0i16; 1600];
+            audio.tick(d, &mut b, 800);
+            sum += b.iter().map(|&v| (v as f64).powi(2)).sum::<f64>();
+        }
+        sum.sqrt()
+    };
+    let near = level(&mut audio, &mut d, Vec3::new(0.0, 0.0, 200.0));
+    let far = level(&mut audio, &mut d, Vec3::new(0.0, 0.0, 5000.0));
+    eprintln!("placed swing: near {near:.0}, far {far:.0}");
+    assert!(near > 0.0 && far < near, "farther is quieter");
+}

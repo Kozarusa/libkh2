@@ -517,6 +517,7 @@ typedef struct kh2_cue {
     float pos[3];          /* the owner's position (cm) */
     char model[16];        /* the owner's model: its effect / sound file is obj/<model>.apdx */
 } kh2_cue;
+#define KH2_CUE_HIT 9           /* a landed hit: params[0] the row's EnemyReaction (hit sound class), [1] the row; model the attacker's, pos the victim's */
 #define KH2_CUE_COLLISION_GROUP 8 /* a script switched collision group params[0] on (params[1] 1) or off: show / hide that mesh group */
 /* Takes the oldest cue: 1 when one was taken, 0 when none waits. */
 KH2_API int32_t kh2_poll_cue(int32_t handle, kh2_cue *out);
@@ -638,6 +639,11 @@ KH2_API int32_t kh2_surface_object_delete(int32_t id);
  * 2 * frames interleaved samples. Voices, footsteps and music are not played. */
 KH2_API int32_t kh2_audio_init(void);
 KH2_API int32_t kh2_audio_tick(int32_t handle, int16_t *out, uint32_t frames);
+/* The listener for volume and pan (position cm, forward, up; usually the camera's). Without one every
+ * sound plays centred at full level. */
+KH2_API int32_t kh2_audio_set_listener(const float *pos, const float *forward, const float *up);
+/* Plays area music bgm/musicNNN.bgm (number; kh2_area_info.music names an area's), negative stops. */
+KH2_API int32_t kh2_audio_play_bgm(int32_t number);
 /* kh2_cam_view.mode: 0 follow, 1 look-around, 2 lock-on (a kh2_set_target point), 4 talk,
  * 5 overhead, 8 always-behind. */
 /* Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load

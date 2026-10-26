@@ -55,6 +55,9 @@ pub enum Kind {
     /// A script switched collision group `params[0]` on (`params[1]` 1) or off (0): the library's
     /// collision follows; the host shows or hides that mesh group.
     CollisionGroup = 8,
+    /// A landed hit: `params[0]` the attack row's `EnemyReaction` (the hit sound's class), `params[1]`
+    /// the row id; `model` is the attacker's (its own bank holds the hit sounds), `pos` the victim's.
+    Hit = 9,
 }
 
 /// One cue.

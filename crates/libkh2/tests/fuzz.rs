@@ -403,6 +403,11 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                     kh2_audio_init();
                 }
                 let mut pcm = [0i16; 64];
+                let v3 = [r.float(), r.float(), r.float()];
+                kh2_audio_set_listener(if r.chance(4) { std::ptr::null() } else { v3.as_ptr() }, v3.as_ptr(), [0.0, 1.0, 0.0].as_ptr());
+                if r.chance(50) {
+                    kh2_audio_play_bgm(if r.chance(2) { -1 } else { r.int() });
+                }
                 kh2_audio_tick(h, if r.chance(4) { std::ptr::null_mut() } else { pcm.as_mut_ptr() }, max(r, 32));
                 let ids = [1u16, 2];
                 let cn = [1u8, 0];
