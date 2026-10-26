@@ -89,3 +89,12 @@ process-wide statics (the shared memory blocks, the collision group edits, the a
 enemy sum). Through the C API this is invisible (one library state, calls serialised). Rust users
 who tick separate `Enemies` / `AreaRun` sets on several threads at once share those tables; the disc
 tests serialise themselves for this reason.
+
+Magic levels and the last two spells (round 10, `every_spell_at_every_level_casts_with_its_own_row`):
+levels 1 to 3 of Fire, Blizzard, Thunder and Cure use their own `magc` rows, commands, cast kinds
+(0 / 2 / 4) and `atkp` sub rows (0 / 512 / 1024). Magnet casts and pays but makes no attack or pull:
+kh2-rs runs MAGNET_*.mag in the BDX interpreter with its spell host (`magic.rs` `VmCast`), which
+libkh2 does not port. Reflect starts its cast motion but never reaches its trigger 17 (kh2-rs notes
+it sits at frame 0 of the slot Reflect shares with Fire; the library's trigger walk does not reach
+it; a frame-0 rule was tried and did not fix it), so it neither pays nor guards. Limit Form (Final
+Mix only) is not on the USA disc kh2-rs targets: nothing to port.
