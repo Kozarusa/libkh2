@@ -215,7 +215,14 @@ struct Strike {
     done: bool,
 }
 
+/// Magnet's attack (MAGNET_*.mag: `attack_create(ctx, 658, -1, kind)`, reaction class 5: the pull).
+pub const ATKP_MAGNET: u16 = 658;
+
 enum Step {
+    /// Magnet (kh2fm-rs magic-turn.md "Magnet", the script's order): after a yield attack 658 of the
+    /// kind at the place (a sphere of `magi` +0x4c), 16 frames to the sphere, `magi` +0x40 frames of
+    /// growth and `magi` +0x44 of hold, then the attack is finished.
+    Magnet { yielded: bool, attack: Option<usize>, t: f32 },
     Fire { attacks: Option<(usize, Option<usize>)>, t: f32, yielded: bool },
     Blizzard { yielded: bool },
     Thunder { plan: Option<VecDeque<(f32, Vec3, f32)>>, wait: f32 },
@@ -235,6 +242,8 @@ pub struct SpellHit {
     pub slot: u8,
     pub row: usize,
     pub dir: Vec3,
+    /// The attack's group (the object a pulled victim follows, `Spells::attack_at`).
+    pub group: u32,
 }
 
 /// The running spells of one caster (kh2-rs `MagicRun`'s spell part).
@@ -279,9 +288,15 @@ impl Spells {
             0 => Step::Fire { attacks: None, t: magi.f(MAGI_TIME), yielded: false },
             1 => Step::Blizzard { yielded: false },
             2 => Step::Thunder { plan: None, wait: 0.0 },
+            4 => Step::Magnet { yielded: false, attack: None, t: 16.0 + magi.f(0x40).ceil() + magi.f(0x44) },
             _ => return,
         };
         self.casts.push(Cast { kind, magi, step });
+    }
+
+    /// The position of the live attack of `group` (None once it is finished).
+    pub fn attack_at(&self, group: u32) -> Option<Vec3> {
+        self.attacks.iter().find(|a| a.live && a.group == group).and_then(|a| a.pos)
     }
 
     pub fn active(&self) -> bool {
@@ -383,6 +398,39 @@ impl Spells {
                             }
                         }
                         None => cast.step = Step::Done,
+                    }
+                }
+                Step::Magnet { yielded, attack, t } => {
+                    if !*yielded {
+                        *yielded = true;
+                        continue;
+                    }
+                    let ai = match *attack {
+                        Some(a) => a,
+                        None => {
+                            // The place: the target's position, else in front of the caster [decided: the
+                            // script's fallback is element 1's position, near the caster]; host 1.141 puts it
+                            // `magi` +0x3c above the ground found within twice that.
+                            let up = cast.magi.f(0x3c);
+                            let mut at = c.target.unwrap_or(c.pos + c.facing * 300.0);
+                            if let Some(g) = world.ground(at, at.y + up, 2.0 * up) {
+                                at.y = g.y + up;
+                            }
+                            let Some(a) = new_attack(attacks, next, atkp, ATKP_MAGNET, cast.kind, cast.magi.f(0x4c), 0.0, 4) else {
+                                cast.step = Step::Done;
+                                continue;
+                            };
+                            move_attack(&mut attacks[a], at);
+                            *attack = Some(a);
+                            a
+                        }
+                    };
+                    let p = attacks[ai].pos.unwrap_or(c.pos);
+                    move_attack(&mut attacks[ai], p);
+                    *t -= 1.0;
+                    if *t <= 0.0 {
+                        attacks[ai].live = false;
+                        cast.step = Step::Done;
                     }
                 }
                 Step::Done => {}
@@ -502,7 +550,7 @@ impl Spells {
                 let vrow = rules::variant(atkp, a.base_row, n);
                 mem.mark(a.group, atkp[vrow].interval);
                 let dir = (*vpos - c.pos).with_y(0.0).normalize_or(Vec3::Z);
-                hits.push(SpellHit { victim: vi, slot: a.slot, row: vrow, dir });
+                hits.push(SpellHit { victim: vi, slot: a.slot, row: vrow, dir, group: a.group });
                 a.hit_any = true;
             }
         }

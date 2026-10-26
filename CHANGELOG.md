@@ -13,6 +13,8 @@ The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry name
 - Audio: voices (Sora's battle lines through the `vtbl` pick, enemies' own banks) and footsteps
   (the area's sound info, the ground material), `kh2_audio_set_area`; the master level is the
   game's full level (1.0, was 0.6).
+- Magnet: its attack (658) at the target and the pull of its victims (reaction class 5); Reflect
+  still pays only.
 - HUD on Final Mix: Japanese text (the disc's font set, two planes), the party panels with faces and
   rings, the area-name card (`kh2_hud_area_card`).
 - docs/FM-CHANGED.md: the 106 Final Mix functions of Sora's systems that differ, with what is known;

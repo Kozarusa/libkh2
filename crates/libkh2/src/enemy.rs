@@ -78,6 +78,8 @@ impl KindData {
 
 /// The enemy tables (kh2-rs `AiPrograms` plus `GameData`'s enemy rows).
 pub struct EnemyData {
+    /// The executable's numbers of the class 5 pull (Magnet; kh2fm-rs `reaction_rules::PullConsts`).
+    pub pull: Option<kh2_game_core::reaction_rules::PullConsts>,
     /// The kinds loaded so far, by model (round 6: on demand, `kind`), and a reader of the disc.
     kinds: std::sync::Mutex<HashMap<&'static str, Arc<KindData>>>,
     loader: std::sync::Mutex<Option<Disc>>,
@@ -218,7 +220,8 @@ impl Disc {
         let player_parts = self.read("obj/P_EX100.mdlx").ok().and_then(|f| kh2_game_core::reaction_parts::Table::from_mdlx(&f));
         let by_object: HashMap<u32, &'static str> = kh2_enemy_host::KINDS.iter().filter_map(|k| Some((objs.iter().find(|r| r.model_name == k.model)?.object_id, k.model))).collect();
         let creatable = Arc::new(by_object.keys().copied().collect());
-        Ok(EnemyData { creatable, by_object, kinds: Default::default(), loader: std::sync::Mutex::new(loader), objs, table, prizes, enmp, lvpm, player_model, cmds, player_parts })
+        let pull = self.exe().and_then(|e| kh2_game_core::reaction_rules::PullConsts::from_exe(&e));
+        Ok(EnemyData { pull, creatable, by_object, kinds: Default::default(), loader: std::sync::Mutex::new(loader), objs, table, prizes, enmp, lvpm, player_model, cmds, player_parts })
     }
 }
 
@@ -340,6 +343,8 @@ pub struct Enemy {
     pub min_hp: i32,
     pub state: EState,
     pub timer: f32,
+    /// Reaction class 5: pulled toward the spell attack of this group (kh2fm-rs `Enemy::pull`).
+    pub pull: Option<(kh2_game_core::reaction_rules::Pull, u32)>,
     pub push: Option<Push>,
     pub blow: Option<Blow>,
     pub blown_back: bool,
@@ -530,6 +535,7 @@ impl Enemies {
             min_hp: 0,
             state: EState::Idle,
             timer: 0.0,
+            pull: None,
             push: None,
             blow: None,
             blown_back: false,
@@ -917,6 +923,8 @@ impl Enemies {
         let useless = rules::is_ineffective(e.stats.weakness[(atk.element as usize).min(6)], e.stats.weakness[6]);
         kh2_enemy_host::enemy_obj::note_hit_row(atk.id as i16, atk.enemy_reaction, atk.element);
         e.hp = (e.hp - dmg).max(e.min_hp);
+        // Any other reaction replaces the pull's mover (FUN_0016b698).
+        e.pull = None;
         let facing = e.obj.motor.forward();
         let from_front = facing.dot(dir) < 0.0;
         let ctx = VictimCtx { status: 0, grounded: e.obj.motor.grounded, attacker_flag_4000: false, from_front, hit_part_plain: true };
@@ -975,6 +983,34 @@ impl Enemies {
             let magi = rules_magi(&params, kind);
             self.spells.fire(slot, kind, magi);
         }
+        // The pulls (FUN_001bfc10 / FUN_001bfba8, kh2fm-rs `think`): toward the attack object while it
+        // lives, no gravity; once it is finished motion 0 with the end blend.
+        if let Some(pc) = self.data.pull {
+            for e in self.list.iter_mut() {
+                let Some((p, group)) = e.pull else { continue };
+                let centre = e.pos() + Vec3::Y * 80.0;
+                match self.spells.attack_at(group) {
+                    Some(at) => {
+                        let v = p.velocity(at, centre, &pc);
+                        e.obj.motor.grounded = false;
+                        e.obj.motor.move_by(world, v.with_y(0.0), Some(v.y));
+                        let face = p.facing(at, centre, &pc).with_y(0.0);
+                        if face != Vec3::ZERO {
+                            e.obj.motor.yaw = face.x.atan2(face.z);
+                        }
+                        e.state = EState::Hurt;
+                        e.timer = 0.0;
+                    }
+                    None => {
+                        e.pull = None;
+                        e.state = EState::Idle;
+                        e.timer = 0.0;
+                        let idle = (0..4).find(|&s| e.data.rig.mset.has(s));
+                        e.anim.restart(idle, true, pc.end_blend);
+                    }
+                }
+            }
+        }
         if !self.spells.active() {
             return;
         }
@@ -1006,6 +1042,26 @@ impl Enemies {
             }
             dmg = low_hp_scale(dmg, e.hp, e.stats.max_hp, 0.0, params.low_hp_damage_percent);
             Self::receive(e, &atk, dmg, h.dir, &reaction);
+            // Reaction class 5 (FUN_00185668 -> FUN_001bf920): a spell attack pulls the victim (Magnet).
+            if rules::reaction_class(atk.enemy_reaction) == 5
+                && e.hp > 0
+                && let Some(pc) = self.data.pull
+            {
+                if self.seed == 0 {
+                    self.seed = 1;
+                }
+                self.seed = self.seed.wrapping_mul(0x10dcd);
+                let from_front = e.obj.motor.forward().dot(h.dir) < 0.0;
+                let p = rules::Pull::new(atk.knockback_strength1, atk.knockback_strength2, atk.unknown, from_front, self.seed, &pc);
+                e.pull = Some((p, h.group));
+                e.push = None;
+                e.state = EState::Hurt;
+                e.timer = 0.0;
+                let slot = e.data.rig.mset.slot(p.motion as usize, kh2_anim::PlayerState::BattleWeapon).or_else(|| e.data.rig.mset.has(p.motion as usize).then_some(p.motion as usize));
+                if slot.is_some() {
+                    e.anim.restart(slot, true, 0.0);
+                }
+            }
             self.events.push(EnemyEvent::Hit { id, atkp: atk.id as i16, damage: dmg, hp: e.hp });
             if e.hp <= 0 && !e.defeated {
                 e.defeated = true;

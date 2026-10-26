@@ -2715,3 +2715,49 @@ fn voices_and_footsteps_play_on_final_mix() {
     assert!(steps > 0 && audio.played > before, "footsteps play");
     assert!(voice_cues > 0 && audio.voices > 0, "Sora's battle voice plays");
 }
+
+/// Magnet (round 13, the script's order and kh2fm-rs's pull): the cast makes attack 658 at the
+/// target, a sphere of `magi` +0x4c that lives 16 + `magi` +0x40 + `magi` +0x44 frames; the Dusks it
+/// hits are pulled toward it (reaction class 5, FUN_001bfc10) and let go when it is finished.
+#[test]
+fn magnet_pulls_enemies_toward_its_sphere() {
+    use kh2::enemy::{EnemyEvent, Enemies};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    assert!(data.pull.is_some(), "the pull's numbers come from the executable");
+    let w = floor();
+    let mut s = standing(&game, &w);
+    s.magic_levels = [1; 6];
+    s.mp = s.max_mp;
+    let mut en = Enemies::new(data.clone());
+    let centre = Vec3::new(0.0, 0.0, 600.0);
+    for p in [Vec3::new(150.0, 0.0, 600.0), Vec3::new(-150.0, 0.0, 650.0)] {
+        en.spawn("M_EX990", p, 0.0, &w);
+    }
+    for e in en.list.iter_mut() {
+        e.rt = None;
+    }
+    let start: Vec<f32> = en.list.iter().map(|e| e.pos().distance(centre)).collect();
+    s.target = Some(kh2::sora::Target { pos: centre + Vec3::Y * 80.0, radius: 40.0, half_height: 80.0 });
+    s.tick(&w, &Input::default());
+    s.cast_request = Some((4, 30));
+    let (mut hits, mut pulled, mut closest) = (0, 0, f32::MAX);
+    for _ in 0..400 {
+        s.tick(&w, &Input::default());
+        en.tick(&mut s, &w, game.params.sstm.fall_max);
+        for ev in en.events.drain(..) {
+            if let EnemyEvent::Hit { atkp, .. } = ev
+                && atkp == 658
+            {
+                hits += 1;
+            }
+        }
+        pulled = pulled.max(en.list.iter().filter(|e| e.pull.is_some()).count());
+        closest = closest.min(en.list.iter().map(|e| e.pos().distance(centre)).fold(f32::MAX, f32::min));
+    }
+    eprintln!("magnet: {hits} hits of 658, {pulled} pulled at once, start {start:?}, closest {closest:.0}, end {:?}", en.list.iter().map(|e| e.pos().distance(centre)).collect::<Vec<_>>());
+    assert!(hits > 0 && pulled > 0, "the sphere hits and pulls");
+    assert!(closest < start.iter().copied().fold(f32::MAX, f32::min), "drawn toward the sphere");
+    assert!(en.list.iter().all(|e| e.pull.is_none()), "let go once the attack is finished");
+}

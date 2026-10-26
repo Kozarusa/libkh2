@@ -21,7 +21,8 @@ Reflect's MP, audio placement, hit sounds and music, the wall recoil and the A /
 
 - HUD: party panels, banners, INFORMATION bar, message / tutorial windows, area-name card, mission
   panels (the original has no damage / EXP popups to port) (docs/HUD.md).
-- Magnet's pull and hits, Reflect's guard: their .mag scripts in kh2-rs's spell host (`VmCast`).
+- [x] Magnet's attack and pull (2.1.0); open: its form extras, Reflect's guard and counter-burst (the
+  barrier's PAX duration, the clash pairing).
 - Audio: Sora's voices (the voice table), footsteps (the area's sound info); music is about 15 dB
   under the reference recording, uncorrected; tt04's music pair is not set by its programs.
 - A / B: two scripted runs on tt04 only; enemies, magic and drive were not compared.

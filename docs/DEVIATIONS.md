@@ -137,3 +137,16 @@ spell host (`magic.rs` `VmCast` / `SpellHost`: the effect handles 1.138 / 1.139,
 attack objects, the persistent blocks of 2.21), about a thousand lines tied to Bevy effect
 entities; porting it is the next step (TODO.md). Limit Form (Final
 Mix only) is not on the USA disc kh2-rs targets: nothing to port.
+
+## Magnet and Reflect (2.1.0)
+
+- Magnet runs as `spell.rs` `Step::Magnet` in the order of MAGNET_*.mag (kh2fm-rs magic-turn.md): after a
+  yield attack 658 of the kind at the target (else 300 units ahead), lifted `magi` +0x3c above the ground,
+  a sphere of `magi` +0x4c, alive 16 + `magi` +0x40 + `magi` +0x44 frames. Its victims get reaction class 5,
+  the pull (kh2fm-rs `reaction_rules::Pull`, FUN_001bf920 / FUN_001bfc10 / FUN_001bfba8, the numbers from
+  the executable): drawn toward the sphere with the swirl, no gravity, let go with motion 0 when it is
+  finished. decided: the body centre is the position + 80; the Wisdom / Master / Final extra attacks
+  (976, 1440), the effect elements and Final's global flag are not done.
+- Reflect is not ported: its guard (atkp 573) lives as long as the barrier, a PAX element whose duration
+  libkh2 does not read, and the clash pairing of the guard with enemy attack volumes (the executable's
+  clash table) is not in libkh2. Its MP is paid (1.2.0).
