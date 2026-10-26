@@ -1,11 +1,17 @@
 # Enemy kinds and areas
 
-Every enemy kind kh2-rs has a kind file for (`kh2-enemy/src/kinds`) is compiled into libkh2 and
+Every enemy kind kh2fm-rs has a kind file for (`kh2-enemy/src/kinds`, the same 54 files as the USA tree:
+kh2fm-rs has no Final Mix-only enemy kind yet) is compiled into libkh2 and
 spawns with `kh2_enemy_spawn(handle, "<model>", ...)`. The table is the output of the disc test
 `every_enemy_kind_runs` (`cargo test --release -p libkh2 --test disc every_enemy_kind_runs -- --nocapture`):
 each kind on a flat floor, 10 s left to its script with Sora standing 3 m away, then 20 s of Sora
 attacking it. "moved" is the farthest it went from its spawn point, "motions" the distinct motion
 slots it played, "unserved host calls" the calls its script made that the host does not serve.
+
+The table below is the Final Mix disc's run (2.2.0). M_EX210 and M_EX690 make one host call each that
+the host does not serve (named in the test's log; not ported).
+Areas: `areas_load_and_sora_walks_on_them`, `area_runs_set_up_groups_and_waves` and
+`area_battle_groups_spawn_and_fight` run on the Final Mix maps (map/jp read through the map/us names).
 
 Reading the table:
 - Every kind loads and runs its own script; 47 of 54 are defeated by Sora's combo in the run.
@@ -32,16 +38,16 @@ Reading the table:
 | M_EX110 | M_EX110 | yes | 165 | 8 | 0 | yes | 0 |
 | M_EX120 | M_EX120 | yes | 495 | 9 | 2 | yes | 0 |
 | M_EX130 | M_EX130 | yes | 546 | 13 | 1 | yes | 0 |
-| M_EX210 | M_EX210 | yes | 689 | 9 | 1 | yes | 0 |
+| M_EX210 | M_EX210 | yes | 1456 | 12 | 2 | yes | 1 |
 | M_EX420 | M_EX420 | yes | 574 | 11 | 1 | yes | 0 |
 | M_EX500 | M_EX500 | yes | 581 | 10 | 0 | yes | 0 |
 | M_EX510 | M_EX510 | yes | 485 | 9 | 0 | yes | 0 |
-| M_EX520 | M_EX520 | yes | 433 | 6 | 0 | yes | 0 |
+| M_EX520 | M_EX520 | yes | 438 | 6 | 0 | yes | 0 |
 | M_EX550 | M_EX550 | yes | 568 | 10 | 2 | yes | 0 |
 | M_EX560 | M_EX560 | yes | 737 | 12 | 0 | yes | 0 |
 | M_EX570 | M_EX570 | yes | 763 | 11 | 3 | yes | 0 |
 | M_EX580 | M_EX580 | yes | 1355 | 8 | 2 | yes | 0 |
-| M_EX590 | M_EX590 | yes | 2691 | 8 | 0 | no (0 hits) | 0 |
+| M_EX590 | M_EX590 | yes | 4580 | 8 | 0 | no (0 hits) | 0 |
 | M_EX600 | M_EX600 | yes | 1695 | 7 | 0 | yes | 0 |
 | M_EX610 | M_EX610 | yes | 942 | 9 | 0 | yes | 0 |
 | M_EX610_RAW | M_EX610_RAW | yes | 942 | 9 | 0 | yes | 0 |
@@ -50,7 +56,7 @@ Reading the table:
 | M_EX650 | M_EX650 | yes | 849 | 9 | 0 | yes | 0 |
 | M_EX660 | M_EX660 | yes | 1234 | 7 | 1 | yes | 0 |
 | M_EX680 | M_EX680 | yes | 1249 | 12 | 1 | yes | 0 |
-| M_EX690 | M_EX690 | yes | 454 | 11 | 1 | yes | 0 |
+| M_EX690 | M_EX690 | yes | 454 | 11 | 1 | yes | 1 |
 | M_EX700 | M_EX700 | yes | 587 | 10 | 0 | yes | 0 |
 | M_EX710 | M_EX710 | yes | 447 | 10 | 5 | yes | 0 |
 | M_EX730 | M_EX730 | yes | 487 | 11 | 2 | yes | 0 |
@@ -61,13 +67,13 @@ Reading the table:
 | M_EX780 | M_EX780 | yes | 477 | 6 | 0 | yes | 0 |
 | M_EX850 | M_EX850 | yes | 0 | 1 | 0 | no (0 hits) | 0 |
 | M_EX870 | M_EX870 | yes | 674 | 3 | 16 | yes | 0 |
-| M_EX880 | M_EX880 | yes | 606 | 8 | 2 | yes | 0 |
+| M_EX880 | M_EX880 | yes | 612 | 8 | 2 | yes | 0 |
 | M_EX890 | M_EX890 | yes | 542 | 9 | 1 | yes | 0 |
 | M_EX900 | M_EX900 | yes | 598 | 4 | 1 | no (0 hits) | 0 |
 | M_EX910 | M_EX910 | yes | 676 | 13 | 3 | yes | 0 |
 | M_EX920 | M_EX920 | yes | 1244 | 8 | 0 | yes | 0 |
-| M_EX930 | Dancer | yes | 1389 | 9 | 1 | yes | 0 |
-| M_EX940 | M_EX940 | yes | 1033 | 10 | 1 | yes | 2 |
+| M_EX930 | Dancer | yes | 1391 | 9 | 1 | yes | 0 |
+| M_EX940 | M_EX940 | yes | 1033 | 10 | 1 | yes | 0 |
 | M_EX950 | M_EX950 | yes | 972 | 9 | 0 | yes | 0 |
 | M_EX960 | M_EX960 | yes | 769 | 12 | 0 | yes | 0 |
 | M_EX990 | Dusk | yes | 992 | 14 | 0 | yes | 0 |
