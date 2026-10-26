@@ -6,6 +6,9 @@ The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry name
 
 - Oracle tests of the jump mover (rise time, launch, curve) against Final Mix; kh2_jump_height is class a.
 - Reflect: the clash table by attack type and the enemy's clash reaction.
+- HUD message window (`kh2_hud_message`, `kh2_hud_message_confirm`); `KH2_NAMES` (an optional name
+  list) lets the archive find the world message files and the world's own HUD art.
+- Footstep stop step and start dust cues.
 - docs/FM-CHANGED.md: all 56 changed Final Mix functions of Sora's systems compared instruction by
   instruction (7 differ only in offsets and constants).
 

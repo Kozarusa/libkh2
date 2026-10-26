@@ -3566,3 +3566,25 @@ pub extern "C" fn kh2_hud_info(handle: i32, message: u32) -> i32 {
         None => set_error("no HUD (kh2_hud_load)"),
     })
 }
+
+/// Opens the HUD's message window of `class` (0 event message, 1 top banner, 2 top, 3 bottom; the
+/// game's four window classes) with system message `message`; 0 closes it. The window opens, types
+/// the text, shows the button prompt and waits for `kh2_hud_message_confirm`. 1 shown, 0 no such
+/// message / class / frame file, -1 no HUD.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_hud_message(handle: i32, message: u32, class: i32) -> i32 {
+    with(-1, |l| match l.huds.get_mut(&handle) {
+        Some((h, _)) => i32::from(h.message_window(message, class.max(0) as usize)),
+        None => set_error("no HUD (kh2_hud_load)"),
+    })
+}
+
+/// The message window's button: 1 when the window was waiting and closes, 0 when it was not
+/// waiting (still typing, or none open), -1 no HUD.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_hud_message_confirm(handle: i32) -> i32 {
+    with(-1, |l| match l.huds.get_mut(&handle) {
+        Some((h, _)) => i32::from(h.message_confirm()),
+        None => set_error("no HUD (kh2_hud_load)"),
+    })
+}

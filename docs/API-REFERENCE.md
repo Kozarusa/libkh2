@@ -1367,6 +1367,22 @@ int32_t kh2_hud_info(int32_t handle, uint32_t message);
 
 Shows system message `message` on the INFORMATION bar (a mission's objective, its header +6): 1 shown, 0 no such message, -1 no HUD. The bar waits 180 ticks, scrolls the text out and closes.
 
+### `kh2_hud_message`
+
+```c
+int32_t kh2_hud_message(int32_t handle, uint32_t message, int32_t class_);
+```
+
+Opens the message window of `class` (0 event message, 1 top banner, 2 top, 3 bottom) with system message `message` (0 closes it): it opens, types the text, shows the prompt and waits. 1 shown, 0 no such message / class, -1 no HUD.
+
+### `kh2_hud_message_confirm`
+
+```c
+int32_t kh2_hud_message_confirm(int32_t handle);
+```
+
+The message window's button: 1 it was waiting and closes, 0 not waiting, -1 no HUD.
+
 ### `kh2_hud_draw_list`
 
 ```c

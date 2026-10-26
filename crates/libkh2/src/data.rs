@@ -187,6 +187,12 @@ impl Disc {
         if a.edition() != kh2_archive::Edition::FinalMix {
             return Err(LoadError(format!("{}: not the Kingdom Hearts II Final Mix disc ({:?}); this build reads only Final Mix", iso.display(), a.edition())));
         }
+        // The archive's file names past the built-in ones (the world message files, msg/<lang>/<world>.bar):
+        // `KH2_NAMES` may name an OpenKH-style name list (one path a line) the host has; none is shipped.
+        let mut a = a;
+        if let Some(list) = std::env::var_os("KH2_NAMES").and_then(|p| std::fs::read_to_string(p).ok()) {
+            let _ = a.apply_names(list.lines());
+        }
         Ok(Disc(a, iso.to_path_buf()))
     }
 

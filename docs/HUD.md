@@ -97,6 +97,14 @@ onto the same node / draw-list core.
 - INFORMATION bar (2.2.0, `kh2_hud_info`): kh2fm-rs `hud_info` (gauge groups 0 -> 1 and 0 -> 2,
   font 0 colour 0x80e5e5e5, a 180-tick wait, 0.5 units a tick of scroll, group 3 to close); frame in
   `local/hud_info.png`. decided: no text scissor (the host clips at the screen edge).
-- Not done: banners and experience popups (`hud_banner`), message and tutorial windows
-  (`hud_msgwin`, `hud_tutorial`), mission panels (`hud_mission`).
+- Message window (2.3.0, `kh2_hud_message` / `kh2_hud_message_confirm`): kh2fm-rs `hud_msgwin` with
+  kh2_image's window rules (the four classes, `place`, `text_box`, the frame stretched around the
+  text): open group, typing, prompt 0x41, the button, close groups; frames `local/hud_window_<n>.png`.
+  decided: one page (the 0x10 page split is not done), no speech tail, no pointer, no selection slots.
+  The frame image lives in the world message files (`msg/<lang>/<world>.bar`, entry `md_m`), which
+  the archive only finds by name: set `KH2_NAMES` to a name list (OpenKH's `kh2idx.txt`; libkh2 ships
+  none). With it the world's own command art is found too (Twilight Town's frame); without it the
+  window is unavailable (`kh2_hud_message` returns 0) and the menu uses the shared `zz` art.
+- Not done: banners and experience popups (`hud_banner`), tutorial windows (`hud_tutorial`), mission
+  panels (`hud_mission`).
 

@@ -368,6 +368,14 @@ pub struct Hud {
     pub textures: Vec<Texture>,
     /// The area-name card's node and frames left.
     card_node: Option<usize>,
+    /// The message window (kh2fm-rs `hud_msgwin`): its frame file (fontinfo's `md_m` sequence with the
+    /// world message file's `md_m` image), its frame and prompt nodes, state (0 off, 1 opening, 2
+    /// typing, 3 waiting for the button, 4 closing), the request (text, class) and the text box.
+    msg_file: Option<usize>,
+    msg_nodes: Option<[usize; 2]>,
+    msg_state: u8,
+    msg_req: Option<(Vec<text::Token>, usize)>,
+    msg_box: [i32; 2],
     /// The INFORMATION bar: its two nodes, phase and message.
     info_nodes: Option<[usize; 2]>,
     info_phase: Option<info::Phase>,
@@ -457,6 +465,11 @@ impl Hud {
         let mut hud = Hud {
             textures: Vec::new(),
             card_node: None,
+            msg_file: None,
+            msg_nodes: None,
+            msg_state: 0,
+            msg_req: None,
+            msg_box: [0, 0],
             info_nodes: None,
             info_phase: None,
             info_tokens: Vec::new(),
@@ -544,6 +557,17 @@ impl Hud {
             let icons = (hud.textures.len() - 1) as u32;
             let world_ix = text::WORLDS.iter().position(|w| *w == world).unwrap_or(0);
             let places = disc.read("msg/us/place.bin").ok().and_then(|b| text::Places::parse(&b));
+            // The message window's frame (kh2fm-rs `hud_text::frame_file`): the `md_m` sequence (kind 25)
+            // of fontinfo.bar with the `md_m` image (kind 24) of the world's message file.
+            let find = |bar: &[u8], kind: u16| kh2_bar::parse(bar).ok()?.iter().find(|e| e.tag == "md_m" && e.kind == kind && !e.data.is_empty()).map(|e| e.data.to_vec());
+            // decided: a world file with no frame image (the field's own world may have none) takes the first
+            // world file of the game's order that has one.
+            let world_bar = std::iter::once(world).chain(text::WORLDS.iter().copied()).find_map(|w| disc.read(&format!("msg/us/{w}.bar")).ok().filter(|b| find(b, 24).is_some()));
+            if let (Some(seq), Some(img)) = (find(&info, 25).and_then(|b| kh2_image::seqd::parse(&b)), world_bar.as_deref().and_then(|w| find(w, 24)).and_then(|b| kh2_image::imgd::decode(&b))) {
+                hud.textures.push(Texture { width: img.width, height: img.height, rgba: img.rgba });
+                hud.files.push(SeqFile { texture: (hud.textures.len() - 1) as u32, seq });
+                hud.msg_file = Some(hud.files.len() - 1);
+            }
             hud.text = Some(TextSys { set, places, messages, world_messages, colors, pages, icons, world: world_ix });
         }
         // The node pool (kh2-rs `hud_menu::build`): per page the header, the plain bars, then the selected bar with its
@@ -814,6 +838,118 @@ impl Hud {
         }
     }
 
+    /// Opens the message window of `class` (0..3, kh2_image `window::CLASSES`) with system message `id`
+    /// (its first page); `id` 0 closes it (kh2fm-rs `hud_msgwin`, USA 0x1aaf20 / 0x1ab170 / 0x1ab370).
+    /// False when the message, the class or the frame file is missing.
+    pub fn message_window(&mut self, id: u32, class: usize) -> bool {
+        use kh2_image::window::{self, Phase, CLASSES};
+        let Some(file) = self.msg_file else { return false };
+        let [frame, prompt] = match self.msg_nodes {
+            Some(n) => n,
+            None => {
+                let n = [self.add(file, None, None), self.add(file, None, None)];
+                self.msg_nodes = Some(n);
+                n
+            }
+        };
+        if id == 0 {
+            if self.msg_state != 0 {
+                self.close_window();
+            }
+            return true;
+        }
+        let (Some(tokens), Some(c)) = (self.text.as_ref().and_then(|t| t.lookup(id)), CLASSES.get(class)) else { return false };
+        // decided: the whole message is one page (the page split at text command 0x10 is not done).
+        let style = self.window_style(class);
+        let t = self.text.as_ref().expect("text");
+        let size = text::layout(&t.set, t.colors.as_ref(), &tokens, &Style { time: f32::MAX / 2.0, ..style }, [0.0, 0.0]).size;
+        self.msg_box = window::text_box(size);
+        let at = window::place(c, self.msg_box);
+        self.nodes[frame].pos = [at.frame[0] as f32, at.frame[1] as f32];
+        self.nodes[frame].label = None;
+        self.nodes[frame].visible = true;
+        self.group(frame, window::frame_group(c.kind, Phase::Open));
+        self.nodes[prompt].visible = false;
+        self.msg_req = Some((tokens, class));
+        self.msg_state = 1;
+        true
+    }
+
+    /// The window's button (0x1aa430: confirm in state 2 closes the last page). True when it closed.
+    pub fn message_confirm(&mut self) -> bool {
+        if self.msg_state != 3 {
+            return false;
+        }
+        self.close_window();
+        true
+    }
+
+    /// The window waits for the button (its text is complete).
+    pub fn message_waiting(&self) -> bool {
+        self.msg_state == 3
+    }
+
+    fn close_window(&mut self) {
+        use kh2_image::window::{self, Phase, CLASSES, PROMPT_CLOSE_GROUP};
+        let (Some([frame, prompt]), Some((_, class))) = (self.msg_nodes, self.msg_req.clone()) else { return };
+        if self.nodes[prompt].visible {
+            self.group(prompt, PROMPT_CLOSE_GROUP);
+        }
+        self.nodes[frame].label = None;
+        self.group(frame, window::frame_group(CLASSES[class].kind, Phase::Close));
+        self.msg_state = 4;
+    }
+
+    fn window_style(&self, class: usize) -> Style {
+        let c = &kh2_image::window::CLASSES[class];
+        let t = self.text.as_ref();
+        let color = t.and_then(|t| t.colors.as_ref().and_then(|ct| ct.color(c.color, t.world))).unwrap_or([0xff, 0xff, 0xff, 0x80]);
+        Style { font: c.font, size: c.size, color, align: c.align, world: t.map_or(0, |t| t.world), ..Style::default() }
+    }
+
+    /// One tick of the message window (0x1ab170 with the draw's frame stretch 0x2387c0).
+    fn message_tick(&mut self) {
+        use kh2_image::window::{self, Phase, CLASSES, PROMPT_GROUP};
+        let (Some(file), Some([frame, prompt]), Some((tokens, class))) = (self.msg_file, self.msg_nodes, self.msg_req.clone()) else { return };
+        let c = &CLASSES[class];
+        let at = window::place(c, self.msg_box);
+        if let Some(g) = self.nodes[frame].player.group
+            && let Some(f) = self.files.get_mut(file)
+        {
+            f.seq.resize_frame(g, at.size[0], at.size[1]);
+        }
+        match self.msg_state {
+            1 if self.nodes[frame].player.finished() => {
+                self.group(frame, window::frame_group(c.kind, Phase::Idle));
+                let style = self.window_style(class);
+                let n = &mut self.nodes[frame];
+                n.label = Some(Label { tokens: tokens.clone(), style, offset: [(at.text[0] - at.frame[0]) as f32, (at.text[1] - at.frame[1]) as f32] });
+                n.label_time = 0.0;
+                self.msg_state = 2;
+            }
+            2 => {
+                let n = &self.nodes[frame];
+                let done = match (&n.label, &self.text) {
+                    (Some(l), Some(t)) => text::layout(&t.set, t.colors.as_ref(), &l.tokens, &Style { time: n.label_time, ..l.style.clone() }, [0.0, 0.0]).complete,
+                    _ => false,
+                };
+                if done {
+                    self.nodes[prompt].pos = [at.prompt[0] as f32, at.prompt[1] as f32];
+                    self.nodes[prompt].visible = true;
+                    self.group(prompt, PROMPT_GROUP);
+                    self.msg_state = 3;
+                }
+            }
+            4 if self.nodes[frame].player.finished() => {
+                self.nodes[frame].visible = false;
+                self.nodes[prompt].visible = false;
+                self.msg_req = None;
+                self.msg_state = 0;
+            }
+            _ => {}
+        }
+    }
+
     /// Shows message `id` on the INFORMATION bar (FUN_0014f1e8: a mission's objective, its header +6);
     /// a bar already up gets the new text and restarts its groups. False when the message or the
     /// gauge file is missing.
@@ -899,6 +1035,7 @@ impl Hud {
 
     pub fn tick(&mut self, _sora: &crate::sora::Sora) {
         self.info_tick();
+        self.message_tick();
         // The card counts down one per frame and hides at zero (0x15a640).
         if let Some(node) = self.card_node {
             if self.card_timer > 0.0 {

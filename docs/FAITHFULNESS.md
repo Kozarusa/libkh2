@@ -89,6 +89,7 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_set_growth | b | the `fmab` rows through abilities.rs | `growth_abilities_use_the_fmab_rows` |
 | kh2_audio_set_area | c | kh2fm-rs `arif_record` / `area_soundinfo`; the voice pick `kh2_audio::voice` and `footstep_number` are kh2fm-rs code read from the original | `voices_and_footsteps_play_on_final_mix` |
 | kh2_set_difficulty | a | `enemy::difficulty_scale` against FM 0x1a2108 (`orig_fm_1a2108_difficulty_matches_the_game`) | the oracle test |
+| kh2_hud_message, kh2_hud_message_confirm | c | kh2fm-rs `hud_msgwin` with kh2_image `window` (read: 0x1aaf20, 0x1ab170, 0x1ab370) | `the_message_window_opens_types_waits_and_closes` |
 | kh2_hud_info | c | kh2fm-rs `hud_info` (FUN_00150428 / 0x150688 / 0x1507d8 read) | `the_information_bar_opens_scrolls_and_closes` |
 | kh2_hud_area_card | c | kh2fm-rs `hud_card` (place table, font 2 at (256, 192), 120 frames) | `the_party_panels_and_the_area_card_draw_on_final_mix` |
 | kh2_set_dodge_roll | c | kh2fm-rs `square_ground` / `dash_step` transcribed (FM 0x178eb0, the A180 trigger 34 at tick 10) | `the_dodge_roll_taps_and_holds` |
@@ -134,8 +135,8 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_camera_tick | a | camera_rules.rs rig (15 of 74 verified, `orig_13f600_matches_the_game`, `orig_13f740_matches_the_game`); camera.rs drives it as kh2-rs `camera::tick` | `the_field_camera_follows_collides_and_locks_on`, `a_talk_locks_sora_and_cuts_the_camera_to_the_talk_view` |
 | kh2_camera_reset | c | the table row choice | `the_field_camera_follows_collides_and_locks_on` |
 
-Totals (132 functions, Final Mix): class a 9 (kh2_jump_height, kh2_set_difficulty, kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
-kh2_camera_tick, kh2_damage, kh2_drive_outgoing_damage, kh2_area_setup), class b 50, class c 73. The classes rest
+Totals (134 functions, Final Mix): class a 9 (kh2_jump_height, kh2_set_difficulty, kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
+kh2_camera_tick, kh2_damage, kh2_drive_outgoing_damage, kh2_area_setup), class b 50, class c 75. The classes rest
 on kh2fm-rs's ledger, whose oracle evidence was gathered on the USA executable (its `main-fm` image
 rows carry the Final Mix addresses); kh2_damage and kh2_drive_outgoing_damage were b in 2.0.0 (the Final Mix oracle differed) and are a
 again in 2.1.0: the differences were the test's USA status layout (docs/DEVIATIONS.md):

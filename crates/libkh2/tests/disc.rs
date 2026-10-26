@@ -2135,7 +2135,8 @@ fn the_command_menu_draws_and_casts_fire() {
     let (lo, hi) = list.iter().filter(|q| !q.text).flat_map(|q| q.pos).fold(([f32::MAX; 2], [f32::MIN; 2]), |(a, b), p| ([a[0].min(p[0]), a[1].min(p[1])], [b[0].max(p[0]), b[1].max(p[1])]));
     eprintln!("bars from {lo:?} to {hi:?}; page_x(0) {} header_y(4) {} row_y(4, 3) {}", hm::page_x(0), hm::header_y(4), hm::row_y(4, 3));
     assert!(lo[0] >= hm::page_x(0) - 40.0 && lo[0] <= hm::page_x(0) + 10.0, "left edge near page_x(0)");
-    assert!(hi[1] >= hm::row_y(4, 3) && hi[1] <= hm::row_y(4, 3) + 30.0, "the list ends at row_y(4, 3)");
+    // A world's own command art (found with a name list) frames the list with a few more lines below.
+    assert!(hi[1] >= hm::row_y(4, 3) && hi[1] <= hm::row_y(4, 3) + 40.0, "the list ends at row_y(4, 3)");
     let (fw, fh) = (512usize, 448usize);
     let mut frame = vec![40u8; fw * fh * 4];
     hud.rasterize(&list, fw, fh, &mut frame);
@@ -2943,4 +2944,46 @@ fn the_stop_step_and_the_start_dust_cue() {
     assert!(seen.iter().any(|&(t, k, n)| k == Kind::Dust && n == 10 && (60..70).contains(&t)), "start dust");
     assert!(seen.iter().any(|&(t, k, n)| k == Kind::Footstep && n == 8 && t >= 150), "stop step");
     assert!(seen.iter().any(|&(t, k, n)| k == Kind::Dust && n == 8 && t >= 150), "stop dust");
+}
+
+/// The message window (round 15, kh2fm-rs `hud_msgwin` with kh2_image's window rules): it opens,
+/// types the message, shows the prompt and waits; the button closes it. Every class draws; frames
+/// in `local/hud_window_<class>.png`.
+#[test]
+fn the_message_window_opens_types_waits_and_closes() {
+    use kh2::hud::Hud;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let s = standing(&game, &w);
+    for class in 0..4usize {
+        let mut hud = Hud::load(&mut d, "tt").expect("HUD loads");
+        // The frame image is in the world message files, which the archive finds only with a name list.
+        if !hud.message_window(0x8adc, class) {
+            assert!(std::env::var_os("KH2_NAMES").is_none(), "class {class} opens with the names");
+            return eprintln!("skipped: no KH2_NAMES (the world message files carry the window frame)");
+        }
+        let mut waited = None;
+        for t in 0..600 {
+            hud.tick(&s);
+            if hud.message_waiting() {
+                waited = Some(t);
+                break;
+            }
+        }
+        let list = hud.draw_list();
+        let (fw, fh) = (512usize, 448usize);
+        let mut frame = vec![40u8; fw * fh * 4];
+        hud.rasterize(&list, fw, fh, &mut frame);
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local");
+        let _ = std::fs::create_dir_all(&dir);
+        write_png(&dir.join(format!("hud_window_{class}.png")), fw, fh, &frame);
+        eprintln!("class {class}: waiting after {waited:?} ticks, {} sprites", list.len());
+        assert!(waited.is_some(), "class {class} finishes typing");
+        assert!(hud.message_confirm());
+        for _ in 0..120 {
+            hud.tick(&s);
+        }
+        assert!(!hud.message_waiting() && !hud.message_confirm(), "closed");
+    }
 }

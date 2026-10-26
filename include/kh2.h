@@ -657,6 +657,12 @@ KH2_API int32_t kh2_hud_area_card(int32_t handle, const char *area);
 /* Shows system message `message` on the INFORMATION bar (a mission's objective, its header +6): 1 shown,
  * 0 no such message, -1 no HUD. The bar waits 180 ticks, scrolls the text out and closes. */
 KH2_API int32_t kh2_hud_info(int32_t handle, uint32_t message);
+/* Opens the message window of `class` (0 event message, 1 top banner, 2 top, 3 bottom) with system
+ * message `message` (0 closes it): it opens, types the text, shows the prompt and waits. 1 shown, 0 no
+ * such message / class, -1 no HUD. */
+KH2_API int32_t kh2_hud_message(int32_t handle, uint32_t message, int32_t class_);
+/* The message window's button: 1 it was waiting and closes, 0 not waiting, -1 no HUD. */
+KH2_API int32_t kh2_hud_message_confirm(int32_t handle);
 /* Copies up to `max` sprites of the last kh2_hud_tick to `out` (caller-owned; 512 x 448 HUD units, y down). Returns the number in the list (may exceed `max`), or -1. */
 KH2_API int32_t kh2_hud_draw_list(int32_t handle, kh2_hud_sprite *out, uint32_t max);
 /* Pops the oldest menu choice into `*out`: 1 written, 0 none, -1. */
