@@ -121,3 +121,15 @@ What the host does with them:
   `collision_mask`); the library applies those switches and sends `KH2_CUE_COLLISION_GROUP` so the
   host shows or hides the matching mesh group. A host with its own platforms switches groups
   with `kh2_set_collision` or reloads triangles with `kh2_surfaces_load`.
+
+## Drawing, HUD, audio, platforms (1.1)
+
+- Draw any body without an exporter: `kh2_mesh_prepare` + `kh2_mesh_get` after the ticks, textures
+  once per id with `kh2_texture_get` (`docs/MESHES.md`).
+- HUD: `kh2_hud_load` once; per tick `kh2_hud_input` (your menu buttons), `kh2_hud_tick` after
+  `kh2_enemies_tick`, `kh2_hud_draw_list` into your 2D pass (512 x 448 screen), `kh2_hud_poll_event`
+  for items and forms (`docs/HUD.md`).
+- Audio: `kh2_audio_init` once; in your audio callback `kh2_audio_tick(h, buf, frames)` (48 kHz
+  stereo 16-bit).
+- Platforms: `kh2_surface_object_create` once, `kh2_surface_object_move` before `kh2_tick` each
+  tick; Sora rides them.

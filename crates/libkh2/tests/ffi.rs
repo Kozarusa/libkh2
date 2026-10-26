@@ -4,7 +4,9 @@ use kh2::ffi::*;
 
 #[test]
 fn calls_before_init_and_bad_arguments_return_errors() {
-    assert_eq!(kh2_version(), (env!("CARGO_PKG_VERSION_MAJOR").parse::<u32>().unwrap() << 16));
+    let part = |s: &str| s.parse::<u32>().unwrap();
+    let want = part(env!("CARGO_PKG_VERSION_MAJOR")) << 16 | part(env!("CARGO_PKG_VERSION_MINOR")) << 8 | part(env!("CARGO_PKG_VERSION_PATCH"));
+    assert_eq!(kh2_version(), want);
     unsafe {
         assert_eq!(kh2_create(0.0, 0.0, 0.0), -1);
         let mut buf = [0i8; 64];

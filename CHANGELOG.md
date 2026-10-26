@@ -2,6 +2,21 @@
 
 The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry names what a host sees.
 
+## 1.1.0 (round 10)
+
+- Runtime meshes like libsm64: `kh2_mesh_prepare` / `kh2_mesh_get` (any body skinned on the CPU by
+  its current bones: positions, normals, uvs, colours, indices per submesh), `kh2_texture_info` /
+  `kh2_texture_get` (decoded RGBA); `docs/MESHES.md`, `unity/Kh2Mesh.cs`.
+- Field HUD v1: `kh2_hud_load / input / tick / draw_list / poll_event / set_items /
+  texture_info / texture_get`: the command menu (Magic, Items, Drive pages) and the reaction
+  capsule as a 2D draw list from the game's art and font (kh2-rs `hud_menu` + `kh2_image`); a
+  chosen spell is cast, Attack attacks, the reaction is accepted; `docs/HUD.md`.
+- Moving collision objects: `kh2_surface_object_create / move / delete`; Sora rides them.
+- Audio engine like `sm64_audio_tick`: `kh2_audio_init` / `kh2_audio_tick` (kh2-rs's software sound
+  driver, 16-bit stereo at 48 kHz); keyblade swing sounds are cued.
+- Magic: every spell at levels 1 to 3 checked on the disc; Magnet / Reflect gaps documented.
+- `scripts/ci.ps1`, `scripts/ci.sh`.
+
 ## 1.0.0 (round 9)
 
 - Sound and effect cues: `kh2_poll_cue` (`kh2_cue`, `KH2_CUE_*`): the motions' frame triggers 1, 2,

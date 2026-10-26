@@ -19,6 +19,20 @@ cutscenes, dialogue, shops, save menus), not a full port (what differs from the 
 `docs/DEVIATIONS.md`; how close each function is, in `docs/FAITHFULNESS.md`). Host authors start
 with `docs/FOR-HOST-AUTHORS.md` (tick order, units, collision, a C loop, common mistakes).
 
+## Status and what a human must test
+
+Tested here on every change (`scripts/ci.ps1`): Windows 10, MSVC, Rust release build, .NET 9, the
+USA disc image; 48 disc tests, golden replays, fuzz, the C layout check, the binding diff, oracle
+tests against the original executable (kh2-ee), the package scan, a 10-minute soak.
+
+Not tested here, a human should run first:
+
+1. The Unity sample (`unity/`, `docs/UNITY.md`, `unity/Kh2Mesh.cs`): never compiled inside Unity.
+2. Linux and macOS: `sh scripts/ci.sh` (the build, `examples/build_min.sh`, `check_bindings.py`'s
+   `nm` path); unzipping the package there (PowerShell writes backslash paths into the zip).
+3. A real host's audio device fed by `kh2_audio_tick`, and the HUD drawn by a GPU from
+   `kh2_hud_draw_list` (only the software rasteriser drew it here).
+
 ## Quick start per language
 
 - **C:** `include/kh2.h` + `kh2.dll` / `kh2.dll.lib`; `examples/min.c`, built by
@@ -46,7 +60,9 @@ What there is: Sora's controller (movement, combos, guard, growth abilities, mag
 items, levels, bonus rewards, hit reactions, reaction commands with paired motions, limits),
 Donald and Goofy (follow, battle AI with styles and item use, HP, knock-out and revive, levels),
 every kh2-rs enemy kind under its own BDX script, a field camera helper, motion export and a save
-record, area battle programs with their waves and the Struggle's mission manager, talks. The C API is `include/kh2.h` (reference: `docs/API-REFERENCE.md`); what differs from the
+record, area battle programs with their waves and the Struggle's mission manager, talks, runtime
+skinned meshes and textures, the HUD's command menu as a draw list, moving collision objects and an
+audio engine (`docs/MESHES.md`, `docs/HUD.md`, `docs/SOUND-AND-EFFECTS.md`). The C API is `include/kh2.h` (reference: `docs/API-REFERENCE.md`); what differs from the
 game is in `docs/DEVIATIONS.md`, speed and memory in `docs/PERFORMANCE.md`, the enemy kinds in
 `docs/ENEMY-KINDS.md`, the Struggle in `docs/STRUGGLE.md`, the C API's safety in `docs/SAFETY.md`, how close each function is to the original in `docs/FAITHFULNESS.md`, changes in `CHANGELOG.md`.
 

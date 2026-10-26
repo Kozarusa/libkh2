@@ -117,13 +117,20 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_talk_begin, kh2_talk_end | b | npc.rs `talk_shot` and camera_rules `start_talk` / `talk_pose` (read); talk.rs glue (c, compared below) | `a_talk_locks_sora_and_cuts_the_camera_to_the_talk_view` |
 | kh2_area_setup | a | kh2-ard `run_area` (orig 0x181148, `orig_181148_matches_the_game`) and `entity_for_entrance` (FUN_001981a0, `orig_1981a0_matches_the_game`) | `an_area_setup_lists_townspeople_with_their_talks` |
 | kh2_area_get_object, kh2_poll_cue | c | records; the cues read the motions' frame triggers (kh2-anim, b) as kh2-rs's audio / fx systems do | `motions_give_sound_and_effect_cues` |
+| kh2_texture_info, kh2_texture_get | b | kh2-model's texture decoder (CLUT, swizzle, alpha; read) | `sora_mesh_skins_with_his_bones` |
+| kh2_mesh_prepare, kh2_mesh_get | c | CPU skinning of kh2-model's decoded meshes (b) by the current bones | `sora_mesh_skins_with_his_bones` |
+| kh2_hud_tick, kh2_hud_draw_list | b | kh2-rs `hud_menu` layout rules and executable tables (read), `kh2_image` SEQD player and text engine (read); the node glue (c) | `the_command_menu_draws_and_casts_fire` |
+| kh2_hud_load, kh2_hud_input, kh2_hud_set_items, kh2_hud_poll_event, kh2_hud_texture_info, kh2_hud_texture_get | c | loading, menu input, records | `the_command_menu_draws_and_casts_fire` |
+| kh2_surface_object_create, kh2_surface_object_move, kh2_surface_object_delete | c | libkh2's own moving collision (the world rebuilt, the ride rule) | `a_moving_platform_carries_sora` |
+| kh2_audio_tick | b | kh2-audio's software sound driver (SE sequencer, SPU2 voices; read) | `sounds_of_a_jump_an_attack_and_fire_render_to_pcm` |
+| kh2_audio_init | c | loading | `sounds_of_a_jump_an_attack_and_fire_render_to_pcm` |
 | kh2_reaction_offer, kh2_reaction_accept | b | reaction_cmd.rs offers (6 of 55 verified), reaction_parts.rs (read), player_reaction.rs paired motions | `a_reaction_command_is_offered_accepted_and_delivered`, `a_soldier_offers_its_reaction_command_and_its_script_moves_sora` |
 | kh2_reaction_force_offer | c | a test hook | `a_reaction_command_is_offered_accepted_and_delivered` |
 | kh2_camera_tick | a | camera_rules.rs rig (15 of 74 verified, `orig_13f600_matches_the_game`, `orig_13f740_matches_the_game`); camera.rs drives it as kh2-rs `camera::tick` | `the_field_camera_follows_collides_and_locks_on`, `a_talk_locks_sora_and_cuts_the_camera_to_the_talk_view` |
 | kh2_camera_reset | c | the table row choice | `the_field_camera_follows_collides_and_locks_on` |
 
-Totals (110 functions): class a 7 (kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
-kh2_camera_tick, kh2_damage, kh2_drive_outgoing_damage, kh2_area_setup), class b 46, class c 57:
+Totals (127 functions): class a 7 (kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
+kh2_camera_tick, kh2_damage, kh2_drive_outgoing_damage, kh2_area_setup), class b 51, class c 69:
 most of the game rules are kh2-rs code read from the original but not oracle-tested; the records,
 setters and the transcribed Bevy flows are glue.
 

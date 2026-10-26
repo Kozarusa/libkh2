@@ -1,3 +1,19 @@
+# Remaining (v1.1.0)
+
+Round 10 added meshes, the HUD's command menu, moving collision objects, the audio engine, the
+spell levels and the CI scripts. Still open from it:
+
+- HUD: Sora's HP / MP panel and drive gauge, party panels, target gauge, lock-on reticle, banners,
+  INFORMATION bar, message window, mission panels, clip / scissor (docs/HUD.md); the HUD in the
+  viewer (the test rasterises a PNG frame instead).
+- Unity: `unity/Kh2Mesh.cs` is not compiled (no UnityEngine here).
+- Magnet makes no pull / attack (its .mag script in the BDX VM, kh2-rs `VmCast`, not ported);
+  Reflect never reaches its trigger 17. Limit Form: not on the USA disc.
+- Audio: voices, footsteps, music, hit sounds, positional volume / pan; the objects' own sound
+  banks were not surveyed for silent effects.
+- Moving collision: the world is rebuilt on every object change (fine for a few objects on small
+  maps; slow on big COCT maps); objects carry Sora only (not members or enemies).
+
 # Remaining (v1.0.0)
 
 What is still open, honestly; everything listed below as done is tested.
