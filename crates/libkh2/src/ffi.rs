@@ -1218,6 +1218,7 @@ pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
         if let Some(lim) = l.limits.get_mut(&handle) {
             let had = lim.events.len();
             lim.tick(s);
+            lim.kh1_tick(s);
             for ev in &lim.events[had.min(lim.events.len())..] {
                 if let crate::limit::LimitEvent::Effect { who, id } = ev {
                     s.cue(crate::cue::Cue { kind: crate::cue::Kind::ScriptEffect, owner: crate::cue::Owner::Sora, model: "limit".to_string(), params: [*id as i16, *who as u16 as i16, 0, 0], pos: s.motor.pos, frame: 0 });

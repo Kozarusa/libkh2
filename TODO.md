@@ -2,7 +2,11 @@
 
 - [x] Damage on Final Mix (2.1.0): layout, not rules, plus the new low-HP step; open: who writes
   status +0x240.
-- Limit Form's own limits (kh2fm-rs `Kh1LimitStarted`, the KH1 scripts) through `kh2_limit_*`.
+- [x] Limit Form's own limits through `kh2_limit_*` (2.1.0); open: the leap of host 6.67, a C API for
+  the KH1 reaction offers.
+- The unexamined Final Mix functions of docs/FM-CHANGED.md (motion request, magic availability, mover
+  modes, the attack handler's callback).
+- 92 abilities are not used by libkh2 (docs/ABILITIES.md), most of them party members' and forms'.
 - Japanese glyphs in the HUD (the font set's Japanese companion).
 - Final Mix's other additions not surveyed here: new abilities and attack rows beyond what the
   tables give, the FM-only pref columns, new enemies (the kinds list is kh2fm-rs's).

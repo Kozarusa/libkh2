@@ -104,6 +104,26 @@ pub struct Limits {
     pub sora_held: bool,
     /// kh2-rs `LimitRng` (FUN_001d25e0's generator for the Auto Limit pick).
     pub auto_seed: u32,
+    /// Final Mix: the running KH1 limit (Limit Form's own limits), run by the player's own script.
+    kh1: Option<Kh1Run>,
+    /// The reaction command the KH1 script offers this tick (host 1.165 slot 1; kh2fm-rs `Kh1Offer`).
+    pub kh1_offer: Option<u16>,
+}
+
+/// Limit Form's body: its `.mdlx` holds the player's own script that runs the KH1 limits (kh2fm-rs
+/// `limit_script::LIMIT_FORM_BODY`).
+pub const LIMIT_FORM_BODY: &str = "P_EX100_KH1F";
+/// kh2fm-rs `STALL_TICKS`: the app's safeguard when a KH1 script waits on a host call that is not served.
+pub const STALL_TICKS: u32 = 600;
+
+/// kh2fm-rs `Kh1Script` without Bevy: the thread, the motion queue (host 1.13), the motion playing.
+struct Kh1Run {
+    run: ScriptRun,
+    seen: usize,
+    queue: std::collections::VecDeque<(i32, f32)>,
+    motion: i32,
+    still: u32,
+    held: bool,
 }
 
 /// kh2-rs `limit_visual::sets_of`: the sets of the `LIMI` entry (kind 0x14) in the limit BAR.
@@ -162,6 +182,27 @@ impl Limits {
         let r = data.rows[i].clone();
         rules::available(&r, &p)?;
         sora.mp = if r.cost == 255 { 0 } else { (sora.mp - r.cost as i32).max(0) };
+        if r.item == 0 {
+            // Final Mix FM 0x1b5cb8 / FM 0x1d4808 (kh2fm-rs `LimitRules::is_kh1`): a row whose `Limit`
+            // halfword is 0 is a KH1 limit (Limit Form's): no BAR, no countdown, no hit counter; the
+            // player's own script (the Limit Form body's type 3 entry) runs event 22 with the task
+            // (FM 0x1b4d70). The task ends on the tick after that thread returns.
+            self.task = Some((command, u32::MAX));
+            self.thread = None;
+            self.run = None;
+            self.sets.clear();
+            self.seen = self.events.len();
+            self.events.push(LimitEvent::Started { command, file: String::new(), time: 0, members: r.members });
+            let object = kh2_tables::load::<kh2_tables::tables::Objentry>(&mut disc.0, &kh2_tables::tables::OBJENTRY).ok().and_then(|o| o.rows.iter().find(|x| x.model_name == LIMIT_FORM_BODY).map(|x| x.object_id)).unwrap_or(0);
+            let prog = disc.read(&format!("obj/{LIMIT_FORM_BODY}.mdlx")).ok().and_then(|b| script_of(&b));
+            self.kh1 = prog.map(|prog| Kh1Run { run: ScriptRun::start(prog, data.table.as_ref(), TaskState::kh1(command, object)).0, seen: 0, queue: Default::default(), motion: 0, still: 0, held: false });
+            if self.kh1.is_none() {
+                self.events.push(LimitEvent::ScriptStopped(format!("{LIMIT_FORM_BODY} has no script: the KH1 task ends at once")));
+                self.events.push(LimitEvent::Ended { command, hits: 0 });
+                self.task = None;
+            }
+            return Ok(());
+        }
         let time = (r.time as u32).max(1);
         self.task = Some((command, time));
         self.frac = 0.0;
@@ -193,8 +234,100 @@ impl Limits {
         }
     }
 
+    /// One tick of a KH1 limit (kh2fm-rs `run_kh1_script`): the player's script thread asks for
+    /// Sora's motions (hosts 1.11 to 1.13, 1.61: played on his body, Sora held in the reaction
+    /// state), attack records (host 6.67: the record's motion; decided: its leap is not applied),
+    /// facings (host 1.4) and reaction offers (host 1.165 slot 1, `kh1_offer`); when it returns
+    /// (or stalls `STALL_TICKS`) the task ends and Sora's control comes back.
+    pub fn kh1_tick(&mut self, sora: &mut Sora) {
+        use kh2_enemy_host::limit_script::Request;
+        self.kh1_offer = None;
+        let Some(k) = self.kh1.as_mut() else { return };
+        let play = |k: &mut Kh1Run, sora: &mut Sora, id: i32, blend: f32| {
+            k.motion = id;
+            let slot = sora.body.rig.mset.slot(id.max(0) as usize, kh2_anim::PlayerState::BattleWeapon);
+            if slot.is_some() {
+                sora.body.restart(slot, false, blend);
+            }
+            sora.state = crate::sora::State::Reaction;
+            sora.motor.vel = glam::Vec3::ZERO;
+            k.held = true;
+        };
+        if sora.body.finished && k.held && let Some((id, blend)) = k.queue.pop_front() {
+            play(k, sora, id, blend);
+        }
+        let done = sora.body.finished && k.queue.is_empty();
+        k.run.task.player = kh2_enemy_host::enemy_obj::to_game(sora.motor.pos);
+        k.run.task.player_yaw = sora.motor.yaw;
+        let v = kh2_enemy_host::enemy_obj::to_game(sora.motor.vel);
+        k.run.task.player_velocity = [v[0], v[1], v[2], 0.0];
+        k.run.task.player_motion = k.motion;
+        k.run.task.player_motion_done = done;
+        let mut result = k.run.tick(0).err();
+        k.motion = k.run.task.player_motion;
+        let new: Vec<Request> = k.run.task.requests[k.seen.min(k.run.task.requests.len())..].to_vec();
+        k.seen += new.len();
+        for r in new {
+            match r {
+                Request::PlayerMotion { id, blend, queued } => {
+                    if queued && k.held {
+                        k.queue.push_back((id, blend));
+                    } else {
+                        k.queue.clear();
+                        play(k, sora, id, blend);
+                    }
+                    self.events.push(LimitEvent::Motion { who: 0, id: id.max(0) as usize, blend });
+                }
+                Request::OfferCommand { slot: 1, command, .. } => self.kh1_offer = Some(command).filter(|&c| c != 0),
+                Request::AttackStart { key } => {
+                    if let Some(m) = u8::try_from(key).ok().and_then(|k| sora.moves.by_key(k)).map(|a| a.motion as i32) {
+                        k.queue.clear();
+                        play(k, sora, m, 0.0);
+                    }
+                }
+                Request::Face { dir } => {
+                    let d = kh2_enemy_host::enemy_obj::from_game(dir);
+                    if d.x != 0.0 || d.z != 0.0 {
+                        sora.motor.yaw = d.x.atan2(d.z);
+                    }
+                }
+                _ => {}
+            }
+        }
+        k.still = if done && k.queue.is_empty() { k.still + 1 } else { 0 };
+        if result.is_none() && k.still >= STALL_TICKS {
+            result = Some(Stop::Fault(format!("stalled {STALL_TICKS} ticks with no motion (app safeguard)")));
+        }
+        if let Some(stop) = result {
+            let why = match stop {
+                Stop::Returned => format!("KH1 thread returned after {} ticks; host calls {}", k.run.ticks, k.run.summary()),
+                Stop::Fault(f) => format!("KH1 thread fault after {} ticks: {f}", k.run.ticks),
+            };
+            let held = k.held;
+            self.kh1 = None;
+            self.events.push(LimitEvent::ScriptStopped(why));
+            if let Some((cmd, _)) = self.task.take() {
+                self.events.push(LimitEvent::Ended { command: cmd, hits: 0 });
+            }
+            if held && sora.state == crate::sora::State::Reaction {
+                sora.state = if sora.motor.grounded { crate::sora::State::Ground } else { crate::sora::State::Air };
+                if !sora.motor.grounded {
+                    sora.motor.start_fall();
+                }
+            }
+        }
+    }
+
+    /// A KH1 limit runs (Limit Form's).
+    pub fn kh1_running(&self) -> bool {
+        self.kh1.is_some()
+    }
+
     /// One 60 Hz tick: the countdown (times the ability block's limit duration), the script thread.
     pub fn tick(&mut self, sora: &Sora) {
+        if self.kh1.is_some() {
+            return;
+        }
         if let Some((cmd, left)) = self.task.as_mut() {
             let mult = sora.loadout.as_ref().map_or(1.0, |l| l.block().limit_duration);
             *left = left.saturating_sub(rules::timer_ticks(&mut self.frac, mult));

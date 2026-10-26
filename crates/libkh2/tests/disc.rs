@@ -2502,13 +2502,13 @@ fn the_dodge_roll_taps_and_holds() {
     let game = Arc::new(d.game().expect("Sora loads"));
     assert!(kh2::sora::dodge_roll_slot(&Sora::new(game.clone(), Vec3::ZERO).body.rig.mset, kh2_anim::PlayerState::BattleWeapon).is_some(), "A180 is in P_EX100.mset");
     let w = floor();
-    let star = game.params.fmab(1).expect("fmab row 1").air_slide_star_time;
+    let star = game.params.fmab(1).expect("fmab row 1").dodge_roll_star_time;
     let run = |s: &mut Sora, hold: u32, ticks: u32| {
         let mut tags = Vec::new();
         for i in 0..ticks {
             s.tick(&w, &Input { stick: [0.0, 1.0], cam_look: [0.0, 1.0], guard: (20..20 + hold).contains(&i), ..Default::default() });
-            if i == 20 && s.state == State::QuickRun {
-                assert_eq!(s.invuln, star, "the dash's invincibility is fmab AirSlideStarTime");
+            if i == 20 && s.state == State::QuickRun && s.growth.quick_run == 0 {
+                assert_eq!(s.invuln, star, "the roll's invincibility is fmab DodgeRollStarTime (+0x40)");
             }
             if tags.last() != Some(&s.body.tag().to_string()) {
                 tags.push(s.body.tag().to_string());
@@ -2518,8 +2518,9 @@ fn the_dodge_roll_taps_and_holds() {
     };
     let mut s = standing(&game, &w);
     s.growth.dodge_roll = 1;
+    let from = s.motor.pos;
     let tags = run(&mut s, 3, 120);
-    eprintln!("tap with the roll: {tags:?} (star time {star})");
+    eprintln!("tap with the roll: {tags:?} (star time {star}), moved {:.0}", (s.motor.pos - from).length());
     assert!(tags.iter().any(|t| t == "A180"), "the roll plays A180");
     assert_eq!(s.state, State::Ground);
     let mut s = standing(&game, &w);
@@ -2561,4 +2562,92 @@ fn limit_form_enters_and_reverts() {
     assert_eq!(kh2::drive::growth_group(limit), Some(4), "Limit Form's growth is the Dodge Roll");
     assert!(s.drive_revert(true) || s.drive_revert(false));
     assert!(!s.drive.in_form);
+}
+
+/// Final Mix: Limit Form's own limits (the KH1 rows, `Limit` halfword 0) run on the Limit Form
+/// body's script (kh2fm-rs `run_kh1_script`): in Limit Form a KH1 command starts, the script plays
+/// Sora's motions, and the task ends when the thread returns.
+#[test]
+fn limit_forms_own_limits_run_on_the_player_script() {
+    use kh2::limit::{LimitEvent, Limits};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = d.limits().expect("limit tables");
+    let drive = game.drive.clone().unwrap();
+    let ids = kh2::drive::IDS;
+    let kh1: Vec<_> = data.rows.iter().filter(|r| r.item == 0).collect();
+    eprintln!("KH1 rows: {:?}", kh1.iter().map(|r| (r.id, r.command, r.members, r.cost)).collect::<Vec<_>>());
+    assert!(!kh1.is_empty(), "the Final Mix limt table has KH1 rows");
+    let w = floor();
+    let mut s = standing(&game, &w);
+    let limit = ids.limit().unwrap();
+    let a = Arc::new(d.form_assets(&drive, limit, 0, 41).unwrap());
+    s.drive.points = kh2_game_core::drive_rules::Points { whole: 9, fraction: 0, max: 9 };
+    s.drive.owned[limit as usize] = true;
+    s.drive_enter(limit, &mut |_| Some(a.clone())).unwrap();
+    for _ in 0..200 {
+        s.tick(&w, &Input::default());
+    }
+    assert!(s.drive.in_form);
+    let mut lim = Limits::default();
+    let st = lim.status(&data, &s, &[]);
+    let ok: Vec<u16> = st.iter().filter(|(c, r)| r.is_ok() && kh1.iter().any(|k| k.command == *c)).map(|(c, _)| *c).collect();
+    eprintln!("KH1 commands available in Limit Form: {ok:?}");
+    let cmd = *ok.first().expect("a KH1 limit is available in Limit Form");
+    lim.start(&data, &mut d, &mut s, &[], cmd).expect("starts");
+    assert!(lim.kh1_running());
+    let (mut events, mut ticks, mut tags) = (Vec::new(), 0, Vec::new());
+    while lim.running() && ticks < 3000 {
+        s.tick(&w, &Input::default());
+        lim.tick(&s);
+        lim.kh1_tick(&mut s);
+        events.append(&mut lim.events);
+        if tags.last() != Some(&s.body.tag().to_string()) {
+            tags.push(s.body.tag().to_string());
+        }
+        ticks += 1;
+    }
+    eprintln!("KH1 limit {cmd}: {ticks} ticks, motions {tags:?}, end {:?}", events.iter().filter(|e| matches!(e, LimitEvent::ScriptStopped(_) | LimitEvent::Ended { .. })).collect::<Vec<_>>());
+    assert!(events.iter().any(|e| matches!(e, LimitEvent::Motion { .. })), "the script plays Sora's motions");
+    assert!(!lim.running(), "the task ends");
+    assert_ne!(s.state, State::Reaction, "control returns");
+}
+
+/// Every ability of the Final Mix disc's item table (`kh2fm-rs AbilityRules`) with how libkh2 uses it:
+/// a stat effect of the ability block (`Block::apply`), an action gated in Sora's attack table, a
+/// growth ability, an ability bit the controller reads, or not used. Written to
+/// `local/abilities-fm.tsv` (not committed) for docs/ABILITIES.md.
+#[test]
+fn the_final_mix_abilities_and_what_libkh2_does_with_them() {
+    use kh2_game_core::abilities::{id, BIT_AIR_COMBO_BOOST, BIT_AUTO_CHANGE, BIT_AUTO_HEALING, BIT_AUTO_LIMIT, BIT_COMBO_BOOST, BIT_LEAF_BRACER, BIT_ONCE_MORE, BIT_REACTION_BOOST, BIT_SCAN, BIT_SECOND_CHANCE};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let rules = game.ability_rules.clone().expect("ability rules");
+    let stat = [id::COMBO_PLUS, id::AIR_COMBO_PLUS, id::FINISHING_PLUS, id::NEGATIVE_COMBO, id::COMBO_BOOST, id::AIR_COMBO_BOOST, id::REACTION_BOOST, id::BERSERK_CHARGE, id::DAMAGE_DRIVE, id::DRIVE_BOOST, id::FORM_BOOST, id::SUMMON_BOOST, id::COMBINATION_BOOST, id::EXPERIENCE_BOOST, id::DRAW, id::JACKPOT, id::LUCKY_LUCKY, id::FIRE_BOOST, id::BLIZZARD_BOOST, id::THUNDER_BOOST, id::ITEM_BOOST, id::MP_RAGE, id::MP_HASTE, id::MP_HASTERA, id::MP_HASTEGA, id::DEFENDER, id::HYPER_HEALING];
+    let bits = [BIT_COMBO_BOOST, BIT_AIR_COMBO_BOOST, BIT_REACTION_BOOST, BIT_LEAF_BRACER, BIT_SECOND_CHANCE, BIT_ONCE_MORE, BIT_AUTO_LIMIT, BIT_AUTO_CHANGE, BIT_AUTO_HEALING, BIT_SCAN];
+    let growth: Vec<u16> = rules.growth_bits.iter().flatten().copied().filter(|&b| b != 0).collect();
+    let mut out = String::from("id\tbit\tkind\tap\tlibkh2\n");
+    let mut counts = std::collections::BTreeMap::new();
+    for (aid, info) in &rules.abilities {
+        let gated = game.moves.actions.iter().any(|a| a.ability != 0 && (a.ability == *aid || a.ability == info.bit));
+        let how = if stat.contains(aid) {
+            "stat"
+        } else if info.kind == 3 || growth.contains(&info.bit) {
+            "growth"
+        } else if gated {
+            "attack table"
+        } else if bits.contains(&info.bit) {
+            "bit read"
+        } else if *aid == id::GUARD {
+            "guard"
+        } else {
+            "not used"
+        };
+        *counts.entry(how).or_insert(0) += 1;
+        out.push_str(&format!("{aid}\t{}\t{}\t{}\t{how}\n", info.bit, info.kind, info.ap));
+    }
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/abilities-fm.tsv");
+    let _ = std::fs::write(&path, &out);
+    eprintln!("{} abilities: {counts:?}", rules.abilities.len());
+    assert!(growth.len() >= 20, "five growth groups of four on Final Mix");
 }

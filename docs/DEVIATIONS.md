@@ -25,11 +25,17 @@ out or simplifies some parts of its own. Both lists are here. kh2-rs keeps its o
 - Forms: Final Mix numbering (Valor 1, Wisdom 2, Limit 3, Master 4, Final 5, Anti 6): seven form
   slots in `kh2_drive_setup` (7 level bytes, owned bits 1..5) and in save records (format 4; a
   version-3 record of the USA build does not load). Limit Form enters with its own body
-  (`W_EX010_KH1F`, one keyblade) and the Dodge Roll growth group; its own limit commands (kh2fm-rs
-  `Kh1LimitStarted`, the KH1 scripts) are not wired into `kh2_limit_*` yet.
-- Dodge Roll: `kh2_set_dodge_roll`; moving + a Square tap plays A180, a hold past 10 ticks becomes
-  the Quick Run when learned (kh2fm-rs rules; no `KH2_FM_ROLL` switch: the ability decides). The
-  invincibility is fmab `AirSlideStarTime` of the Quick Run row (0 at level 1 on the disc).
+  (`W_EX010_KH1F`, one keyblade) and the Dodge Roll growth group. Its own limits (the KH1 rows of
+  `limt`, commands 698 / 701 / 704 / 683) run through `kh2_limit_start` on the Limit Form body's
+  script (2.1.0, kh2fm-rs `run_kh1_script`): the motions it asks for play on Sora; decided: an
+  attack record's leap (host 6.67) is not applied, the hand bones (host 1.235) are 0, the reaction
+  offers of host 1.165 are kept in `Limits::kh1_offer` (no C API yet).
+- Dodge Roll (2.1.0, the FM rule of FM 0x179530 from kh2fm-rs's final-mix.md): moving + Square
+  turns Sora to the stick and plays A180 with blend 0; no velocity (the roll travels by root
+  motion); invincibility is the Dodge Roll level's `fmab` +0x40 `DodgeRollStarTime` (10 ticks at
+  level 1). Square still held at A180's frame trigger 34 (tick 10) starts the Quick Run along the
+  facing when learned; the idle range (trigger 2, tick 36) lets Sora act again. 2.0.0 used the
+  Quick Run row's speed and star time (kh2fm-rs's app stand-in).
 - Ground mover: kh2fm-rs's `Motor::ground_velocity` (speed along the stick); the USA build used the
   oracle-tested `ground_step` that kh2fm-rs does not have. The A / B against kh2fm-rs's Sora matches
   (0.5 cm over 1080 ticks, 0.7 cm over 960 with the wall recoil).

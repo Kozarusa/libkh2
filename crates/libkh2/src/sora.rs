@@ -927,19 +927,30 @@ impl Sora {
                     // learned = Quick Run at the press (FUN_00178108), else the guard.
                     let act = square_ground(move_speed > 0.0, self.growth.dodge_roll, self.growth.quick_run);
                     if self.square_explicit(false, Windows { free: true, combo: false }, false, &c, &mut keep_out) {
-                    } else if act != SquareGround::Guard && let Some(f) = game.params.fmab(self.growth.quick_run.max(1)) {
-                        // kh2fm-rs `State::Ground` Square: AirSlideSpeed along the stick, AirSlideBrake,
-                        // AirSlideStarTime of invincibility; the roll shows A180, the Quick Run motion 203.
+                    } else if act == SquareGround::Roll && let Some(slot) = dodge_roll_slot(&rig.mset, pstate) {
+                        // The Dodge Roll start (FM 0x179530, docs of kh2fm-rs final-mix.md): Sora turns at
+                        // once to the stick, motion 209 (A180) with blend 0, invincibility for the Dodge Roll
+                        // level's fmab +0x40 (`DodgeRollStarTime`); no mover and no velocity: the roll travels
+                        // by its root motion.
                         self.state = State::QuickRun;
                         self.timer = 0.0;
-                        self.dash = if act == SquareGround::Roll { Dash::Pending } else { Dash::Run };
+                        self.dash = Dash::Pending;
+                        self.motor.yaw = dir.x.atan2(dir.z);
+                        self.motor.vel = Vec3::ZERO;
+                        self.invuln = game.params.fmab(self.growth.dodge_roll).map_or(0.0, |f| f.dodge_roll_star_time);
+                        self.body.restart(Some(slot), false, 0.0);
+                    } else if act == SquareGround::QuickRun && let Some(f) = game.params.fmab(self.growth.quick_run) {
+                        // Quick Run at the press (FM 0x179148 -> 0x1791e8): AirSlideSpeed along the stick,
+                        // AirSlideBrake, AirSlideStarTime of invincibility, motion 203.
+                        self.state = State::QuickRun;
+                        self.timer = 0.0;
+                        self.dash = Dash::Run;
                         self.motor.yaw = dir.x.atan2(dir.z);
                         self.motor.vel = dir * f.air_slide_speed;
                         self.dash_time = f.air_slide_time;
                         self.dash_brake = f.air_slide_brake;
                         self.invuln = f.air_slide_star_time;
-                        let start = if act == SquareGround::Roll { dodge_roll_slot(&rig.mset, pstate) } else { None };
-                        self.body.restart(start.or_else(|| motion(QUICK_RUN_MOTION)), false, 0.0);
+                        self.body.restart(motion(QUICK_RUN_MOTION), false, 0.0);
                     } else if let Some(g) = moves.by_key(key::GUARD).filter(|g| self.abilities.chain(self.hits, self.finishers, false, false).check(g).is_ok()).cloned()
                         && let Some(slot) = motion(g.motion as usize)
                     {
@@ -1039,33 +1050,47 @@ impl Sora {
                 }
             }
             State::QuickRun => {
-                // kh2fm-rs `State::QuickRun`: the clock runs while Square is held; a tap lets the roll
-                // (A180) play out, a hold past `TAP_TICKS` turns it into the Quick Run.
-                if input.guard {
-                    self.dash_time -= 1.0;
-                }
-                let end = motion(QUICK_RUN_END_MOTION);
-                let stopping = self.body.slot == end;
                 let roll_slot = dodge_roll_slot(&rig.mset, pstate);
                 let rolling = roll_slot.is_some() && self.body.slot == roll_slot;
-                if !stopping {
-                    let (phase, stop) = dash_step(self.dash, input.guard, self.timer, self.growth.quick_run, self.dash_time);
-                    self.dash = phase;
-                    if rolling && phase == Dash::Run {
-                        self.body.restart(motion(QUICK_RUN_MOTION), false, 0.0);
+                if rolling {
+                    // The roll moves by root motion only. Frame trigger 34 at tick 10 of A180 (FM
+                    // 0x189c78): Square still held starts the Quick Run along the facing (FM 0x1791e8,
+                    // which returns at once without Quick Run). Range trigger 2 (from tick 36) is the idle
+                    // range: Sora may act again; the motion's end returns to the ground state.
+                    self.motor.vel = Vec3::ZERO;
+                    if !input.guard && self.dash == Dash::Pending {
+                        self.dash = Dash::Roll;
                     }
-                    if stop && rolling && self.dash == Dash::Roll {
+                    if self.dash == Dash::Pending && self.timer >= TAP_TICKS {
+                        self.dash = Dash::Roll;
+                        if let Some(f) = game.params.fmab(self.growth.quick_run).filter(|_| self.growth.quick_run >= 1) {
+                            self.dash = Dash::Run;
+                            self.motor.vel = self.motor.forward() * f.air_slide_speed;
+                            self.dash_time = f.air_slide_time;
+                            self.dash_brake = f.air_slide_brake;
+                            self.invuln = self.invuln.max(f.air_slide_star_time);
+                            self.body.restart(motion(QUICK_RUN_MOTION), false, 0.0);
+                        }
+                    }
+                    if self.body.slot == roll_slot && (self.body.finished || (self.body.trigger(range::GROUNDED) && (dir != Vec3::ZERO || attack || jump))) {
+                        self.state = State::Ground;
+                    }
+                } else {
+                    // FUN_001c1660: the Quick Run clock runs while Square is held; a release or the end stops.
+                    if input.guard {
+                        self.dash_time -= 1.0;
+                    }
+                    let end = motion(QUICK_RUN_END_MOTION);
+                    if self.body.slot != end && (!input.guard || self.dash_time <= 0.0) {
                         if let Some(f) = game.params.fmab(self.growth.quick_run.max(1)) {
                             self.dash_brake = f.air_slide_stop_brake;
                         }
-                    } else if stop && let Some(f) = game.params.fmab(self.growth.quick_run.max(1)) {
-                        self.dash_brake = f.air_slide_stop_brake;
                         self.body.restart(end, false, 0.0);
                     }
-                }
-                self.motor.vel *= self.dash_brake;
-                if (self.body.slot == end && (self.body.finished || self.motor.vel.length() < prty.walk_speed)) || (rolling && self.dash == Dash::Roll && self.body.finished) {
-                    self.state = State::Ground;
+                    self.motor.vel *= self.dash_brake;
+                    if self.body.slot == end && (self.body.finished || self.motor.vel.length() < prty.walk_speed) {
+                        self.state = State::Ground;
+                    }
                 }
             }
             State::Glide => {
