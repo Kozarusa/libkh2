@@ -38,6 +38,12 @@ Added, nothing removed: `kh2_hud_message`, `kh2_hud_message_confirm`; Reflect cl
 enemy attacks the clash table pairs with its guard; the optional `KH2_NAMES` name list. New dust and
 footstep cues (kind 8, dust 8 to 11) appear in `kh2_poll_cue`.
 
+## 2.4.0
+
+Nothing added to or removed from `kh2.h`. Behaviour: in Critical (`kh2_set_difficulty(3)`) Sora's AP
+from levels is x 1.5 and bonus HP / MP increases are halved, as the Final Mix executable does;
+Reflect clashes only inside the attack rows' cones; enemy scripts get an answer for host 1.222.
+
 ## Version policy
 
 `KH2_VERSION` / `kh2_version()` is (major << 16) | (minor << 8) | patch:

@@ -1,3 +1,18 @@
+# Remaining (v2.4.0, Final Mix)
+
+Still worth another round, in order:
+
+1. HUD: banners and experience popups, tutorial windows, mission panels (kh2fm-rs `hud_banner`,
+   `hud_tutorial`, `hud_mission`); the message window's pages, tail, pointer and selection slots.
+2. Oracle coverage still missing: wall slide / sweep, attack-table choice, magic cost / charge,
+   level / EXP payout, the hit reaction handlers after the class and `patn` steps. The actor fixture
+   (`tests/common/actor.rs`) is the base; each needs its callees stood in.
+3. 16 changed Final Mix functions still "not identified" in docs/FM-CHANGED.md, and the change itself
+   in the 33 named ones (read, then port the ones that alter Sora's play).
+4. Reflect's ReflectAction; Final Magnet's global flag; the spells' effect elements.
+5. The writer of status +0x240.
+6. Human checks (README "Status").
+
 # Remaining (v2.3.0, Final Mix)
 
 Still valuable, in order:

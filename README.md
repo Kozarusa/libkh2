@@ -23,13 +23,14 @@ with `docs/FOR-HOST-AUTHORS.md` (tick order, units, collision, a C loop, common 
 
 ## Status and what a human must test
 
-Version 2.3.0 reads the Kingdom Hearts II Final Mix disc. Tested here on every change
-(`scripts/ci.ps1`): Windows 10, MSVC, Rust release build, .NET 9, the Final Mix disc image; 66 disc
-tests, 10 oracle tests against the Final Mix executable, golden replays, fuzz, the C layout check, the
+Version 2.4.0 reads the Kingdom Hearts II Final Mix disc. Tested here on every change
+(`scripts/ci.ps1`): Windows 10, MSVC, Rust release build, .NET 9, the Final Mix disc image; 67 disc
+tests, 13 oracle tests against the Final Mix executable, golden replays, fuzz, the C layout check, the
 binding diff, the package scan, a 5-minute soak.
 
 | Part | How it is checked | Verified against the original? |
 |---|---|---|
+| Reaction class and `patn` conversion, Critical AP | oracle tests of FM 0x18ca48 / 0x1c20e8 (with a laid-out actor) / 0x1b73e8 | yes (exact) |
 | Damage, attacker bonuses, low-HP step, difficulty | 3000-case oracle tests of FM 0x1a1e20 / 0x1a22b0 / 0x1a2340 / 0x1a2108 | yes (exact) |
 | Jump (rise time, launch, curve) | oracle tests of FM 0x17d130 / 0x17c430 / 0x17c930 | yes (within 1e-3; the game's own sinf) |
 | Growth levels, form timer (length, change, points) | oracle tests of FM 0x1c35a0 / 0x1a1cc0 / 0x1a1b68 / 0x1a1c30 | yes (exact) |
