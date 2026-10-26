@@ -24,7 +24,7 @@ with `docs/FOR-HOST-AUTHORS.md` (tick order, units, collision, a C loop, common 
 ## Status and what a human must test
 
 Tested here on every change (`scripts/ci.ps1`): Windows 10, MSVC, Rust release build, .NET 9, the
-Final Mix disc image; 55 disc tests, golden replays, fuzz, the C layout check, the binding diff, oracle
+Final Mix disc image; 60 disc tests, golden replays, fuzz, the C layout check, the binding diff, oracle
 tests against the original executable (kh2-ee), the package scan, a 10-minute soak.
 
 Not tested here, a human should run first:
