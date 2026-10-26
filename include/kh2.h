@@ -650,6 +650,8 @@ KH2_API int32_t kh2_audio_tick(int32_t handle, int16_t *out, uint32_t frames);
 KH2_API int32_t kh2_audio_set_listener(const float *pos, const float *forward, const float *up);
 /* Plays area music bgm/musicNNN.bgm (number; kh2_area_info.music names an area's), negative stops. */
 KH2_API int32_t kh2_audio_play_bgm(int32_t number);
+/* The area of the voices (its battle voice bank) and footsteps (its sound info record), e.g. "tt04". */
+KH2_API int32_t kh2_audio_set_area(const char *area);
 /* kh2_cam_view.mode: 0 follow, 1 look-around, 2 lock-on (a kh2_set_target point), 4 talk,
  * 5 overhead, 8 always-behind. */
 /* Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load

@@ -283,6 +283,7 @@ public static class Kh2
     public const int CueHit = 9;
     [DllImport(Lib)] public static extern int kh2_audio_set_listener(float[] pos, float[] forward, float[] up);
     [DllImport(Lib)] public static extern int kh2_audio_play_bgm(int number);
+    [DllImport(Lib)] public static extern int kh2_audio_set_area(string area);
     public const int CamModeFollow = 0, CamModeLook = 1, CamModeLockOn = 2, CamModeTalk = 4, CamModeOverhead = 5, CamModeBehind = 8;
     [DllImport(Lib)] public static extern int kh2_area_spawn(int handle, string area, int program, int withDisabled);
     [DllImport(Lib)] public static extern int kh2_enemy_count(int handle);

@@ -1374,6 +1374,14 @@ int32_t kh2_audio_play_bgm(int32_t number);
 
 Plays area music bgm/musicNNN.bgm (number; kh2_area_info.music names an area's), negative stops.
 
+### `kh2_audio_set_area`
+
+```c
+int32_t kh2_audio_set_area(const char *area);
+```
+
+The area of the voices (its battle voice bank) and footsteps (its sound info record), e.g. "tt04".
+
 ### `kh2_enemies_prune`
 
 ```c

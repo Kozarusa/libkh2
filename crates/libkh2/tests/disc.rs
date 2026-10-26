@@ -2686,3 +2686,32 @@ fn the_party_panels_and_the_area_card_draw_on_final_mix() {
     }
     assert!(!hud.draw_list().iter().any(|q| q.text && q.pos[0][1] > 150.0 && q.pos[0][1] < 215.0), "the card goes after 120 frames");
 }
+
+/// Voices and footsteps on Final Mix (round 13, kh2fm-rs `sora_voice` / `footsteps`): in tt04 (its
+/// `arif` voice bank, its `12soundinfo` record) Sora's run steps play footstep samples and his
+/// combo's voice triggers play lines of `voice/<lang>/battle/tt0_sora.vsb` through the `vtbl` pick.
+#[test]
+fn voices_and_footsteps_play_on_final_mix() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = World::from_coct(&d.coct("tt04").expect("collision"));
+    let mut s = Sora::new(game.clone(), Vec3::new(-2015.0, 40.0, 1190.0));
+    s.motor.grounded = true;
+    let mut audio = kh2::audio::Audio::new(&mut d).expect("audio engine");
+    audio.set_area(&mut d, "tt04");
+    let (mut steps, mut voice_cues) = (0, 0);
+    let before = audio.played;
+    for t in 0..900 {
+        let attack = t > 400 && t < 700 && t % 8 == 0;
+        s.tick(&w, &Input { stick: if t < 300 { [0.3, 1.0] } else { [0.0, 0.0] }, cam_look: [0.0, 1.0], attack, ..Default::default() });
+        s.collect_cues();
+        steps += s.cues.iter().filter(|c| c.kind == kh2::cue::Kind::Footstep).count();
+        voice_cues += s.cues.iter().filter(|c| c.kind == kh2::cue::Kind::Voice).count();
+        audio.pending.append(&mut s.cues);
+        let mut buf = [0i16; 1600];
+        audio.tick(&mut d, &mut buf, 800);
+    }
+    eprintln!("footstep cues {steps}, voice cues {voice_cues}; sounds started {}, voice lines {}, missing {:?}", audio.played - before, audio.voices, audio.missing);
+    assert!(steps > 0 && audio.played > before, "footsteps play");
+    assert!(voice_cues > 0 && audio.voices > 0, "Sora's battle voice plays");
+}

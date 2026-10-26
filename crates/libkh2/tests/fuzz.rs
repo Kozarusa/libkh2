@@ -410,6 +410,9 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 if r.chance(50) {
                     kh2_audio_play_bgm(if r.chance(2) { -1 } else { r.int() });
                 }
+                if r.chance(50) {
+                    kh2_audio_set_area(if r.chance(2) { c"tt04".as_ptr() } else { c"zz".as_ptr() });
+                }
                 kh2_audio_tick(h, if r.chance(4) { std::ptr::null_mut() } else { pcm.as_mut_ptr() }, max(r, 32));
                 let ids = [1u16, 2];
                 let cn = [1u8, 0];

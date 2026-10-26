@@ -7,6 +7,8 @@
 - The unexamined Final Mix functions of docs/FM-CHANGED.md (motion request, magic availability, mover
   modes, the attack handler's callback).
 - 92 abilities are not used by libkh2 (docs/ABILITIES.md), most of them party members' and forms'.
+- [x] Voices and footsteps (2.1.0); open: the stop step and dust, the music's 15 dB gap to the
+  recording.
 - [x] Japanese glyphs in the HUD (2.1.0). Open HUD parts: banners, INFORMATION bar, message /
   tutorial windows, mission panels; the party panels' place against the game.
 - Final Mix's other additions not surveyed here: new abilities and attack rows beyond what the

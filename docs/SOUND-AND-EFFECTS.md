@@ -65,6 +65,26 @@ branch and are not used here.
 - Not played yet: Sora's battle voices (the voice table and the area's bank, kh2-rs `sora_voice`),
   footsteps (the area's sound info, `footstep_number`).
 
+### Round 13 (Final Mix): voices, footsteps, the output level
+
+- `kh2_audio_set_area("tt04")` gives the engine the area: its `arif` record's battle voice bank and
+  its `12soundinfo.bar` footstep record.
+- Voices (kh2fm-rs `sora_voice`, `enemy_voice`, `play_voices`): Sora's triggers 13 / 14 name a voice
+  id; the `vtbl` record picks a line (`kh2_audio::voice::pick_line`, the game's generator) from
+  `voice/<lang>/battle/<world><bank>_sora.vsb` (language and speaker names from the executable). An
+  enemy's trigger is a line of its own bank (`.apdx` entry 0x22) with the trigger's priority. One
+  slot per speaker keeps the priority rule; the volume is at least `MIN_VOLUME`, centred when loud.
+  decided: the other party's NeoStatus (the -3 line of a pick) is 0.
+- Footsteps (kh2fm-rs `footsteps`): trigger 2's kind, the owner's `objentry` NeoStatus, the ground
+  material under Sora (cue `params[1]`), a step counter per owner, `footstep_number` -> a numbered
+  sound placed at the feet. Not ported: the ground mover's stop step (kind 8) and the dust.
+- Measured on the Final Mix disc in tt04: 23 footstep cues -> 19 sounds, 4 voice cues -> 4 lines.
+- Output level: the mixer's master factor is now 1.0 (the SPU2 main volume 0x3fff at the end of the
+  0x10b0b0 chain; 1.x used kh2-extras' 0.6). Music 50 still renders at -30.1 dBFS RMS against the
+  reference recording's -14.4: the rest of the gap was not found in the driver's rules (the BGM's own
+  header volume +0xc and the slot volume are applied as the IOP code does); the recording mixes
+  music and effects at PCSX2's output level, so it is not a like-for-like reference.
+
 ## From a cue to a file
 
 The sound number of a trigger-8 cue is `bank * 1000 + index` (kh2-rs `motion_sound_request`):

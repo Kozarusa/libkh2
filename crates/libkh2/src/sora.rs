@@ -795,6 +795,11 @@ impl Sora {
     pub fn collect_cues(&mut self) {
         let model = self.model_name();
         let mut c = crate::cue::of_anim(&self.body, crate::cue::Owner::Sora, &model, self.motor.pos);
+        // A footstep's sample depends on the ground under Sora (FUN_00183730): its material goes in params[1].
+        let material = self.motor.ground.map_or(0, |g| g.material as i16);
+        for f in c.iter_mut().filter(|f| f.kind == crate::cue::Kind::Footstep) {
+            f.params[1] = material;
+        }
         // The keyblades' own motions carry the swing sounds (their effect file is the weapon's).
         for (k, w) in [self.weapon.as_ref(), self.weapon2.as_ref()].into_iter().enumerate() {
             let Some(w) = w else { continue };

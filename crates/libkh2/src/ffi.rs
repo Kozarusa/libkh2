@@ -3521,3 +3521,23 @@ pub unsafe extern "C" fn kh2_hud_area_card(handle: i32, area: *const std::ffi::c
         None => set_error("no HUD (kh2_hud_load)"),
     })
 }
+
+/// The area the audio engine's voices and footsteps belong to (`"tt04"`): the `arif` voice bank of
+/// Sora's battle voices and the `12soundinfo.bar` footstep record.
+///
+/// # Safety
+/// `area` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_audio_set_area(area: *const std::ffi::c_char) -> i32 {
+    if area.is_null() {
+        return set_error("no area name");
+    }
+    let name = unsafe { std::ffi::CStr::from_ptr(area) }.to_string_lossy().into_owned();
+    with(-1, |l| match l.audio.as_mut() {
+        Some(a) => {
+            a.set_area(&mut l.disc, &name);
+            0
+        }
+        None => set_error("no audio engine (kh2_audio_init)"),
+    })
+}

@@ -27,6 +27,8 @@ use crate::data::Disc;
 pub const RATE: u32 = kh2_audio::RATE;
 /// kh2-rs `audio::OWN_BANK`: a request's bank number meaning "the object's own bank".
 const OWN_BANK: u16 = 500;
+/// kh2fm-rs `VOICE_BAR_ENTRY`: the entry type of an object's own voice bank in its `.apdx`.
+const VOICE_BAR_ENTRY: u16 = 0x22;
 
 struct Bank {
     block: SeBlock,
@@ -46,6 +48,46 @@ pub struct Audio {
     pub listener: Option<[glam::Vec3; 4]>,
     /// The hit counter the hit sounds alternate on.
     pub hits: u8,
+    /// Voices (kh2fm-rs `VoiceTable` / `VoiceInfo`): the `vtbl` rows, the speaker names and the
+    /// voice language folder from the executable, the shared generator of the pick.
+    vtbl: Vec<kh2_tables::tables::Vtbl>,
+    names: kh2_audio::voice::SpeakerNames,
+    lang: String,
+    pub rng: u32,
+    vsbs: HashMap<String, Option<Arc<kh2_audio::vsb::Vsb>>>,
+    /// One voice slot per speaker model (the priority rule of FUN_001ae798).
+    slots: HashMap<String, kh2_audio::voice::VoiceSlot>,
+    /// The area (`kh2_audio_set_area`): its name, its `arif` voice bank and its `12soundinfo` record.
+    pub area: Option<String>,
+    voice_bank: u16,
+    soundinfo: Option<kh2_audio::footstep::SoundInfoRecord>,
+    /// `objentry` NeoStatus by model (the footstep bank pick); the footstep counters by owner.
+    neo: HashMap<String, u16>,
+    steps: HashMap<String, u8>,
+    /// Voice lines played (for the host's log and the tests).
+    pub voices: u32,
+}
+
+/// The `objentry` row's `NeoStatus` of `model` (kh2fm-rs `neo_status`).
+fn neo_status(disc: &mut Disc, model: &str) -> Option<u16> {
+    let rows = kh2_tables::load::<kh2_tables::tables::Objentry>(&mut disc.0, &kh2_tables::tables::OBJENTRY).ok()?.rows;
+    rows.iter().find(|r| r.model_name == model).map(|r| r.neo_status as u16)
+}
+
+/// The `arif` record's voice bank of an area such as `tt04` (kh2fm-rs `arif_record`: world by the
+/// game's order, record 0x40 bytes, the voice bank at +0x30).
+fn arif_voice_bank(disc: &mut Disc, area: &str) -> Option<u16> {
+    let sys = disc.read("03system.bin").ok()?;
+    let e = kh2_bar::parse(&sys).ok()?;
+    let arif = e.iter().find(|e| e.tag == "arif")?.data;
+    let (w, a) = area.split_at_checked(2)?;
+    let world = kh2_image::text::WORLDS.iter().position(|x| *x == w)?;
+    let index: usize = a.parse().ok()?;
+    let u16_at = |o: usize| arif.get(o..o + 2).map(|s| u16::from_le_bytes([s[0], s[1]]));
+    let count = u16_at(8 + 4 * world)? as usize;
+    let off = u16_at(8 + 4 * world + 2)? as usize;
+    (index < count).then_some(())?;
+    u16_at(off + 0x40 * index + 0x30)
 }
 
 impl Audio {
@@ -53,9 +95,35 @@ impl Audio {
         let irx = disc.0.iso().read("LIBSSL.IRX").map_err(|e| format!("LIBSSL.IRX: {e}"))?;
         let tables = Tables::from_irx(&irx).ok_or("LIBSSL.IRX: no driver tables")?;
         let mut driver = Driver::new(Arc::new(tables));
-        // The level kh2-extras renders with (the game's mixer at full level, `start_stream`).
-        driver.mixer.master = 0.6;
-        Ok(Audio { driver, banks: HashMap::new(), wds: HashMap::new(), pending: Vec::new(), missing: Vec::new(), played: 0, listener: None, hits: 0 })
+        // The game's output stage is at full level (the SPU2 main volume 0x3fff, the master factor of
+        // the 0x10b0b0 chain); 1.x used kh2-extras' 0.6.
+        driver.mixer.master = 1.0;
+        let vtbl = kh2_tables::load::<kh2_tables::tables::Vtbl>(&mut disc.0, &kh2_tables::tables::VTBL).map(|t| t.rows).unwrap_or_default();
+        let exe = disc.exe();
+        let names = exe.as_deref().and_then(kh2_audio::voice::SpeakerNames::from_exe).unwrap_or_default();
+        let lang = exe.as_deref().and_then(kh2_audio::voice::language).unwrap_or_else(|| "us".into());
+        Ok(Audio {
+            driver,
+            banks: HashMap::new(),
+            wds: HashMap::new(),
+            pending: Vec::new(),
+            missing: Vec::new(),
+            played: 0,
+            listener: None,
+            hits: 0,
+            vtbl,
+            names,
+            lang,
+            rng: 1,
+            vsbs: HashMap::new(),
+            slots: HashMap::new(),
+            area: None,
+            voice_bank: 0,
+            soundinfo: None,
+            neo: HashMap::new(),
+            steps: HashMap::new(),
+            voices: 0,
+        })
     }
 
     fn bank(&mut self, disc: &mut Disc, name: &str, global: bool) -> Option<Arc<Bank>> {
@@ -100,6 +168,64 @@ impl Audio {
 
     pub fn stop_bgm(&mut self) {
         self.driver.bgm_stop(1, false);
+    }
+
+    /// The area the sounds belong to (`"tt04"`): its voice bank (`arif`) and footstep record
+    /// (`12soundinfo.bar`, kh2fm-rs `area_soundinfo`).
+    pub fn set_area(&mut self, disc: &mut Disc, area: &str) {
+        self.voice_bank = arif_voice_bank(disc, area).unwrap_or(0);
+        self.soundinfo = (|| {
+            let (world, number) = area.split_at_checked(2)?;
+            let raw = disc.read("12soundinfo.bar").ok()?;
+            let e = kh2_bar::parse(&raw).ok()?;
+            let entry = e.iter().find(|e| e.tag == world)?;
+            kh2_audio::footstep::WorldSoundInfo::parse(entry.data)?.area(number.parse().ok()?).copied()
+        })();
+        self.area = Some(area.to_string());
+    }
+
+    fn vsb(&mut self, disc: &mut Disc, file: &str, in_bar: bool) -> Option<Arc<kh2_audio::vsb::Vsb>> {
+        self.vsbs
+            .entry(format!("{file}{}", if in_bar { "#22" } else { "" }))
+            .or_insert_with(|| {
+                let raw = disc.read(file).ok()?;
+                if in_bar {
+                    let bar = kh2_bar::parse(&raw).ok()?;
+                    kh2_audio::vsb::Vsb::parse(bar.iter().find(|e| e.kind == VOICE_BAR_ENTRY)?.data).map(Arc::new)
+                } else {
+                    kh2_audio::vsb::Vsb::parse(&raw).map(Arc::new)
+                }
+            })
+            .clone()
+    }
+
+    /// kh2fm-rs `play_voices`: line `line` of a voice bank by the speaker slot's priority rule, at
+    /// least `MIN_VOLUME`, centred when loud.
+    fn voice(&mut self, disc: &mut Disc, speaker: &str, file: &str, in_bar: bool, line: u16, priority: u8, pos: Option<glam::Vec3>) -> bool {
+        let Some(bank) = self.vsb(disc, file, in_bar) else { return false };
+        let Some((sample, rate)) = bank.line(line as usize) else { return false };
+        let slot = self.slots.entry(speaker.to_string()).or_default();
+        if let Some(h) = slot.playing
+            && !self.driver.voice_playing(kh2_audio::ssl::Handle(h))
+        {
+            slot.playing = None;
+        }
+        slot.request(line, priority);
+        if slot.tick(|_| true).is_none() {
+            return false;
+        }
+        if let Some(h) = slot.playing.take() {
+            self.driver.stop_voice(kh2_audio::ssl::Handle(h));
+        }
+        let (v, p) = self.placement(pos);
+        let volume = v.max(kh2_audio::voice::MIN_VOLUME);
+        let pan = if volume > 0x39ff { kh2_audio::positional::CENTRE_PAN } else { p };
+        let h = self.driver.play_voice_at(Arc::new(sample), rate, volume, pan);
+        if let Some(slot) = self.slots.get_mut(speaker) {
+            slot.playing = Some(h.0);
+        }
+        self.voices += 1;
+        true
     }
 
     /// Starts sound (bank, index) of `model`'s or the global bank.
@@ -158,6 +284,52 @@ impl Audio {
                     if let Some(b) = base {
                         self.hits = self.hits.wrapping_add(1);
                         self.play_at(disc, &c.model, OWN_BANK, b + (self.hits & 1) as u16, Some(c.pos));
+                    }
+                }
+                // Voice triggers 13 / 14: for Sora a voice id the `vtbl` picks a line for (FUN_00175d18,
+                // kh2fm-rs `sora_voice`; decided: the other party's NeoStatus is 0, the line -3 of a pick
+                // has no other party), from `voice/<lang>/battle/<world><bank>_<speaker>.vsb`; for an
+                // enemy the line of its own bank (the `.apdx` entry 0x22) with the trigger's priority.
+                Kind::Voice if c.owner == crate::cue::Owner::Sora => {
+                    let (Some(area), Some(world)) = (self.area.clone(), self.area.as_deref().and_then(|a| a.get(..2)).map(str::to_string)) else { continue };
+                    let _ = area;
+                    use kh2_audio::voice::{pick_line, resolve_line, speaker::SORA};
+                    let Some(rec) = self.vtbl.iter().find(|r| r.character_id as u16 == SORA && r.id as u16 == c.params[0] as u16) else { continue };
+                    let mut pairs = [0i8; 10];
+                    for (p, v) in pairs.iter_mut().zip(rec.voices.iter()) {
+                        *p = *v;
+                    }
+                    let priority = rec.priority;
+                    let line = pick_line(&pairs, &mut self.rng, |l| resolve_line(l, SORA, 0, &|_| false));
+                    if line < 0 {
+                        continue;
+                    }
+                    let name = self.names.name(SORA).unwrap_or("sora").to_string();
+                    let file = kh2_audio::voice::bank_path(&self.lang, &world, self.voice_bank, &name);
+                    self.voice(disc, &c.model, &file, false, line as u16, priority, Some(c.pos));
+                }
+                Kind::Voice => {
+                    let (line, priority) = (c.params[0], c.params[1].clamp(0, 255) as u8);
+                    if line >= 0 && !c.model.is_empty() {
+                        let file = format!("obj/{}.apdx", c.model);
+                        self.voice(disc, &c.model, &file, true, line as u16, priority, Some(c.pos));
+                    }
+                }
+                // Frame trigger 2 (kh2fm-rs `footsteps`): the area's soundinfo record, the owner's
+                // NeoStatus, the ground material (`params[1]`, set by the owner), a step counter per owner.
+                Kind::Footstep => {
+                    let neo = match self.neo.get(&c.model) {
+                        Some(n) => *n,
+                        None => {
+                            let n = neo_status(disc, &c.model).unwrap_or(0);
+                            self.neo.insert(c.model.clone(), n);
+                            n
+                        }
+                    };
+                    let material = kh2_audio::footstep::actor_material(0, c.params[1].clamp(0, 255) as u8);
+                    let counter = self.steps.entry(c.model.clone()).or_insert(0);
+                    if let Some(n) = kh2_audio::footstep::footstep_number(self.soundinfo.as_ref(), neo, material, c.params[0] as u16, counter) {
+                        self.play_at(disc, "", (n / 1000) as u16, (n % 1000) as u16, Some(c.pos));
                     }
                 }
                 Kind::SoundNumber => {
