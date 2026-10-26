@@ -440,3 +440,65 @@ fn orig_fm_17c930_jump_curve_matches_the_game() {
         assert!((game - port).abs() <= 1e-3 * port.abs().max(1.0), "case {n}: h {h} t {} rise {}: game {game} lib {port}", j.t, j.rise);
     }
 }
+
+#[path = "common/actor.rs"]
+mod actor;
+
+/// FM 0x18ca48 (USA `FUN_0018b700`): the collapse of `EnemyReaction` values into classes (a jump table
+/// at FM 0x36cc28), every byte, against `reaction_rules::reaction_class`.
+#[test]
+fn orig_fm_18ca48_reaction_class_matches_the_game() {
+    use kh2_game_core::reaction_rules::reaction_class;
+    let Some(mut ee) = machine("oracle test of FM 0x18ca48 (reaction class)") else { return };
+    for raw in 0..=255u8 {
+        let game = ee.call(0x18ca48, &[raw as u64], &[], STACK).expect("call") as u8;
+        assert_eq!(game, reaction_class(raw), "reaction {raw}");
+    }
+}
+
+/// FM 0x1c20e8 (USA `FUN_001bff00`): the `patn` conversion of a hit's reaction by the victim's status
+/// bits, with a victim actor laid out (`common/actor.rs`: mover flags bit 2 and +0x160 bit 0x40 make it
+/// air-like; FM 0x19c090, the riding test, answers 0) and an attacker (+0x588 bit 0x4000), the disc's
+/// `patn` rows where FM 0x1d49510 points. Against `reaction_rules::effective_reaction`.
+#[test]
+fn orig_fm_1c20e8_reaction_conversion_matches_the_game() {
+    use actor::{hit, obj};
+    use kh2_game_core::reaction_rules::{effective_reaction, PatnContext};
+    let Some(mut ee) = machine("oracle test of FM 0x1c20e8 (patn conversion)") else { return };
+    let Some(mut d) = fm_disc() else { return };
+    let game = d.game().expect("Sora loads");
+    let rows = game.params.reaction.as_ref().expect("reaction data").patn.clone();
+    assert!(!rows.is_empty());
+    ee.hooks.insert(0x19c090, |e: &mut Ee| e.gpr[2] = 0);
+    const TABLE: u32 = 0x018b_0000;
+    const VICTIM_A: u32 = 0x018c_0000;
+    const MOVER_A: u32 = 0x018d_0000;
+    const ATTACKER_A: u32 = 0x018e_0000;
+    const HIT_A: u32 = 0x018f_0000;
+    actor::zero(&mut ee, TABLE, 8 + 32 * rows.len() as u32);
+    ee.w32(TABLE + 4, rows.len() as u32);
+    for (i, r) in rows.iter().enumerate() {
+        let at = TABLE + 8 + 32 * i as u32;
+        ee.write(at, &[r.status_bit]);
+        ee.write(at + 1, &r.map);
+    }
+    ee.w32(0x1d49510, TABLE);
+    let mut r = Rng::new(0x1c20e8);
+    for n in 0..CASES {
+        let status = (r.below(1 << 31) as u32) * 2 + r.below(2) as u32 & [0xffff_ffff, 0x1ff, 0x184][r.below(3) as usize];
+        let original = r.below(19) as u8;
+        let air = [(0u32, 0u32), (0x40, 0), (0, 2)][r.below(3) as usize];
+        let attacker_4000 = r.below(2) == 0;
+        let has_attacker = r.below(4) != 0;
+        actor::actor(&mut ee, VICTIM_A, MOVER_A, air.0, 0, air.1);
+        actor::actor(&mut ee, ATTACKER_A, MOVER_A + 0x100, 0, if attacker_4000 { 0x4000 } else { 0 }, 0);
+        actor::zero(&mut ee, HIT_A, 0x40);
+        ee.w32(HIT_A + hit::ATTACKER, if has_attacker { ATTACKER_A } else { 0 });
+        ee.write(HIT_A + hit::EFFECTIVE, &[original, original]);
+        ee.call(0x1c20e8, &[status as u64, HIT_A as u64, VICTIM_A as u64], &[], STACK).unwrap_or_else(|f| panic!("case {n}: {f:?}"));
+        let got = ee.r8(HIT_A + hit::EFFECTIVE);
+        let _ = obj::FLAGS_160;
+        let ctx = PatnContext { status, grounded: air == (0, 0), attacker_flag_4000: has_attacker && attacker_4000 };
+        assert_eq!(got, effective_reaction(original, &rows, &ctx), "case {n}: status {status:#x} original {original} air {air:?} attacker {has_attacker}/{attacker_4000}");
+    }
+}

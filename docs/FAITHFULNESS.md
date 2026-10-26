@@ -83,7 +83,7 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_tick, kh2_tick_field | c | sora.rs transcribes kh2-rs `sora::tick`; movement is motor.rs (a, `orig_143840_matches_the_game`) and controller_rules.rs (a, `orig_16a948_matches_the_game`) | `sora_runs_at_run_speed_and_stops_at_the_wall`, `a_held_jump_peaks_at_the_jump_height_and_lands`, `walking_off_a_ledge_falls_with_the_fall_cap`, `the_scripted_replay_matches_the_golden_trace`, `battle_replays_the_same` |
 | kh2_set_target, kh2_clear_target, kh2_lock_on_pick | c | the lock-on point; the pick is kh2-rs `nearest` within `sstm` LockOnRange | `the_field_camera_follows_collides_and_locks_on` |
 | kh2_report_hit | c | the combo window of the attack table (kh2-anim triggers, b) | `the_combo_advances_only_inside_the_window_after_a_hit`, `without_a_hit_the_window_does_not_chain` |
-| kh2_hit_taken | b | reaction_rules `victim_outcome` (read; 3 of 48 cited verified) | `hits_flinch_blow_knock_out_and_guard` |
+| kh2_hit_taken | b | reaction_rules `victim_outcome` (read; 3 of 48 cited verified; its class collapse and `patn` conversion oracle-tested on Final Mix in round 16, the handlers after them not) | `hits_flinch_blow_knock_out_and_guard` |
 | kh2_set_hp, kh2_revive, kh2_set_high_jump, kh2_set_magic_levels, kh2_set_mp, kh2_set_weapon_set, kh2_set_pose_enabled | c | setters | `hits_flinch_blow_knock_out_and_guard`, `level_one_spells_cast_pay_and_charge` |
 | kh2_set_abilities, kh2_set_loadout, kh2_get_loadout_block | b | shared/abilities.rs (12 of 42 verified, e.g. `scan_gate_matches_the_game`; the block itself read) | `the_loadout_sets_combo_lengths_growth_and_survival` |
 | kh2_set_growth | b | the `fmab` rows through abilities.rs | `growth_abilities_use_the_fmab_rows` |
@@ -200,6 +200,8 @@ Against the Final Mix executable in kh2-ee (`tests/oracle.rs`, 3000 seeded cases
 | 0x1a1cc0 -> 0x1a1c90 (0x1a04b0 / 0x1a0480) form timer length | `FormTimer::start` (Final Mix numbering) | match, forms 1..6, levels 0..7 | kh2_drive_enter |
 | 0x1a1b68 (0x1a0358) form timer change; 0x1a1c30 (0x1a0420) whole points | `FormTimer::add`, `whole_points` | match | kh2_drive_gain, kh2_report_hit_atkp, the drain |
 | 0x17d130 / 0x17c430 / 0x17c930 (0x17bee0 / 0x17b1e0 / 0x17b6e0) jump rise time, launch, curve | `motor::Jump` (`up`, `fall`, `target_y`) | match within 1e-3 (the game's own `sinf`) | Sora's jumps, leaps, falls (kh2_jump_height, every tick in the air) |
+| 0x18ca48 (0x18b700) reaction class collapse | `reaction_rules::reaction_class` | match, every byte | kh2_hit_taken and every hit |
+| 0x1c20e8 (0x1bff00) the `patn` reaction conversion, with a victim actor laid out (`tests/common/actor.rs`) | `reaction_rules::effective_reaction` | match | kh2_hit_taken and every hit |
 | 0x1a2108 (0x1a0898) difficulty step | `enemy::difficulty_scale` | match | kh2_set_difficulty, every hit path |
 | 0x1a1e20, 0x1a22b0, 0x1a2340, 0x1a2478 (round 13) damage, bonuses, low HP | `enemy::damage`, `low_hp_scale`, `attacker_bonuses`, `hp_is_low` | match | kh2_damage and the hit paths |
 
