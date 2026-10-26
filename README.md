@@ -23,9 +23,9 @@ with `docs/FOR-HOST-AUTHORS.md` (tick order, units, collision, a C loop, common 
 
 ## Status and what a human must test
 
-Version 2.4.0 reads the Kingdom Hearts II Final Mix disc. Tested here on every change
+Version 2.5.0 reads the Kingdom Hearts II Final Mix disc. Tested here on every change
 (`scripts/ci.ps1`): Windows 10, MSVC, Rust release build, .NET 9, the Final Mix disc image; 67 disc
-tests, 13 oracle tests against the Final Mix executable, golden replays, fuzz, the C layout check, the
+tests, 14 oracle tests against the Final Mix executable, golden replays, fuzz, the C layout check, the
 binding diff, the package scan, a 5-minute soak.
 
 | Part | How it is checked | Verified against the original? |

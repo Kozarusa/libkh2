@@ -2,6 +2,11 @@
 
 The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry names what a host sees.
 
+## 2.5.0 (round 17)
+
+- Oracle test of the EXP add (FM 0x1b70d0) on Final Mix.
+- docs/ARCHITECTURE.md for new contributors.
+
 ## 2.4.0 (round 16)
 
 - Oracle tests with a laid-out actor (`tests/common/actor.rs`): the reaction class collapse and the

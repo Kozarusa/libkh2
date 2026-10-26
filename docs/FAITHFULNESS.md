@@ -203,6 +203,7 @@ Against the Final Mix executable in kh2-ee (`tests/oracle.rs`, 3000 seeded cases
 | 0x18ca48 (0x18b700) reaction class collapse | `reaction_rules::reaction_class` | match, every byte | kh2_hit_taken and every hit |
 | 0x1c20e8 (0x1bff00) the `patn` reaction conversion, with a victim actor laid out (`tests/common/actor.rs`) | `reaction_rules::effective_reaction` | match | kh2_hit_taken and every hit |
 | 0x1b73e8 (Final Mix only) Critical AP of a `lvup` row | `enemy::critical_ap` | match, every byte, character and difficulty | kh2_set_level, level-ups |
+| 0x1b70d0 (0x1b51e0) the EXP add (total held at 9,999,999; the members' level routines stood in) | the add of `Sora::report_defeat` | match | kh2_report_defeat, defeats |
 | 0x1a2108 (0x1a0898) difficulty step | `enemy::difficulty_scale` | match | kh2_set_difficulty, every hit path |
 | 0x1a1e20, 0x1a22b0, 0x1a2340, 0x1a2478 (round 13) damage, bonuses, low HP | `enemy::damage`, `low_hp_scale`, `attacker_bonuses`, `hp_is_low` | match | kh2_damage and the hit paths |
 

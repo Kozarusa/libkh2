@@ -521,3 +521,24 @@ fn orig_fm_1b73e8_critical_ap_matches_the_game() {
         }
     }
 }
+
+/// FM 0x1b70d0 (USA `FUN_001b51e0`, the EXP payout's add): the experience total at FM 0x32f210 plus
+/// the amount, held at 9,999,999 (no floor), then the members' level checks. Stand-ins (logged as
+/// called, answering nothing): the level routines FM 0x188fe0, 0x176b58, 0x1b71e8, 0x1a8b68 and the
+/// tail FM 0x188bb0. Against the add of `Sora::report_defeat` (`(exp + amount).min(9_999_999)`).
+#[test]
+fn orig_fm_1b70d0_experience_add_matches_the_game() {
+    let Some(mut ee) = machine("oracle test of FM 0x1b70d0 (experience add)") else { return };
+    for a in [0x188fe0u32, 0x176b58, 0x1b71e8, 0x1a8b68, 0x188bb0] {
+        ee.hooks.insert(a, |e: &mut Ee| e.gpr[2] = 0);
+    }
+    let mut r = Rng::new(0x1b70d0);
+    for n in 0..CASES {
+        let total = [r.below(10_000_000) as i32, 9_999_999, 0, 9_999_000][r.below(4) as usize];
+        let amount = [r.below(5000) as i32, r.below(20_000_000) as i32, 1][r.below(3) as usize];
+        ee.w32(0x32f210, total as u32);
+        ee.call(0x1b70d0, &[amount as u64], &[], STACK).unwrap_or_else(|f| panic!("case {n}: {f:?}"));
+        let game = ee.r32(0x32f210) as i32;
+        assert_eq!(game, (total + amount).min(9_999_999), "case {n}: {total} + {amount}");
+    }
+}

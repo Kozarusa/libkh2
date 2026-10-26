@@ -44,6 +44,10 @@ Nothing added to or removed from `kh2.h`. Behaviour: in Critical (`kh2_set_diffi
 from levels is x 1.5 and bonus HP / MP increases are halved, as the Final Mix executable does;
 Reflect clashes only inside the attack rows' cones; enemy scripts get an answer for host 1.222.
 
+## 2.5.0
+
+No change to `kh2.h` or behaviour: tests and docs.
+
 ## Version policy
 
 `KH2_VERSION` / `kh2_version()` is (major << 16) | (minor << 8) | patch:

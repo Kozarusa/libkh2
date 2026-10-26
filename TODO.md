@@ -1,17 +1,18 @@
-# Remaining (v2.4.0, Final Mix)
+# Remaining (v2.5.0, Final Mix)
 
-Still worth another round, in order:
+Round 17 decided how far the open items are worth going. Done: the EXP add oracle-tested,
+docs/ARCHITECTURE.md. Judged not worth another round of this kind (each is large and changes no
+behaviour a host sees, or needs a human):
 
-1. HUD: banners and experience popups, tutorial windows, mission panels (kh2fm-rs `hud_banner`,
-   `hud_tutorial`, `hud_mission`); the message window's pages, tail, pointer and selection slots.
-2. Oracle coverage still missing: wall slide / sweep, attack-table choice, magic cost / charge,
-   level / EXP payout, the hit reaction handlers after the class and `patn` steps. The actor fixture
-   (`tests/common/actor.rs`) is the base; each needs its callees stood in.
-3. 16 changed Final Mix functions still "not identified" in docs/FM-CHANGED.md, and the change itself
-   in the 33 named ones (read, then port the ones that alter Sora's play).
-4. Reflect's ReflectAction; Final Magnet's global flag; the spells' effect elements.
-5. The writer of status +0x240.
-6. Human checks (README "Status").
+- Oracle tests of wall slide, attack-table choice, magic cost / charge and the reaction handlers:
+  each runs through dozens of actor calls; the rules underneath are kh2fm-rs's (read) and the
+  A / B against kh2fm-rs's Sora agrees within 0.7 cm.
+- Reading the Final Mix change in the 33 named changed functions and naming the other 16
+  (docs/FM-CHANGED.md lists each with its operand changes; the Sora-play ones are ported).
+- HUD banners, tutorial windows, mission panels (a host can draw its own; the message window and the
+  INFORMATION bar cover the game's text paths).
+- Reflect's ReflectAction, Final Magnet's global flag, the writer of status +0x240.
+- Human checks (README "Status").
 
 # Remaining (v2.3.0, Final Mix)
 
