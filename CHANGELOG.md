@@ -6,6 +6,7 @@ The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry name
 
 - Oracle tests with a laid-out actor (`tests/common/actor.rs`): the reaction class collapse and the
   `patn` reaction conversion on Final Mix.
+- Critical mode's AP (x 1.5, FM 0x1b73e8, oracle-tested) and bonus HP / MP (halved, FM 0x1c068c).
 - Reflect's cone test; host 1.222 served for the enemies' scripts (every kind's calls now served).
 - docs/FM-CHANGED.md: 33 more changed functions named.
 

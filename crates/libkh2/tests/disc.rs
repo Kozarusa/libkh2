@@ -2991,3 +2991,30 @@ fn the_message_window_opens_types_waits_and_closes() {
         assert!(!hud.message_waiting() && !hud.message_confirm(), "closed");
     }
 }
+
+/// Critical mode's two other rules (round 16, found through the readers of the difficulty word): the
+/// level-up AP x 1.5 (FM 0x1b73e8, oracle-tested) and the bonus HP / MP halved (FM 0x1c068c, read).
+#[test]
+fn critical_mode_raises_ap_and_halves_bonus_hp() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let run = |diff: i32| {
+        kh2::ffi::kh2_set_difficulty(diff);
+        let mut s = standing(&game, &w);
+        s.set_level(20);
+        let ap = s.ap;
+        let hp = s.max_hp;
+        let bonus = game.params.bons.iter().find(|b| b.character_id == 1 && b.hp_increase > 1).map(|b| b.reward_id as u16);
+        if let Some(id) = bonus {
+            s.give_bonus(id);
+        }
+        (ap, s.max_hp - hp)
+    };
+    let (ap_std, hp_std) = run(1);
+    let (ap_crit, hp_crit) = run(3);
+    kh2::ffi::kh2_set_difficulty(1);
+    eprintln!("level 20 AP: standard {ap_std}, critical {ap_crit}; a bonus's HP: standard {hp_std}, critical {hp_crit}");
+    assert!(ap_crit > ap_std, "Critical gives more AP");
+    assert!(hp_crit < hp_std && hp_crit == hp_std / 2, "Critical halves the bonus HP");
+}

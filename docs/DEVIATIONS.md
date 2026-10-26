@@ -55,10 +55,12 @@ out or simplifies some parts of its own. Both lists are here. kh2-rs keeps its o
   200 / 200 % and deal 150 / - / 100 / 125 % (Beginner / Standard / Proud / Critical). Every hit path
   applies it (the summon counts as a party member: decided, its object flag was not read).
   2.3.0 searched every read of the difficulty word (FM 0x32dfc8): four functions read it. Besides the
-  damage step: FM 0x1b73e8 returns a record's byte +7 times 1.5 in Critical when the second argument
-  is 1 or 14, and FM 0x1c068c (USA 0x1be500, the prize code) halves a record's bytes +2 and +3 in
-  Critical when its byte +1 is 1..3 or 14; the records were not identified, so neither is applied. No
-  reader is on the EXP payout path: the difficulties have no EXP rule in the executable's code.
+  damage step (2.4.0, identified by their callers and applied): FM 0x1b73e8 is the `lvup` row's AP
+  (byte +7) as the status set-up FM 0x1a11e0 and the level-up FM 0x1b72c0 read it: x 1.5 in Critical
+  for Sora (1) and character 14 (oracle-tested; `enemy::critical_ap`); FM 0x1c068c (USA 0x1be500)
+  applies a `bons` row: Critical halves its HP and MP increases for characters 1..3 and 14
+  (`enemy::critical_bonus`, read, not oracle-run: the function also calls the stat writers). No reader
+  is on the EXP payout path: the difficulties have no EXP rule in the executable's code.
 - Text: the Final Mix disc's messages are Japanese; the HUD's Japanese glyphs (`kh2_image` text kind
   `Japanese`, the font set's Japanese companion) are not drawn yet. kh2fm-rs's English text import
   (a USA disc copy in the user's config folder) is not used: libkh2 reads one disc.

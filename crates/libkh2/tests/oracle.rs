@@ -502,3 +502,22 @@ fn orig_fm_1c20e8_reaction_conversion_matches_the_game() {
         assert_eq!(got, effective_reaction(original, &rows, &ctx), "case {n}: status {status:#x} original {original} air {air:?} attacker {has_attacker}/{attacker_4000}");
     }
 }
+
+/// FM 0x1b73e8 (Final Mix only, called by the status set-up FM 0x1a11e0 and the level-up FM 0x1b72c0
+/// on a `lvup` row): the row's AP byte (+7), times 1.5 in Critical for characters 1 and 14. Against
+/// `enemy::critical_ap`, every AP byte, character and difficulty.
+#[test]
+fn orig_fm_1b73e8_critical_ap_matches_the_game() {
+    let Some(mut ee) = machine("oracle test of FM 0x1b73e8 (Critical AP)") else { return };
+    const ROW: u32 = 0x0190_0000;
+    for diff in 0..=4u8 {
+        ee.w32(0x32dfc8, diff as u32);
+        for character in [0u32, 1, 2, 3, 13, 14, 15] {
+            for ap in 0..=255u8 {
+                ee.write(ROW, &[0, 0, 0, 0, 0, 0, 0, ap]);
+                let game = ee.call(0x1b73e8, &[ROW as u64, character as u64], &[], STACK).expect("call") as u32 as i32;
+                assert_eq!(game, kh2::enemy::critical_ap(ap, character, diff), "difficulty {diff} character {character} ap {ap}");
+            }
+        }
+    }
+}

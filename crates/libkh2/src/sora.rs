@@ -1752,7 +1752,8 @@ impl Sora {
         self.strength = l.map_or(2, |l| l.strength as i32) + g[0];
         self.magic = l.map_or(6, |l| l.magic as i32) + g[1];
         self.defense = l.map_or(2, |l| l.defense as i32) + g[2];
-        self.ap = l.map_or(0, |l| l.ap as i32) + ap;
+        // FM 0x1a11e0 reads the row's AP through FM 0x1b73e8 (Critical: x 1.5 for Sora).
+        self.ap = l.map_or(0, |l| crate::enemy::critical_ap(l.ap, 1, crate::enemy::difficulty())) + ap;
         self.resist = resist;
     }
 
@@ -2011,7 +2012,8 @@ impl Sora {
                 2 => new.staff_ability,
                 _ => 0,
             };
-            let (strength, magic, defense, ap) = (rise(new.strength, old.strength), rise(new.magic, old.magic), rise(new.defense, old.defense), rise(new.ap, old.ap));
+            let crit = |a: u8| crate::enemy::critical_ap(a, 1, crate::enemy::difficulty());
+            let (strength, magic, defense, ap) = (rise(new.strength, old.strength), rise(new.magic, old.magic), rise(new.defense, old.defense), crit(new.ap) - crit(old.ap));
             self.set_level(self.level + 1);
             if ability != 0 {
                 self.granted.push(ability);
@@ -2037,14 +2039,16 @@ impl Sora {
         let Some(first) = p.bons.iter().position(|b| u16::from(b.reward_id) == id) else { return Some(others) };
         for b in p.bons[first..].iter().take_while(|b| u16::from(b.reward_id) == id) {
             let items = [b.bonus_item1, b.bonus_item2];
+            // FM 0x1c068c: Critical halves the HP / MP increases of Sora, Donald, Goofy and character 14.
+            let (hp_up, mp_up) = crate::enemy::critical_bonus(b.hp_increase, b.mp_increase, b.character_id, crate::enemy::difficulty());
             if b.character_id != 1 {
-                others.push((b.character_id, i32::from(b.hp_increase), i32::from(b.mp_increase), items));
+                others.push((b.character_id, hp_up, mp_up, items));
                 continue;
             }
-            self.max_hp = (self.max_hp + i32::from(b.hp_increase)).min(9999);
-            self.hp = (self.hp + i32::from(b.hp_increase)).clamp(0, self.max_hp);
-            self.max_mp = (self.max_mp + i32::from(b.mp_increase)).min(9999);
-            self.mp = (self.mp + i32::from(b.mp_increase)).clamp(0, self.max_mp);
+            self.max_hp = (self.max_hp + hp_up).min(9999);
+            self.hp = (self.hp + hp_up).clamp(0, self.max_hp);
+            self.max_mp = (self.max_mp + mp_up).min(9999);
+            self.mp = (self.mp + mp_up).clamp(0, self.max_mp);
             let d = &mut self.drive.points;
             d.max = d.max.wrapping_add(b.drive_gauge_upgrade);
             let (f, pts) = kh2_game_core::items::gauge_carry(d.fraction, d.whole, d.max);
@@ -2055,7 +2059,7 @@ impl Sora {
                     self.granted.push(i);
                 }
             }
-            self.events.push(Event::Bonus { id, hp: i32::from(b.hp_increase), mp: i32::from(b.mp_increase), drive: i32::from(b.drive_gauge_upgrade), items });
+            self.events.push(Event::Bonus { id, hp: hp_up, mp: mp_up, drive: i32::from(b.drive_gauge_upgrade), items });
         }
         Some(others)
     }

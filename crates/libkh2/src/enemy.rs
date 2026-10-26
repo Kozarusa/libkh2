@@ -287,6 +287,22 @@ pub fn difficulty_scale(dmg: i32, difficulty: u8, victim_party: bool, attacker_p
     ((dmg as i64 * pct + 99) / 100) as i32
 }
 
+/// FM 0x1b73e8 (Final Mix only): the AP of a `lvup` row (byte +7) as the status set-up (FM 0x1a11e0)
+/// and the level-up (FM 0x1b72c0) read it: in Critical, for character 1 (Sora) and 14, times 1.5
+/// rounded down (`(3 * ap) >> 1`); otherwise the byte.
+pub fn critical_ap(ap: u8, character: u32, difficulty: u8) -> i32 {
+    let ap = i32::from(ap);
+    if difficulty == 3 && matches!(character, 1 | 14) { (3 * ap) >> 1 } else { ap }
+}
+
+/// FM 0x1c068c (USA `FUN_001be500`, applying a `bons` row): in Critical the row's HP and MP increases
+/// (bytes +2 / +3) are halved, rounded down, for characters 1 to 3 (Sora, Donald, Goofy) and 14;
+/// otherwise as they are. Returns (hp, mp).
+pub fn critical_bonus(hp: u8, mp: u8, character: u8, difficulty: u8) -> (i32, i32) {
+    let (hp, mp) = (i32::from(hp), i32::from(mp));
+    if difficulty == 3 && (matches!(character, 1..=3) || character == 14) { (hp >> 1, mp >> 1) } else { (hp, mp) }
+}
+
 impl Disc {
     /// The enemy tables; the kinds load on demand (`EnemyData::kind`) through a second reader of
     /// the same disc image.
