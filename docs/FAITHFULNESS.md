@@ -187,3 +187,26 @@ its recoil starts two ticks later than the library's (24.6 cm worst with `KH2_AB
 library casts on this tick's matrices, the original's order (FUN_001894d0 fills the volumes from the
 current bone matrices); `Sora::wall_cast_lag = 2` reproduces kh2-rs and the test uses it.
 
+## Final Mix oracle tests of round 14
+
+Against the Final Mix executable in kh2-ee (`tests/oracle.rs`, 3000 seeded cases or every input):
+
+| FM function (USA) | libkh2 code | Result | Used by |
+|---|---|---|---|
+| 0x1c35a0 (0x1c1340) growth levels from the ability bits | `AbilityRules::growth_levels` | match | kh2_set_loadout, kh2_set_abilities (the growth they give) |
+| 0x1a1cc0 -> 0x1a1c90 (0x1a04b0 / 0x1a0480) form timer length | `FormTimer::start` (Final Mix numbering) | match, forms 1..6, levels 0..7 | kh2_drive_enter |
+| 0x1a1b68 (0x1a0358) form timer change; 0x1a1c30 (0x1a0420) whole points | `FormTimer::add`, `whole_points` | match | kh2_drive_gain, kh2_report_hit_atkp, the drain |
+| 0x1a1e20, 0x1a22b0, 0x1a2340, 0x1a2478 (round 13) damage, bonuses, low HP | `enemy::damage`, `low_hp_scale`, `attacker_bonuses`, `hp_is_low` | match | kh2_damage and the hit paths |
+
+The classes of the table above do not move: those functions also run rules not covered by these
+tests (the drive entry checks and the Anti / Final roll, the loadout's stat effects). Not oracle-tested,
+with the reason:
+
+- Jump curve, wall slide, attack-table selection, hit reaction choice, the cast flow: they read and
+  write the whole player actor (movers, motion controller, command object, +0x48c status) through
+  dozens of calls; a faithful actor layout in test RAM is a project of its own (kh2fm-rs has the USA
+  ones for the pure parts: `orig_l2_p3` ground mover, `orig_17bbc0` magic).
+- Magic cost and charge (FM 0x1bc9e4 is a changed function, 1020 bytes, not examined).
+- Level / EXP: the level-up reads the save record of the progress object, not laid out here.
+- Decoders and the sound driver (textures, motions, SEQD, SPU2): compared with the data on the disc,
+  not with code.

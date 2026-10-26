@@ -233,3 +233,111 @@ fn orig_1a0be0_hp_is_low_matches_the_game() {
         assert_eq!(game, hp_is_low(hp, max), "case {n}: hp {hp} max {max}");
     }
 }
+
+/// The disc for the tables the rules read (the same image the executable comes from).
+fn fm_disc() -> Option<kh2::data::Disc> {
+    let iso = std::env::var_os("KH2_ISO_FM").or_else(|| std::env::var_os("KH2_ISO"))?;
+    kh2::data::Disc::open(std::path::Path::new(&iso)).ok()
+}
+
+const STATUS: u32 = 0x0186_0000;
+const OBJ: u32 = 0x0187_0000;
+const SSTM_REC: u32 = 0x0188_0000;
+
+/// Writes the disc's `sstm` record where FM 0x352130 points.
+fn put_sstm(ee: &mut Ee, sstm: &kh2_tables::player::Sstm) {
+    for (k, w) in sstm.words.iter().enumerate() {
+        ee.w32(SSTM_REC + 4 * k as u32, *w);
+    }
+    ee.w32(FM_SSTM_PTR, SSTM_REC);
+}
+
+/// FM 0x1c35a0 (USA `FUN_001c1340`): the growth levels from the ability bits through the table at
+/// FM 0x36dde8 (five groups of five bytes, the highest level first), written to block +0x20..+0x24,
+/// against `AbilityRules::growth_levels`, which libkh2's loadout uses (Dodge Roll is group 4).
+#[test]
+fn orig_fm_1c35a0_growth_levels_match_the_game() {
+    use kh2_game_core::abilities::{AbilityRules, Block};
+    let Some(mut ee) = machine("oracle test of FM 0x1c35a0 (growth levels)") else { return };
+    let Some(mut d) = fm_disc() else { return };
+    let rules = AbilityRules::load(&mut d.0).expect("ability rules");
+    let bits: Vec<u16> = rules.growth_bits.iter().flatten().copied().filter(|&b| b != 0).collect();
+    assert_eq!(bits.len(), 20, "five groups of four levels on Final Mix");
+    let mut r = Rng::new(0x1c35a0);
+    for n in 0..CASES {
+        let mut b = Block::default();
+        for &bit in &bits {
+            if r.below(4) == 0 {
+                b.set_bit(bit);
+            }
+        }
+        zero(&mut ee, ATTACKER, 0x100);
+        for (k, w) in b.bits.iter().enumerate() {
+            ee.w32(ATTACKER + 4 * k as u32, *w);
+        }
+        ee.call(0x1c35a0, &[ATTACKER as u64], &[], STACK).unwrap_or_else(|f| panic!("case {n}: {f:?}"));
+        let game: [u8; 5] = ee.read(ATTACKER + 0x20);
+        assert_eq!(game, rules.growth_levels(&b), "case {n}: bits {:x?}", b.bits);
+    }
+}
+
+/// FM 0x1a1cc0 -> FM 0x1a1c90 (USA `FUN_001a04b0` / `FUN_001a0480`): the form timer's length,
+/// `sstm` +0x68 times the timer level + 3 (Anti, form 6: `sstm` +0x8c - 2), written to status
+/// +0x1b4 / +0x1b8, against `FormTimer::start` with the Final Mix numbering. Stand-ins: FM 0x1a1950
+/// and 0x1a1a50 (the gauge's mode and colour) return at once.
+#[test]
+fn orig_fm_1a1cc0_form_timer_start_matches_the_game() {
+    use kh2_game_core::drive_rules::{FormTimer, Tuning};
+    let Some(mut ee) = machine("oracle test of FM 0x1a1cc0 (form timer)") else { return };
+    let Some(mut d) = fm_disc() else { return };
+    let sstm = kh2_tables::player::load_sstm(&mut d.0).expect("sstm");
+    let t = Tuning::from_sstm(&sstm);
+    ee.hooks.insert(0x1a1950, |_e: &mut Ee| {});
+    ee.hooks.insert(0x1a1a50, |_e: &mut Ee| {});
+    put_sstm(&mut ee, &sstm);
+    for form in 1..=6u8 {
+        for level in 0..=7u8 {
+            zero(&mut ee, STATUS, 0x300);
+            ee.call(0x1a1cc0, &[STATUS as u64, form as u64, level as u64], &[], STACK).expect("call");
+            let left = f32::from_bits(ee.r32(STATUS + 0x1b4));
+            let total = f32::from_bits(ee.r32(STATUS + 0x1b8));
+            let port = FormTimer::start(&t, kh2::drive::IDS, form, level);
+            assert_eq!((left, total), (port.left, port.total), "form {form} level {level}");
+        }
+    }
+}
+
+/// FM 0x1a1b68 (USA `FUN_001a0358`): a change of the form timer, a gain turned into a loss in Anti
+/// (the object's form word +0xb50 is 6), clamped to 0..=full; and FM 0x1a1c30 (USA `FUN_001a0420`),
+/// the whole points left, one less while full. Against `FormTimer::add` / `whole_points`. Stand-in:
+/// FM 0x19ba60 (the object exists) answers 1; the gauge mode is not 3 (no redraw call).
+#[test]
+fn orig_fm_1a1b68_form_timer_change_matches_the_game() {
+    use kh2_game_core::drive_rules::{FormTimer, Tuning};
+    let Some(mut ee) = machine("oracle test of FM 0x1a1b68 (form timer change)") else { return };
+    let Some(mut d) = fm_disc() else { return };
+    let sstm = kh2_tables::player::load_sstm(&mut d.0).expect("sstm");
+    let t = Tuning::from_sstm(&sstm);
+    ee.hooks.insert(FM_OBJECT_EXISTS, |e: &mut Ee| e.gpr[2] = 1);
+    put_sstm(&mut ee, &sstm);
+    let mut r = Rng::new(0x1a1b68);
+    for n in 0..CASES {
+        let form = 1 + r.below(6) as u8;
+        let total = t.point_units * (3 + r.below(5)) as f32;
+        let left = [total, 0.0, total * (r.below(1000) as f32 / 1000.0)][r.below(3) as usize];
+        let delta = [(r.below(2000) as f32 - 1000.0) / 7.0, -total, total, 0.0][r.below(4) as usize];
+        zero(&mut ee, STATUS, 0x300);
+        zero(&mut ee, OBJ, 0xc00);
+        ee.w32(STATUS + 0x25c, OBJ);
+        ee.w32(OBJ + 0xb50, form as u32);
+        ee.w32(STATUS + 0x1b4, left.to_bits());
+        ee.w32(STATUS + 0x1b8, total.to_bits());
+        ee.call(0x1a1b68, &[STATUS as u64], &[delta], STACK).unwrap_or_else(|f| panic!("case {n}: {f:?}"));
+        let game = f32::from_bits(ee.r32(STATUS + 0x1b4));
+        let mut port = FormTimer { left, total };
+        port.add(kh2::drive::IDS, form, delta);
+        assert_eq!(game, port.left, "case {n}: form {form} left {left} total {total} delta {delta}");
+        let whole = ee.call(0x1a1c30, &[STATUS as u64], &[], STACK).expect("whole") as u32 as i32;
+        assert_eq!(whole, port.whole_points(&t), "case {n}: whole points of {} / {total}", port.left);
+    }
+}
