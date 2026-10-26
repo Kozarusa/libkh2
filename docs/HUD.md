@@ -72,7 +72,8 @@ the COMMANDS deck with Attack selected, then the MAGIC page with Fire, Blizzard,
 
 ## Not drawn yet (TODO.md)
 
-The party panels (`hud_party`), the
-target gauge and lock-on reticle (`hud_target`), banners (`hud_banner`), the INFORMATION bar
-(`hud_info`), the message window, the mission panels, the clip / scissor those need, the ring
-wedges. Each is a transcription of its kh2-rs system onto the same node / draw-list core.
+The party panels (`hud_party`), banners (`hud_banner`), the INFORMATION bar (`hud_info`), the
+message and tutorial windows (`hud_msgwin`, `hud_tutorial`), the area-name card (`hud_card`), the
+mission panels (`hud_mission`), the magic lock-on marker. kh2-rs has no damage or EXP popups of
+the original (its popups are a developer overlay). Each is a transcription of its kh2-rs system
+onto the same node / draw-list core.
