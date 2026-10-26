@@ -72,6 +72,7 @@ game is in `docs/DEVIATIONS.md`, speed and memory in `docs/PERFORMANCE.md`, the 
 ## Build
 
 Needs Rust 1.88+ and the kh2-rs source tree next to this folder (`../kh2-rs`, read-only).
+Get that tree with `git clone https://github.com/Kozarusa/kh2-rust-rewrite.git kh2-rs` in the folder that holds libkh2 (the folder must be named `kh2-rs`). No game data is in either repository: libkh2 reads your own Kingdom Hearts II disc image when it starts.
 
 ```
 cargo build --release -p libkh2         # target/release/kh2.dll (+ kh2.dll.lib), libkh2.so / .dylib elsewhere
