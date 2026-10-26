@@ -10,6 +10,8 @@ The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry name
 - Dodge Roll by the Final Mix rule: root motion, `DodgeRollStarTime` invincibility, trigger 34's
   hold into the Quick Run.
 - Limit Form's own limits (the KH1 rows) through `kh2_limit_start`, run by the Limit Form body's script.
+- HUD on Final Mix: Japanese text (the disc's font set, two planes), the party panels with faces and
+  rings, the area-name card (`kh2_hud_area_card`).
 - docs/FM-CHANGED.md: the 106 Final Mix functions of Sora's systems that differ, with what is known;
   docs/ABILITIES.md: the 171 Final Mix abilities and what libkh2 does with each.
 

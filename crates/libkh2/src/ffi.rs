@@ -3173,7 +3173,12 @@ pub extern "C" fn kh2_hud_tick(handle: i32) -> i32 {
         let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return -1 };
         let foes: Vec<crate::hud::Foe> = l.enemies.get(&handle).map(|en| en.list.iter().filter(|e| e.alive() && !e.removed).map(|e| crate::hud::Foe { id: e.id, hp: e.hp, max_hp: e.stats.max_hp, point: e.pos() + glam::Vec3::Y * 100.0 }).collect()).unwrap_or_default();
         let view = l.cameras.get(handle as usize).and_then(Option::as_ref).and_then(|c| c.rig.as_ref()).map(|r| crate::hud::View { eye: r.pos, look: r.look, fov: r.fov });
+        let members: Vec<crate::hud::PartyHud> = match (l.followers.get(&handle), l.party.as_ref()) {
+            (Some(list), Some(p)) => list.iter().map(|f| crate::hud::PartyHud { hp: f.hp, max_hp: f.hp_max, mp: f.mp, max_mp: f.mp_max, model: p.members.get(f.member).map(|m| m.model.clone()).unwrap_or_default() }).collect(),
+            _ => Vec::new(),
+        };
         let Some((h, list)) = l.huds.get_mut(&handle) else { return set_error("no HUD (kh2_hud_load)") };
+        h.party(&mut l.disc, &members);
         h.observe(&foes, s.target.map(|t| t.pos), view.as_ref());
         h.reaction_cmd = offer;
         h.tick(s);
@@ -3495,5 +3500,24 @@ pub extern "C" fn kh2_audio_play_bgm(number: i32) -> i32 {
             return 0;
         }
         if a.play_bgm(&mut l.disc, number as u32) { 0 } else { set_error(format!("no music {number}")) }
+    })
+}
+
+/// Shows the area-name card of `area` (a name such as `"tt04"`: world code and area number) on the
+/// HUD (kh2fm-rs `hud_card`: the place table's name, 120 frames). 1 when the place has a name, 0
+/// when not, -1 on an error.
+///
+/// # Safety
+/// `area` is a NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_hud_area_card(handle: i32, area: *const std::ffi::c_char) -> i32 {
+    if area.is_null() {
+        return set_error("no area name");
+    }
+    let name = unsafe { std::ffi::CStr::from_ptr(area) }.to_string_lossy().into_owned();
+    let (Some(world), Some(n)) = (name.get(..2), name.get(2..).and_then(|n| n.parse::<usize>().ok())) else { return set_error(format!("not an area name: {name}")) };
+    with(-1, |l| match l.huds.get_mut(&handle) {
+        Some((h, _)) => i32::from(h.area_card(world, n)),
+        None => set_error("no HUD (kh2_hud_load)"),
     })
 }

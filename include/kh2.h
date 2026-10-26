@@ -617,6 +617,8 @@ KH2_API int32_t kh2_hud_input(int32_t handle, uint32_t buttons);
 KH2_API int32_t kh2_hud_set_items(int32_t handle, const uint16_t *ids, const uint8_t *counts, uint32_t count);
 /* Returns the draw list's sprite count. */
 KH2_API int32_t kh2_hud_tick(int32_t handle);
+/* The area-name card of "tt04"-style area names (the place table's name for 120 frames): 1 shown, 0 no name. */
+KH2_API int32_t kh2_hud_area_card(int32_t handle, const char *area);
 KH2_API int32_t kh2_hud_draw_list(int32_t handle, kh2_hud_sprite *out, uint32_t max);
 KH2_API int32_t kh2_hud_poll_event(int32_t handle, kh2_hud_event *out);
 /* Returns the HUD texture count; fills width / height of texture id when id >= 0. */

@@ -2651,3 +2651,38 @@ fn the_final_mix_abilities_and_what_libkh2_does_with_them() {
     eprintln!("{} abilities: {counts:?}", rules.abilities.len());
     assert!(growth.len() >= 20, "five growth groups of four on Final Mix");
 }
+
+/// Final Mix HUD frame (round 13): Sora's panel, the party panels of Donald and Goofy with their
+/// faces and rings, the area-name card of tt04 in the Japanese font; written to
+/// `local/hud_fm_party.png` to look at.
+#[test]
+fn the_party_panels_and_the_area_card_draw_on_final_mix() {
+    use kh2::hud::{Hud, PartyHud};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let s = standing(&game, &w);
+    let mut hud = Hud::load(&mut d, "tt").expect("HUD loads");
+    let before = hud.draw_list().len();
+    let members = [PartyHud { hp: 30, max_hp: 60, mp: 100, max_mp: 100, model: "P_EX020".into() }, PartyHud { hp: 60, max_hp: 60, mp: 20, max_mp: 100, model: "P_EX030".into() }];
+    assert!(hud.area_card("tt", 4), "tt04 has a place name");
+    for _ in 0..30 {
+        hud.party(&mut d, &members);
+        hud.tick(&s);
+    }
+    let list = hud.draw_list();
+    let text = list.iter().filter(|q| q.text).count();
+    eprintln!("sprites {before} -> {}, text {text}", list.len());
+    assert!(list.len() > before + 10, "the party panels draw");
+    assert!(list.iter().any(|q| q.text && q.pos[0][1] > 150.0 && q.pos[0][1] < 215.0), "the card's text near y 192");
+    let (fw, fh) = (512usize, 448usize);
+    let mut frame = vec![40u8; fw * fh * 4];
+    hud.rasterize(&list, fw, fh, &mut frame);
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local");
+    let _ = std::fs::create_dir_all(&dir);
+    write_png(&dir.join("hud_fm_party.png"), fw, fh, &frame);
+    for _ in 0..130 {
+        hud.tick(&s);
+    }
+    assert!(!hud.draw_list().iter().any(|q| q.text && q.pos[0][1] > 150.0 && q.pos[0][1] < 215.0), "the card goes after 120 frames");
+}

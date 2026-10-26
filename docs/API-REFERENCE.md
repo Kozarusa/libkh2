@@ -1279,6 +1279,14 @@ int32_t kh2_hud_tick(int32_t handle);
 
 Returns the draw list's sprite count.
 
+### `kh2_hud_area_card`
+
+```c
+int32_t kh2_hud_area_card(int32_t handle, const char *area);
+```
+
+The area-name card of "tt04"-style area names (the place table's name for 120 frames): 1 shown, 0 no name.
+
 ### `kh2_hud_draw_list`
 
 ```c

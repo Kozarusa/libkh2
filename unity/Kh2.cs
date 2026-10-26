@@ -268,6 +268,7 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_hud_input(int handle, uint buttons);
     [DllImport(Lib)] public static extern int kh2_hud_set_items(int handle, ushort[] ids, byte[] counts, uint count);
     [DllImport(Lib)] public static extern int kh2_hud_tick(int handle);
+    [DllImport(Lib)] public static extern int kh2_hud_area_card(int handle, string area);
     [DllImport(Lib)] public static extern int kh2_hud_draw_list(int handle, [Out] HudSprite[] sprites, uint max);
     [DllImport(Lib)] public static extern int kh2_hud_poll_event(int handle, out HudEvent ev);
     [DllImport(Lib)] public static extern int kh2_hud_texture_info(int handle, int id, out uint width, out uint height);

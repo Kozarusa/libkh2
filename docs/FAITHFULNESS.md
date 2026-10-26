@@ -87,6 +87,7 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_set_hp, kh2_revive, kh2_set_high_jump, kh2_set_magic_levels, kh2_set_mp, kh2_set_weapon_set, kh2_set_pose_enabled | c | setters | `hits_flinch_blow_knock_out_and_guard`, `level_one_spells_cast_pay_and_charge` |
 | kh2_set_abilities, kh2_set_loadout, kh2_get_loadout_block | b | shared/abilities.rs (12 of 42 verified, e.g. `scan_gate_matches_the_game`; the block itself read) | `the_loadout_sets_combo_lengths_growth_and_survival` |
 | kh2_set_growth | b | the `fmab` rows through abilities.rs | `growth_abilities_use_the_fmab_rows` |
+| kh2_hud_area_card | c | kh2fm-rs `hud_card` (place table, font 2 at (256, 192), 120 frames) | `the_party_panels_and_the_area_card_draw_on_final_mix` |
 | kh2_set_dodge_roll | c | kh2fm-rs `square_ground` / `dash_step` transcribed (FM 0x178eb0, the A180 trigger 34 at tick 10) | `the_dodge_roll_taps_and_holds` |
 | kh2_bone_count, kh2_bone_parents, kh2_motion_tag, kh2_motion_slot_count | c | the loaded model / motion set | `any_motion_slot_samples_like_the_animator` |
 | kh2_get_bones, kh2_get_rest_bones, kh2_motion_slot, kh2_motion_info, kh2_sample_motion | b | kh2-anim pose and blend, kh2-model rest pose (read); anim.rs transcribes kh2-rs skel.rs | `any_motion_slot_samples_like_the_animator` |
@@ -130,8 +131,8 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_camera_tick | a | camera_rules.rs rig (15 of 74 verified, `orig_13f600_matches_the_game`, `orig_13f740_matches_the_game`); camera.rs drives it as kh2-rs `camera::tick` | `the_field_camera_follows_collides_and_locks_on`, `a_talk_locks_sora_and_cuts_the_camera_to_the_talk_view` |
 | kh2_camera_reset | c | the table row choice | `the_field_camera_follows_collides_and_locks_on` |
 
-Totals (128 functions, Final Mix): class a 7 (kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
-kh2_camera_tick, kh2_damage, kh2_drive_outgoing_damage, kh2_area_setup), class b 51, class c 70. The classes rest
+Totals (129 functions, Final Mix): class a 7 (kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
+kh2_camera_tick, kh2_damage, kh2_drive_outgoing_damage, kh2_area_setup), class b 51, class c 71. The classes rest
 on kh2fm-rs's ledger, whose oracle evidence was gathered on the USA executable (its `main-fm` image
 rows carry the Final Mix addresses); kh2_damage and kh2_drive_outgoing_damage were b in 2.0.0 (the Final Mix oracle differed) and are a
 again in 2.1.0: the differences were the test's USA status layout (docs/DEVIATIONS.md):

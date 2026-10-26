@@ -140,9 +140,75 @@ fn wedge(poly: &[Vert], c: [f32; 2], start: f32, sweep: f32) -> Vec<Vec<Vert>> {
     vec![first, second]
 }
 
+/// The area-name card (kh2fm-rs `hud_card`, USA 0x15ade8 / 0x15a640 / 0x15a840): the place's name
+/// in font 2, centred on x 256 with its bottom at y 192, colour 0x80ffffff, up for 120 frames.
+pub mod card {
+    pub const DURATION: f32 = 120.0;
+    pub const POS: [f32; 2] = [256.0, 192.0];
+    pub const FONT: usize = 2;
+    pub const ALIGN: u8 = 4;
+    pub const COLOR: [u8; 4] = [0xff, 0xff, 0xff, 0x80];
+}
+
+/// The party members' panels (kh2fm-rs `hud_party`, USA 0x154a78 / 0x1551a0): per slot the circle
+/// (gauge group 71, a later slot `unk20` below), the HP trail ring 64, the HP ring 65, the MP ring 66
+/// and the member's own `face`.
+pub mod party {
+    use std::f32::consts::PI;
+    pub const SLOTS: usize = 2;
+    pub const CIRCLE: usize = 71;
+    pub const RING_TRAIL: usize = 64;
+    pub const RING_HP: usize = 65;
+    pub const RING_MP: usize = 66;
+
+    /// 0x166730: value over maximum (0 without a maximum), clamped.
+    pub fn fraction(value: i32, max: i32) -> f32 {
+        if max <= 0 { 0.0 } else { (value as f32 / max as f32).clamp(0.0, 1.0) }
+    }
+
+    /// 0x154818: the HP ring's visible wedge (start clockwise from west, sweep): from south clockwise.
+    pub fn hp_wedge(f: f32) -> (f32, f32) {
+        (1.5 * PI, f * PI)
+    }
+
+    /// 0x154930: the MP ring's wedge: ends at south, grows counter-clockwise.
+    pub fn mp_wedge(f: f32) -> (f32, f32) {
+        (1.5 * PI - f * PI, f * PI)
+    }
+
+    /// kh2fm-rs `face_pair`: the first two adjacent entries tagged `face` (member resource +0x7b0).
+    pub fn face_pair(tags: &[&str]) -> Option<usize> {
+        tags.windows(2).position(|w| w[0] == "face" && w[1] == "face")
+    }
+}
+
+/// One member shown in a party panel.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PartyHud {
+    pub hp: i32,
+    pub max_hp: i32,
+    pub mp: i32,
+    pub max_mp: i32,
+    /// The member's model (`P_EX020` ...): its `obj/<model>.apdx` holds the face.
+    pub model: String,
+}
+
+#[derive(Clone, Copy, Default)]
+struct PartySlot {
+    circle: usize,
+    rings: [usize; 3],
+    face: Option<usize>,
+    model_face: Option<usize>,
+    last_hp: i32,
+    trail_hp: i32,
+    shown: bool,
+}
+
 /// Fonts and messages (kh2-rs `hud_text::TextSys` without the scene files).
 struct TextSys {
     set: FontSet,
+    /// The place table (`msg/us/place.bin`, read through the Final Mix disc's `msg/jp`).
+    places: Option<text::Places>,
     messages: Option<Messages>,
     world_messages: Option<Messages>,
     colors: Option<ColorTable>,
@@ -154,6 +220,12 @@ struct TextSys {
 }
 
 impl TextSys {
+    /// kh2fm-rs `TextSys::place_name` (0x19e178): the place table, then the message tables.
+    fn place_name(&self, world: &str, area: usize) -> Option<Vec<text::Token>> {
+        let id = self.places.as_ref()?.message(world, area)?;
+        self.lookup(id as u32)
+    }
+
     fn lookup(&self, id: u32) -> Option<Vec<text::Token>> {
         let tables = [self.messages.as_ref(), self.world_messages.as_ref()];
         tables.iter().flatten().find_map(|m| m.tokens(id)).or_else(|| self.messages.as_ref()?.tokens(0x8adc))
@@ -255,6 +327,12 @@ struct TargetHud {
 /// The HUD of one Sora.
 pub struct Hud {
     pub textures: Vec<Texture>,
+    /// The area-name card's node and frames left.
+    card_node: Option<usize>,
+    /// The party panels (built on first use) and the face files by model.
+    party_slots: Vec<PartySlot>,
+    party_faces: std::collections::HashMap<String, Option<usize>>,
+    card_timer: f32,
     files: Vec<SeqFile>,
     nodes: Vec<Node>,
     text: Option<TextSys>,
@@ -335,6 +413,10 @@ impl Hud {
         let cmds = kh2_tables::load::<t::Cmd>(&mut disc.0, &t::CMD).map_err(|e| format!("cmd: {e}"))?.rows;
         let mut hud = Hud {
             textures: Vec::new(),
+            card_node: None,
+            party_slots: Vec::new(),
+            party_faces: std::collections::HashMap::new(),
+            card_timer: 0.0,
             files: Vec::new(),
             nodes: Vec::new(),
             text: None,
@@ -415,7 +497,8 @@ impl Hud {
             hud.textures.push(Texture { width: w as u32, height: h as u32, rgba });
             let icons = (hud.textures.len() - 1) as u32;
             let world_ix = text::WORLDS.iter().position(|w| *w == world).unwrap_or(0);
-            hud.text = Some(TextSys { set, messages, world_messages, colors, pages, icons, world: world_ix });
+            let places = disc.read("msg/us/place.bin").ok().and_then(|b| text::Places::parse(&b));
+            hud.text = Some(TextSys { set, places, messages, world_messages, colors, pages, icons, world: world_ix });
         }
         // The node pool (kh2-rs `hud_menu::build`): per page the header, the plain bars, then the selected bar with its
         // medallion, icon and arrow; the capsule last.
@@ -606,7 +689,117 @@ impl Hud {
     }
 
     /// One 60 Hz tick: the menu nodes from the menu (kh2-rs `hud_menu::update`), then the players.
+    /// The party panels for `members` (slot order; kh2fm-rs `hud_party::update`): circles, HP / MP
+    /// rings by their wedge rules, the member's face loaded from `obj/<model>.apdx` once.
+    pub fn party(&mut self, disc: &mut Disc, members: &[PartyHud]) {
+        let Some(field) = self.field else { return };
+        let gaug = field + hg::GAUG;
+        if self.party_slots.is_empty() {
+            let step = self.files.get(gaug).and_then(|f| f.seq.groups.get(party::CIRCLE)).map_or(0.0, |g| g.unk20 as f32);
+            for s in 0..party::SLOTS {
+                let circle = self.add(gaug, None, Some(party::CIRCLE));
+                self.nodes[circle].off = [0.0, step * s as f32];
+                let rings = [party::RING_TRAIL, party::RING_HP, party::RING_MP].map(|g| self.add(gaug, Some(circle), Some(g)));
+                for n in std::iter::once(circle).chain(rings) {
+                    self.nodes[n].visible = false;
+                }
+                self.party_slots.push(PartySlot { circle, rings, ..PartySlot::default() });
+            }
+        }
+        for s in 0..party::SLOTS {
+            let m = members.get(s);
+            let face_file = m.and_then(|m| match self.party_faces.get(&m.model) {
+                Some(f) => *f,
+                None => {
+                    let f = disc.read(&format!("obj/{}.apdx", m.model)).ok().and_then(|b| {
+                        let e = kh2_bar::parse(&b).ok()?;
+                        let i = party::face_pair(&e.iter().map(|x| x.tag).collect::<Vec<_>>())?;
+                        Some((kh2_image::imgd::decode(e[i].data)?, kh2_image::seqd::parse(e[i + 1].data)?))
+                    });
+                    let f = f.map(|(img, seq)| {
+                        self.textures.push(Texture { width: img.width, height: img.height, rgba: img.rgba });
+                        self.files.push(SeqFile { texture: (self.textures.len() - 1) as u32, seq });
+                        self.files.len() - 1
+                    });
+                    self.party_faces.insert(m.model.clone(), f);
+                    f
+                }
+            });
+            let mut slot = self.party_slots[s];
+            let Some(m) = m else {
+                if slot.shown {
+                    slot.shown = false;
+                    for n in std::iter::once(slot.circle).chain(slot.rings).chain(slot.face) {
+                        self.nodes[n].visible = false;
+                    }
+                }
+                self.party_slots[s] = slot;
+                continue;
+            };
+            if !slot.shown {
+                slot.shown = true;
+                slot.last_hp = m.hp;
+                slot.trail_hp = m.hp;
+                for n in std::iter::once(slot.circle).chain(slot.rings) {
+                    self.nodes[n].visible = true;
+                }
+            }
+            if slot.model_face != face_file {
+                if let Some(f) = slot.face.take() {
+                    self.nodes[f].visible = false;
+                }
+                slot.face = face_file.map(|f| self.add(f, Some(slot.circle), Some(g::FACE[0])));
+                slot.model_face = face_file;
+            }
+            if let Some(f) = slot.face {
+                self.nodes[f].visible = true;
+            }
+            // The trail (panel +0x24): Sora's rule (the HP before a drop, the new HP after a rise), inferred.
+            if m.hp != slot.last_hp {
+                slot.trail_hp = if slot.last_hp < m.hp { m.hp } else { slot.last_hp };
+                slot.last_hp = m.hp;
+            }
+            let wedges = [party::hp_wedge(party::fraction(slot.trail_hp, m.max_hp)), party::hp_wedge(party::fraction(m.hp, m.max_hp)), party::mp_wedge(party::fraction(m.mp, m.max_mp))];
+            for (r, (start, sweep)) in slot.rings.into_iter().zip(wedges) {
+                self.nodes[r].sweep_start = start;
+                self.nodes[r].sweep = Some(sweep);
+            }
+            self.party_slots[s] = slot;
+        }
+    }
+
+    /// Raises the area-name card for area `area` of world `world` (kh2fm-rs `hud_card::update`: the
+    /// game raises it when the world / area pair changes). False when the place has no name.
+    pub fn area_card(&mut self, world: &str, area: usize) -> bool {
+        let Some(tokens) = self.text.as_ref().and_then(|t| t.place_name(world, area)) else { return false };
+        let node = match self.card_node {
+            Some(n) => n,
+            None => {
+                let mut n = Node::new(usize::MAX);
+                n.pos = card::POS;
+                self.nodes.push(n);
+                self.card_node = Some(self.nodes.len() - 1);
+                self.nodes.len() - 1
+            }
+        };
+        let n = &mut self.nodes[node];
+        n.label = Some(Label { tokens, style: Style { font: card::FONT, align: card::ALIGN, color: card::COLOR, ..Style::default() }, offset: [0.0, 0.0] });
+        n.label_time = 0.0;
+        n.visible = true;
+        self.card_timer = card::DURATION;
+        true
+    }
+
     pub fn tick(&mut self, _sora: &crate::sora::Sora) {
+        // The card counts down one per frame and hides at zero (0x15a640).
+        if let Some(node) = self.card_node {
+            if self.card_timer > 0.0 {
+                self.card_timer -= 1.0;
+            }
+            if self.card_timer <= 0.0 {
+                self.nodes[node].visible = false;
+            }
+        }
         // The reaction capsule mirrors the offered command (kh2-rs `mirror_reaction`).
         self.menu.reaction = self.reaction_cmd.and_then(|id| self.cmds.iter().find(|c| c.id == id)).map(|c| Reaction { message: c.message_id as u32, alt: c.flags & 8 != 0, kind7: false });
         if self.menu_file.is_some()
