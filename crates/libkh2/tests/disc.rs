@@ -2917,3 +2917,30 @@ fn reflect_clashes_with_a_soldiers_attacks_by_the_clash_table() {
         assert!(consts.types_clash(3, row.r#type), "atkp {a} type {} is paired by the table", row.r#type);
     }
 }
+
+/// The ground mover's stop step and start dust (round 15, FUN_0017af10 as kh2fm-rs `footsteps`):
+/// the first step out of idle gives dust 10 / 11, letting the stick go while running gives footstep
+/// kind 8 and dust 8 / 9.
+#[test]
+fn the_stop_step_and_the_start_dust_cue() {
+    use kh2::cue::Kind;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let mut s = standing(&game, &w);
+    let mut seen = Vec::new();
+    for t in 0..240 {
+        let stick = if (60..150).contains(&t) { [0.0, 1.0] } else { [0.0, 0.0] };
+        s.tick(&w, &Input { stick, cam_look: [0.0, 1.0], ..Default::default() });
+        s.collect_cues();
+        for c in s.cues.drain(..) {
+            if matches!(c.kind, Kind::Dust) || (c.kind == Kind::Footstep && c.params[0] == 8) {
+                seen.push((t, c.kind, c.params[0]));
+            }
+        }
+    }
+    eprintln!("stop / start cues: {seen:?}");
+    assert!(seen.iter().any(|&(t, k, n)| k == Kind::Dust && n == 10 && (60..70).contains(&t)), "start dust");
+    assert!(seen.iter().any(|&(t, k, n)| k == Kind::Footstep && n == 8 && t >= 150), "stop step");
+    assert!(seen.iter().any(|&(t, k, n)| k == Kind::Dust && n == 8 && t >= 150), "stop dust");
+}

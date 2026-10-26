@@ -410,6 +410,10 @@ pub struct Sora {
     /// volumes are filled from this frame's matrices). kh2-rs casts on Bevy transforms two frames
     /// old (the body's propagated transform and the keyblade's bone attachment); 2 reproduces it.
     pub wall_cast_lag: u8,
+    /// The stick magnitude of the last tick (the ground mover's commanded speed) and the previous
+    /// tick's (motion id, range trigger 42) for the stop step and the start dust (FUN_0017af10).
+    pub commanded: f32,
+    pub last_step: Option<(u32, bool)>,
     /// Stand up by itself after 180 ticks down (kh2-rs's stand-in where no game over runs).
     pub auto_revive: bool,
     pub mp: i32,
@@ -532,6 +536,8 @@ impl Sora {
             wall_prev: Default::default(),
             wall_done: Default::default(),
             wall_cast_lag: 0,
+            commanded: 0.0,
+            last_step: None,
             auto_revive: false,
             mp: max_mp,
             max_mp,
@@ -795,6 +801,25 @@ impl Sora {
     pub fn collect_cues(&mut self) {
         let model = self.model_name();
         let mut c = crate::cue::of_anim(&self.body, crate::cue::Owner::Sora, &model, self.motor.pos);
+        // The ground mover's stop step and start dust (FUN_0017af10, kh2fm-rs `footsteps`): letting the
+        // stick go while walking or running plays footstep kind 8 and dust 8 / 9; the first step out of
+        // idle makes dust 10 / 11. Sora is a party actor; his NeoStatus is not 0xe (no-dust).
+        {
+            use kh2_audio::footstep::{dust_kind, kind, start_dust, stop_step};
+            let mover = self.state == State::Ground && self.motor.grounded;
+            let last = self.last_step;
+            let stop = mover && last.is_some_and(|(id, r42)| stop_step(true, self.commanded, r42, id));
+            let start = mover && last.is_some_and(|(id, _)| start_dust(true, self.commanded, id, 1));
+            self.last_step = Some((self.motion_id().map_or(u32::MAX, |m| m as u32), self.body.trigger(range::KEEP_MOMENTUM)));
+            let cue = |k: crate::cue::Kind, n: u16| crate::cue::Cue { kind: k, owner: crate::cue::Owner::Sora, model: model.clone(), params: [n as i16, 0, 0, 0], pos: self.motor.pos, frame: 0 };
+            if stop {
+                c.push(cue(crate::cue::Kind::Footstep, kind::STOP));
+                c.extend(dust_kind::STOP.map(|k| cue(crate::cue::Kind::Dust, k)));
+            }
+            if start {
+                c.extend(dust_kind::START.map(|k| cue(crate::cue::Kind::Dust, k)));
+            }
+        }
         // A footstep's sample depends on the ground under Sora (FUN_00183730): its material goes in params[1].
         let material = self.motor.ground.map_or(0, |g| g.material as i16);
         for f in c.iter_mut().filter(|f| f.kind == crate::cue::Kind::Footstep) {
@@ -867,6 +892,7 @@ impl Sora {
         let view = view_matrix([-look.x, 0.0, -look.y], [0.0; 3], [0.0, 1.0, 0.0]);
         let s = glam::Vec2::from(input.stick);
         let mag = s.length().min(1.0);
+        self.commanded = if self.control_locked { 0.0 } else { mag };
         let stick = if mag > 0.0 { let u = s / s.length(); [u.x, -u.y, 0.0, mag] } else { [0.0; 4] };
         let mv = stick_vector(stick, &view, self.wanted_yaw, prty.walk_speed, prty.run_speed);
         let (dir, move_speed) = if stick[3] > 0.0 && (mv[0] != 0.0 || mv[2] != 0.0) { (Vec3::new(mv[0], 0.0, mv[2]), mv[3]) } else { (Vec3::ZERO, 0.0) };
