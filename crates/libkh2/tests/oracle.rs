@@ -485,7 +485,7 @@ fn orig_fm_1c20e8_reaction_conversion_matches_the_game() {
     ee.w32(0x1d49510, TABLE);
     let mut r = Rng::new(0x1c20e8);
     for n in 0..CASES {
-        let status = (r.below(1 << 31) as u32) * 2 + r.below(2) as u32 & [0xffff_ffff, 0x1ff, 0x184][r.below(3) as usize];
+        let status = ((r.below(1 << 31) as u32) * 2 + r.below(2) as u32) & [0xffff_ffff, 0x1ff, 0x184][r.below(3) as usize];
         let original = r.below(19) as u8;
         let air = [(0u32, 0u32), (0x40, 0), (0, 2)][r.below(3) as usize];
         let attacker_4000 = r.below(2) == 0;
