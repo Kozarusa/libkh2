@@ -960,7 +960,8 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::so
             if let Some(en) = enemies.as_mut() {
                 for (id, atk) in hits {
                     let Some(e) = en.list.iter_mut().find(|e| e.id == id && e.alive() && !e.removed) else { continue };
-                    let dmg = crate::enemy::damage(&atk, &caster, &e.stats);
+                    let dmg = crate::enemy::difficulty_scale(crate::enemy::damage(&atk, &caster, &e.stats), crate::enemy::difficulty(), false, true);
+                    let dmg = crate::enemy::low_hp_scale(dmg, e.hp, e.stats.max_hp, 0.0, game.params.low_hp_damage_percent);
                     let dir = (e.pos() - f.motor.pos).with_y(0.0).normalize_or_zero();
                     if let Some(r) = game.params.reaction.as_ref() {
                         crate::enemy::Enemies::receive(e, &atk, dmg, dir, r);
@@ -1000,6 +1001,7 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::so
                     let Some(atk) = params.atkp(atkp) else { continue };
                     let useless = kh2_game_core::reaction_rules::is_ineffective(to.weakness[(atk.element as usize).min(6)], to.weakness[6]);
                     let dmg = if useless { crate::enemy::damage(atk, &e.stats, &to) } else { crate::enemy::damage(atk, &e.stats, &to).max(1) };
+                    let dmg = crate::enemy::low_hp_scale(crate::enemy::difficulty_scale(dmg, crate::enemy::difficulty(), true, false), f.hp, to.max_hp, 0.0, params.low_hp_damage_percent);
                     let ko = f.change_hp(-dmg, data).knocked_out;
                     f.events.push(MemberEvent::Hit { by: e.id, atkp, damage: dmg, hp: f.hp });
                     let dir = (f.motor.pos - e.pos()).with_y(0.0).normalize_or_zero();
@@ -1039,7 +1041,8 @@ fn tick_inner(data: &PartyData, followers: &mut [Follower], sora: &mut crate::so
                     }
                     let Some(atk) = params.atkp(atkp).cloned() else { continue };
                     f.landed.insert((e.id, startf));
-                    let dmg = crate::enemy::damage(&atk, &f.stats(data), &e.stats);
+                    let dmg = crate::enemy::difficulty_scale(crate::enemy::damage(&atk, &f.stats(data), &e.stats), crate::enemy::difficulty(), false, true);
+                    let dmg = crate::enemy::low_hp_scale(dmg, e.hp, e.stats.max_hp, 0.0, game.params.low_hp_damage_percent);
                     let dir = (e.pos() - f.motor.pos).with_y(0.0).normalize_or_zero();
                     if let Some(r) = game.params.reaction.as_ref() {
                         crate::enemy::Enemies::receive(e, &atk, dmg, dir, r);

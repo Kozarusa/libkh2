@@ -1801,6 +1801,8 @@ impl Sora {
         // decided: held to 0..=999,999 (beyond any HP), so the ability percentages that follow
         // (kh2-rs `attacker_bonuses`, i32) cannot overflow.
         .clamp(0, 999_999) as i32;
+        // FM 0x1a2108: the difficulty step (Sora is a party member).
+        let dmg = crate::enemy::difficulty_scale(dmg, crate::enemy::difficulty(), false, true);
         let dmg = match &self.loadout {
             Some(l) => kh2_game_core::abilities::attacker_bonuses(l.block(), self.hits, a, dmg),
             None => dmg,

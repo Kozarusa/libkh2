@@ -441,7 +441,9 @@ fn class_tick(data: &SummonData, o: &mut SummonObject, sora: &mut Sora, battle: 
                 if !o.blast_hit.insert(e.id) {
                     continue;
                 }
-                let dmg = crate::enemy::damage(&atk, &from, &e.stats);
+                // A summon is a party object for the difficulty step (decided: its +0x588 bit 4 was not read).
+                let dmg = crate::enemy::difficulty_scale(crate::enemy::damage(&atk, &from, &e.stats), crate::enemy::difficulty(), false, true);
+                let dmg = crate::enemy::low_hp_scale(dmg, e.hp, e.stats.max_hp, 0.0, sora.game.params.low_hp_damage_percent);
                 let dir = (e.pos() - cam).with_y(0.0).normalize_or_zero();
                 if let Some(r) = sora.game.params.reaction.as_ref() {
                     crate::enemy::Enemies::receive(e, &atk, dmg, dir, r);

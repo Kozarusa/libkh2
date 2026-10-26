@@ -330,6 +330,14 @@ int32_t kh2_set_dodge_roll(int32_t handle, uint8_t level);
 
 Final Mix's Dodge Roll level (0..5, growth group 4): moving + a Square tap rolls (motion A180, AirSlideStarTime of invincibility); held past 10 ticks it becomes the Quick Run when learned.
 
+### `kh2_set_difficulty`
+
+```c
+int32_t kh2_set_difficulty(int32_t difficulty);
+```
+
+The difficulty: 0 Beginner, 1 Standard (default), 2 Proud, 3 Critical (the Final Mix damage routine's step: party members take 50 / - / 200 / 200 % and deal 150 / - / 100 / 125 %). Process-wide; -1 above 3.
+
 ### `kh2_set_pose_enabled`
 
 ```c

@@ -205,6 +205,38 @@ pub fn low_hp_scale(dmg: i32, hp: i32, max_hp: i32, ratio: f32, percent: i32) ->
     }
 }
 
+/// The difficulty the game keeps at FM 0x32dfc8 (0 Beginner, 1 Standard, 2 Proud, 3 Critical);
+/// process-wide like the game's word (`kh2_set_difficulty`). Standard by default.
+pub static DIFFICULTY: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(1);
+
+pub fn difficulty() -> u8 {
+    DIFFICULTY.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// FM 0x1a2108 (USA `FUN_001a0898`, the damage routine's difficulty step; Final Mix adds Critical):
+/// a hit on a party member (victim object +0x588 bit 4) takes `taken` percent, else a hit by a party
+/// member (attacker +0x588 bit 4) deals `dealt` percent, rounded up: Beginner 50 / 150, Standard none,
+/// Proud 200 / 100, Critical 200 / 125. Nothing for 0 or less damage.
+pub fn difficulty_scale(dmg: i32, difficulty: u8, victim_party: bool, attacker_party: bool) -> i32 {
+    let (taken, dealt) = match difficulty {
+        0 => (50, 150),
+        2 => (200, 100),
+        3 => (200, 125),
+        _ => return dmg,
+    };
+    if dmg <= 0 {
+        return dmg;
+    }
+    let pct = if victim_party {
+        taken
+    } else if attacker_party {
+        dealt
+    } else {
+        return dmg;
+    };
+    ((dmg as i64 * pct + 99) / 100) as i32
+}
+
 impl Disc {
     /// The enemy tables; the kinds load on demand (`EnemyData::kind`) through a second reader of
     /// the same disc image.
@@ -876,7 +908,7 @@ impl Enemies {
                 self.sora_landed.insert(key);
                 sora.connected = true;
                 sora.drive_hit(atkp);
-                let mut dmg = damage(&atk, &from, &e.stats);
+                let mut dmg = difficulty_scale(damage(&atk, &from, &e.stats), difficulty(), false, true);
                 if let Some(d) = sora.game.drive.as_ref() {
                     dmg = kh2_game_core::drive_rules::outgoing_damage(&d.tuning, crate::drive::IDS, if sora.drive.in_form { sora.drive.form } else { 0 }, atk.r#type, dmg);
                 }
@@ -910,7 +942,8 @@ impl Enemies {
                 }
                 e.landed.insert((slot, start));
                 let Some(atk) = params.atkp(atkp) else { continue };
-                let dmg = damage(atk, &e.stats, &to);
+                let dmg = difficulty_scale(damage(atk, &e.stats, &to), difficulty(), true, false);
+                let dmg = low_hp_scale(dmg, sora.hp, sora.max_hp, 0.0, params.low_hp_damage_percent);
                 let dir = (sora.motor.pos - e.obj.motor.pos).with_y(0.0).normalize_or_zero();
                 let result = sora.hit(atkp, dmg, dir) as i32;
                 self.events.push(EnemyEvent::HitSora { id: e.id, atkp, damage: dmg, result });
@@ -1036,7 +1069,7 @@ impl Enemies {
             let id = victims[h.victim].0;
             let Some(e) = self.list.iter_mut().find(|e| e.id == id) else { continue };
             let atk = params.atkp[h.row].clone();
-            let mut dmg = damage(&atk, &from, &e.stats);
+            let mut dmg = difficulty_scale(damage(&atk, &from, &e.stats), difficulty(), false, true);
             if let Some(l) = &sora.loadout {
                 dmg = kh2_game_core::abilities::attacker_bonuses(l.block(), sora.hits, &atk, dmg);
             }

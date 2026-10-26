@@ -94,6 +94,7 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_get_loadout_block(int handle, int[] outBlock);
     [DllImport(Lib)] public static extern int kh2_set_growth(int handle, byte highJump, byte quickRun, byte aerialDodge, byte glide);
     [DllImport(Lib)] public static extern int kh2_set_dodge_roll(int handle, byte level);
+    [DllImport(Lib)] public static extern int kh2_set_difficulty(int difficulty);
     [DllImport(Lib)] public static extern int kh2_bone_count(int handle, int which);
     [DllImport(Lib)] public static extern int kh2_get_bones(int handle, int which, int space, [Out] float[] outMatrices, uint maxBones);
     [DllImport(Lib)] public static extern int kh2_get_attack_volumes(int handle, [Out] Volume[] outVolumes, uint max);

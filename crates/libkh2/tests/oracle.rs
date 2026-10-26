@@ -341,3 +341,27 @@ fn orig_fm_1a1b68_form_timer_change_matches_the_game() {
         assert_eq!(whole, port.whole_points(&t), "case {n}: whole points of {} / {total}", port.left);
     }
 }
+
+/// FM 0x1a2108 (USA `FUN_001a0898`): the difficulty step of the damage routine. The difficulty word
+/// at FM 0x32dfc8, the victim object (status +0x25c) and the attacker object (a2) with +0x588 bit 4
+/// for a party member; against `enemy::difficulty_scale`. Stand-in: FM 0x19ba60 answers 1.
+#[test]
+fn orig_fm_1a2108_difficulty_matches_the_game() {
+    let Some(mut ee) = machine("oracle test of FM 0x1a2108 (difficulty)") else { return };
+    ee.hooks.insert(FM_OBJECT_EXISTS, |e: &mut Ee| e.gpr[2] = 1);
+    let mut r = Rng::new(0x1a2108);
+    for n in 0..CASES {
+        let diff = r.below(5) as u8;
+        let (vp, ap) = (r.below(2) == 0, r.below(2) == 0);
+        let dmg = [r.below(5000) as i32, 0, -(r.below(10) as i32), 1][r.below(4) as usize];
+        zero(&mut ee, STATUS, 0x300);
+        zero(&mut ee, OBJ, 0x600);
+        zero(&mut ee, ATTACKER_OBJ, 0x600);
+        ee.w32(0x32dfc8, diff as u32);
+        ee.w32(STATUS + 0x25c, OBJ);
+        ee.w32(OBJ + 0x588, if vp { 4 } else { 0 });
+        ee.w32(ATTACKER_OBJ + 0x588, if ap { 4 } else { 0 });
+        let game = ee.call(0x1a2108, &[STATUS as u64, dmg as i64 as u64, ATTACKER_OBJ as u64], &[], STACK).unwrap_or_else(|f| panic!("case {n}: {f:?}")) as u32 as i32;
+        assert_eq!(game, kh2::enemy::difficulty_scale(dmg, diff, vp, ap), "case {n}: difficulty {diff} victim party {vp} attacker party {ap} damage {dmg}");
+    }
+}

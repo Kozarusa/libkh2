@@ -2,6 +2,13 @@
 
 The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry names what a host sees.
 
+## 2.2.0 (round 14)
+
+- Oracle tests against the Final Mix executable: growth levels, the form timer (length, change,
+  whole points), the difficulty step.
+- Difficulty: `kh2_set_difficulty` (Beginner / Standard / Proud / Critical) in every hit path; the
+  low-HP step in the members' and the summon's hit paths too.
+
 ## 2.1.0 (round 13)
 
 - Damage on Final Mix: the Final Mix damage routine disassembled (FM 0x1a1e20); `enemy::low_hp_scale`

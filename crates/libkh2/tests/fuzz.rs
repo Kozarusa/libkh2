@@ -144,6 +144,7 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 kh2_set_high_jump(h, r.byte());
                 kh2_set_growth(h, r.byte(), r.byte(), r.byte(), r.byte());
         kh2_set_dodge_roll(h, r.byte());
+        kh2_set_difficulty(if r.chance(2) { 1 } else { r.int() % 5 });
                 kh2_set_pose_enabled(h, r.int());
             }
             15 => {

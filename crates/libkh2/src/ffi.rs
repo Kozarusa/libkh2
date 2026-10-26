@@ -3541,3 +3541,16 @@ pub unsafe extern "C" fn kh2_audio_set_area(area: *const std::ffi::c_char) -> i3
         None => set_error("no audio engine (kh2_audio_init)"),
     })
 }
+
+/// The difficulty (FM 0x32dfc8): 0 Beginner, 1 Standard (default), 2 Proud, 3 Critical. It scales the
+/// damage of every hit by the Final Mix damage routine's difficulty step (`enemy::difficulty_scale`):
+/// party members take 50 / - / 200 / 200 percent and deal 150 / - / 100 / 125 percent. Process-wide,
+/// may be called before `kh2_init`. Returns 0, or -1 for a value above 3.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_set_difficulty(difficulty: i32) -> i32 {
+    if !(0..=3).contains(&difficulty) {
+        return set_error(format!("difficulty {difficulty} is not 0..=3"));
+    }
+    crate::enemy::DIFFICULTY.store(difficulty as u8, std::sync::atomic::Ordering::Relaxed);
+    0
+}

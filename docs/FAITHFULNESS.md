@@ -88,6 +88,7 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_set_abilities, kh2_set_loadout, kh2_get_loadout_block | b | shared/abilities.rs (12 of 42 verified, e.g. `scan_gate_matches_the_game`; the block itself read) | `the_loadout_sets_combo_lengths_growth_and_survival` |
 | kh2_set_growth | b | the `fmab` rows through abilities.rs | `growth_abilities_use_the_fmab_rows` |
 | kh2_audio_set_area | c | kh2fm-rs `arif_record` / `area_soundinfo`; the voice pick `kh2_audio::voice` and `footstep_number` are kh2fm-rs code read from the original | `voices_and_footsteps_play_on_final_mix` |
+| kh2_set_difficulty | a | `enemy::difficulty_scale` against FM 0x1a2108 (`orig_fm_1a2108_difficulty_matches_the_game`) | the oracle test |
 | kh2_hud_area_card | c | kh2fm-rs `hud_card` (place table, font 2 at (256, 192), 120 frames) | `the_party_panels_and_the_area_card_draw_on_final_mix` |
 | kh2_set_dodge_roll | c | kh2fm-rs `square_ground` / `dash_step` transcribed (FM 0x178eb0, the A180 trigger 34 at tick 10) | `the_dodge_roll_taps_and_holds` |
 | kh2_bone_count, kh2_bone_parents, kh2_motion_tag, kh2_motion_slot_count | c | the loaded model / motion set | `any_motion_slot_samples_like_the_animator` |
@@ -132,7 +133,7 @@ Test names are libkh2's (`crates/libkh2/tests/`); every function is also in `fuz
 | kh2_camera_tick | a | camera_rules.rs rig (15 of 74 verified, `orig_13f600_matches_the_game`, `orig_13f740_matches_the_game`); camera.rs drives it as kh2-rs `camera::tick` | `the_field_camera_follows_collides_and_locks_on`, `a_talk_locks_sora_and_cuts_the_camera_to_the_talk_view` |
 | kh2_camera_reset | c | the table row choice | `the_field_camera_follows_collides_and_locks_on` |
 
-Totals (130 functions, Final Mix): class a 7 (kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
+Totals (131 functions, Final Mix): class a 8 (kh2_set_difficulty, kh2_surfaces_load_map, kh2_use_item, kh2_set_level,
 kh2_camera_tick, kh2_damage, kh2_drive_outgoing_damage, kh2_area_setup), class b 51, class c 72. The classes rest
 on kh2fm-rs's ledger, whose oracle evidence was gathered on the USA executable (its `main-fm` image
 rows carry the Final Mix addresses); kh2_damage and kh2_drive_outgoing_damage were b in 2.0.0 (the Final Mix oracle differed) and are a
@@ -196,6 +197,7 @@ Against the Final Mix executable in kh2-ee (`tests/oracle.rs`, 3000 seeded cases
 | 0x1c35a0 (0x1c1340) growth levels from the ability bits | `AbilityRules::growth_levels` | match | kh2_set_loadout, kh2_set_abilities (the growth they give) |
 | 0x1a1cc0 -> 0x1a1c90 (0x1a04b0 / 0x1a0480) form timer length | `FormTimer::start` (Final Mix numbering) | match, forms 1..6, levels 0..7 | kh2_drive_enter |
 | 0x1a1b68 (0x1a0358) form timer change; 0x1a1c30 (0x1a0420) whole points | `FormTimer::add`, `whole_points` | match | kh2_drive_gain, kh2_report_hit_atkp, the drain |
+| 0x1a2108 (0x1a0898) difficulty step | `enemy::difficulty_scale` | match | kh2_set_difficulty, every hit path |
 | 0x1a1e20, 0x1a22b0, 0x1a2340, 0x1a2478 (round 13) damage, bonuses, low HP | `enemy::damage`, `low_hp_scale`, `attacker_bonuses`, `hp_is_low` | match | kh2_damage and the hit paths |
 
 The classes of the table above do not move: those functions also run rules not covered by these

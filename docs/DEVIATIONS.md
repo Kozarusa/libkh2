@@ -46,8 +46,15 @@ out or simplifies some parts of its own. Both lists are here. kh2-rs keeps its o
   every type (`enemy::low_hp_scale`: HP at or below max HP x status +0x240 scales the damage by
   `sstm` +0x178). Round 12's 368 / 1954 differing cases were the test's USA layout; the oracle tests
   are strict again and match 3000 / 3000. Open: the writer of status +0x240 (libkh2 passes 0.0, so
-  the step is applied in Sora's hit paths but only changes a hit on a victim at 0 HP); the party and
-  summon hit paths skip it.
+  the step only changes a hit on a victim at 0 HP). 2.2.0 searched the Final Mix executable for every
+  load and store with offset 0x240: the damage routine is the only float reader, and the word stores
+  (FM 0x1802d8, 0x180378 and the others) write other records (the limit task's), so the status field
+  is filled by a block copy not found. The step now runs in every hit path (Sora, enemies on Sora and
+  the members, the members', the summon's).
+- Difficulty (2.2.0, `kh2_set_difficulty`): FM 0x1a2108, oracle-tested: party members take 50 / - /
+  200 / 200 % and deal 150 / - / 100 / 125 % (Beginner / Standard / Proud / Critical). Every hit path
+  applies it (the summon counts as a party member: decided, its object flag was not read). The EXP
+  rules of the difficulties were not found in the damage code and are not applied.
 - Text: the Final Mix disc's messages are Japanese; the HUD's Japanese glyphs (`kh2_image` text kind
   `Japanese`, the font set's Japanese companion) are not drawn yet. kh2fm-rs's English text import
   (a USA disc copy in the user's config folder) is not used: libkh2 reads one disc.
