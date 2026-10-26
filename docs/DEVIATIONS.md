@@ -53,8 +53,12 @@ out or simplifies some parts of its own. Both lists are here. kh2-rs keeps its o
   the members, the members', the summon's).
 - Difficulty (2.2.0, `kh2_set_difficulty`): FM 0x1a2108, oracle-tested: party members take 50 / - /
   200 / 200 % and deal 150 / - / 100 / 125 % (Beginner / Standard / Proud / Critical). Every hit path
-  applies it (the summon counts as a party member: decided, its object flag was not read). The EXP
-  rules of the difficulties were not found in the damage code and are not applied.
+  applies it (the summon counts as a party member: decided, its object flag was not read).
+  2.3.0 searched every read of the difficulty word (FM 0x32dfc8): four functions read it. Besides the
+  damage step: FM 0x1b73e8 returns a record's byte +7 times 1.5 in Critical when the second argument
+  is 1 or 14, and FM 0x1c068c (USA 0x1be500, the prize code) halves a record's bytes +2 and +3 in
+  Critical when its byte +1 is 1..3 or 14; the records were not identified, so neither is applied. No
+  reader is on the EXP payout path: the difficulties have no EXP rule in the executable's code.
 - Text: the Final Mix disc's messages are Japanese; the HUD's Japanese glyphs (`kh2_image` text kind
   `Japanese`, the font set's Japanese companion) are not drawn yet. kh2fm-rs's English text import
   (a USA disc copy in the user's config folder) is not used: libkh2 reads one disc.
@@ -161,5 +165,8 @@ Mix only) is not on the USA disc kh2-rs targets: nothing to port.
   that touches it clashes once (`EnemyEvent::Clash`, `KH2_EN_CLASH`) and cannot hit Sora. When the
   barrier ends, the clash count against `magi` +0x64 / +0x70 (integers, 5 and 10) picks the burst:
   574 / 576 / 578 for `magi` +0x54 frames, then 667 / 668 / 669 20 larger for `magi` +0x58; no clash,
-  no burst. decided: every enemy attack clashes (the executable's clash table by attack type is not
-  read) and the enemy's clash reaction is not played; the barrier's fade-out (8) is not counted.
+  no burst. 2.3.0: an enemy window clashes only when the executable's clash table pairs the guard's
+  type (3) with the enemy row's type (`ExeConsts::types_clash`, FUN_0018d808), and the enemy plays its
+  clash reaction (handler 0x1b2478, `reaction_rules::enemy_clash`: ReflectedMotion and the
+  ReflectHitBack push, nothing when RefactSelf says Nothing). decided: the cone test (ReflectRange /
+  ReflectAngle) and the script action (ReflectAction) are not applied; the fade-out (8) is not counted.

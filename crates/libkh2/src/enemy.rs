@@ -205,6 +205,9 @@ pub fn low_hp_scale(dmg: i32, hp: i32, max_hp: i32, ratio: f32, percent: i32) ->
     }
 }
 
+/// Reflect's guard row type (atkp 573: Type 3), the row of the clash table it pairs with.
+const GUARD_TYPE: u8 = 3;
+
 /// The difficulty the game keeps at FM 0x32dfc8 (0 Beginner, 1 Standard, 2 Proud, 3 Critical);
 /// process-wide like the game's word (`kh2_set_difficulty`). Standard by default.
 pub static DIFFICULTY: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(1);
@@ -943,15 +946,31 @@ impl Enemies {
                 if e.landed.contains(&(slot, start)) {
                     continue;
                 }
-                // Reflect's guard (FUN_0018d808 pairs attack with attack, FUN_0018d430 counts the clash):
-                // the enemy window clashes once and cannot hit Sora. decided: the enemy's clash reaction
-                // and the executable's clash table are not applied; every enemy attack clashes.
-                if let Some(g) = guard
+                // Reflect's guard (FUN_0018d808 pairs attack with attack when the clash table byte of
+                // guard type 3 against the enemy row's type is set; FUN_0018d430 counts the clash): the
+                // enemy window clashes once, cannot hit Sora, and the enemy plays its clash reaction
+                // (the handler 0x1b2478, `reaction_rules::enemy_clash`: the row's ReflectedMotion with
+                // the ReflectHitBack push, unless RefactSelf says Nothing).
+                if let (Some(g), Some(row), Some(r)) = (guard, params.atkp(atkp), params.reaction.as_ref())
+                    && r.consts.types_clash(GUARD_TYPE, row.r#type)
                     && overlap(&v, &g)
                 {
                     e.landed.insert((slot, start));
                     self.spells.clashes += 1;
                     self.events.push(EnemyEvent::Clash { id: e.id, atkp });
+                    if let Some(c) = rules::enemy_clash(&rules::ReflectFields::from_atkp(row), false)
+                        && let Some(m) = c.motion
+                    {
+                        let rig = e.data.rig.clone();
+                        let slot = rig.mset.slot(m as usize, kh2_anim::PlayerState::BattleWeapon).or_else(|| rig.mset.has(m as usize).then_some(m as usize));
+                        if slot.is_some() {
+                            e.anim.restart(slot, false, 2.0);
+                            e.state = EState::Hurt;
+                            e.timer = 0.0;
+                            let away = (e.obj.motor.pos - sora.motor.pos).with_y(0.0).normalize_or_zero();
+                            e.push = Push::new(away, c.push_power, 0.0, &r.consts);
+                        }
+                    }
                     continue;
                 }
                 if !sora_hurt.iter().any(|h| overlap(&v, h)) {

@@ -2876,3 +2876,44 @@ fn the_information_bar_opens_scrolls_and_closes() {
     assert!(last_x < first_x, "it scrolls left");
     assert_eq!(texts.last(), Some(&0), "and goes");
 }
+
+/// Reflect against a real attacker (round 15): a Soldier attacks Sora while he keeps casting Reflect;
+/// its windows whose row type the executable's clash table pairs with the guard (type 3) clash
+/// (`EnemyEvent::Clash`) instead of hitting, and the Soldier plays its clash reaction.
+#[test]
+fn reflect_clashes_with_a_soldiers_attacks_by_the_clash_table() {
+    use kh2::enemy::{EnemyEvent, Enemies};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let data = Arc::new(d.enemies().expect("enemy data"));
+    let consts = game.params.reaction.as_ref().expect("exe constants").consts.clone();
+    let w = floor();
+    let mut s = standing(&game, &w);
+    s.magic_levels = [1; 6];
+    s.max_hp = 999;
+    s.hp = 999;
+    let mut en = Enemies::new(data.clone());
+    en.spawn("M_EX010", Vec3::new(0.0, 0.0, 150.0), std::f32::consts::PI, &w);
+    let (mut clashes, mut hits) = (Vec::new(), 0);
+    for t in 0..1800 {
+        if t % 40 == 0 {
+            s.mp = s.max_mp;
+            s.cast_request = Some((5, 30));
+        }
+        s.tick(&w, &Input::default());
+        en.tick(&mut s, &w, game.params.sstm.fall_max);
+        for ev in en.events.drain(..) {
+            match ev {
+                EnemyEvent::Clash { atkp, .. } => clashes.push(atkp),
+                EnemyEvent::HitSora { .. } => hits += 1,
+                _ => {}
+            }
+        }
+    }
+    eprintln!("reflect vs Soldier: clashes {clashes:?}, hits on Sora {hits}");
+    assert!(!clashes.is_empty(), "the guard clashes");
+    for a in &clashes {
+        let row = game.params.atkp(*a).expect("row");
+        assert!(consts.types_clash(3, row.r#type), "atkp {a} type {} is paired by the table", row.r#type);
+    }
+}

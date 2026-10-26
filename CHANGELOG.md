@@ -2,6 +2,11 @@
 
 The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry names what a host sees.
 
+## 2.3.0 (round 15)
+
+- Oracle tests of the jump mover (rise time, launch, curve) against Final Mix; kh2_jump_height is class a.
+- Reflect: the clash table by attack type and the enemy's clash reaction.
+
 ## 2.2.0 (round 14)
 
 - API: every function in `kh2.h` documented (units, ownership, errors); `docs/MIGRATION.md` (1.x to 2.x)
