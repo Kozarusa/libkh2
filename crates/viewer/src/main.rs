@@ -10,7 +10,8 @@
 //! Q lock onto the post, 1-4 Fire / Blizzard / Thunder / Cure, P Potion, F Valor, M Master,
 //! R revert, H take a hit, G toggle the growth abilities, E spawn a Shadow, a Soldier and a Dusk
 //! in front of Sora (lock-on with Q then takes the nearest enemy), T accept a reaction command,
-//! Esc quit.
+//! PageUp / PageDown / Enter / Backspace drive the HUD's command menu (drawn over the view by the
+//! library's draw list and software rasteriser), Esc quit.
 
 use std::sync::Arc;
 
@@ -99,6 +100,8 @@ fn main() {
     let mut party_rng = kh2::party::PartyRng::default();
     let mut followers: Vec<kh2::party::Follower> = party.as_ref().map(|p| (0..2).map(|m| kh2::party::Follower::new(p, m, start + Vec3::new(if m == 0 { -150.0 } else { 150.0 }, 0.0, -150.0))).collect()).unwrap_or_default();
     let mut camera = Camera::new(0);
+    let world_code: String = area.as_deref().and_then(|a| a.get(..2)).unwrap_or("tt").to_string();
+    let mut hud = kh2::hud::Hud::load(&mut disc, &world_code).ok();
     let post = start + Vec3::new(-800.0, 0.0, 600.0);
     let parents = |r: &kh2::anim::Rig| r.model.bones.iter().map(|b| b.parent).collect::<Vec<i32>>();
     let mut look = [0.0f32, 1.0];
@@ -181,6 +184,17 @@ fn main() {
                 }
             }
         }
+        if let Some(h) = hud.as_mut() {
+            let mi = kh2::hud::MenuInput { up: pressed(Key::PageUp), down: pressed(Key::PageDown), confirm: pressed(Key::Enter), back: pressed(Key::Backspace), reaction: false };
+            h.input(mi, &sora);
+            for c in std::mem::take(&mut h.fresh) {
+                match c {
+                    kh2::hud::Choice::Magic { slot } => sora.cast_request = Some((slot, 30)),
+                    kh2::hud::Choice::Attack => sora.menu_attack = true,
+                    other => eprintln!("hud: {other:?}"),
+                }
+            }
+        }
         sora.tick(&world, &input);
         if !sora.attack_triggers().is_empty() && sora.target.is_some_and(|t| t.pos.distance(sora.motor.pos) < 250.0) {
             sora.connected = true;
@@ -258,15 +272,92 @@ fn main() {
                 offer = format!("  reaction {} ({:?}, T)", o.cmd, o.status);
             }
         }
+        // The HUD over the view: the draw list rasterised into the 512 x 448 screen, scaled to the window's height
+        // and centred.
+        if let Some(h) = hud.as_mut() {
+            h.reaction_cmd = enemies.as_ref().and_then(|e| e.offer).map(|o| o.cmd);
+            h.tick(&sora);
+            let list = h.draw_list();
+            let hh = H;
+            let hw = (H as f32 * 512.0 / 448.0) as usize;
+            let x0 = (W - hw) / 2;
+            let mut rgba = vec![0u8; hw * hh * 4];
+            for y in 0..hh {
+                for x in 0..hw {
+                    let c = canvas.px[y * W + x0 + x];
+                    let o = (y * hw + x) * 4;
+                    rgba[o..o + 4].copy_from_slice(&[(c >> 16) as u8, (c >> 8) as u8, c as u8, 255]);
+                }
+            }
+            h.rasterize(&list, hw, hh, &mut rgba);
+            for y in 0..hh {
+                for x in 0..hw {
+                    let o = (y * hw + x) * 4;
+                    canvas.px[y * W + x0 + x] = (rgba[o] as u32) << 16 | (rgba[o + 1] as u32) << 8 | rgba[o + 2] as u32;
+                }
+            }
+        }
         let foes = enemies.as_ref().map_or(0, |e| e.list.iter().filter(|e| e.alive()).count());
         window.set_title(&format!("libkh2 viewer  state {:?}  motion {}  HP {}/{}  MP {}/{}  form {}  combo {}  LV {}  enemies {foes}{offer}", sora.state, sora.body.tag(), sora.hp, sora.max_hp, sora.mp, sora.max_mp, sora.drive.form, sora.hits, sora.level));
         window.update_with_buffer(&canvas.px, W, H).expect("draw");
     }
     if let Ok(path) = std::env::var("KH2_VIEWER_SHOT") {
-        let mut out = format!("P6 {W} {H} 255\n").into_bytes();
-        for p in &canvas.px {
-            out.extend([(p >> 16) as u8, (p >> 8) as u8, *p as u8]);
+        if path.ends_with(".png") {
+            let rgba: Vec<u8> = canvas.px.iter().flat_map(|p| [(p >> 16) as u8, (p >> 8) as u8, *p as u8, 255]).collect();
+            std::fs::write(path, png(W, H, &rgba)).expect("shot");
+        } else {
+            let mut out = format!("P6 {W} {H} 255\n").into_bytes();
+            for p in &canvas.px {
+                out.extend([(p >> 16) as u8, (p >> 8) as u8, *p as u8]);
+            }
+            std::fs::write(path, out).expect("shot");
         }
-        std::fs::write(path, out).expect("shot");
     }
+}
+
+/// A minimal PNG (stored deflate blocks) of an RGBA image.
+fn png(w: usize, h: usize, rgba: &[u8]) -> Vec<u8> {
+    fn crc(data: &[u8]) -> u32 {
+        let mut c = 0xffff_ffffu32;
+        for &b in data {
+            c ^= b as u32;
+            for _ in 0..8 {
+                c = if c & 1 != 0 { 0xedb8_8320 ^ (c >> 1) } else { c >> 1 };
+            }
+        }
+        !c
+    }
+    let mut raw = Vec::new();
+    for y in 0..h {
+        raw.push(0u8);
+        raw.extend_from_slice(&rgba[y * w * 4..(y + 1) * w * 4]);
+    }
+    let mut z = vec![0x78, 0x01];
+    for (k, chunk) in raw.chunks(65535).enumerate() {
+        z.push(((k + 1) * 65535 >= raw.len()) as u8);
+        z.extend_from_slice(&(chunk.len() as u16).to_le_bytes());
+        z.extend_from_slice(&(!(chunk.len() as u16)).to_le_bytes());
+        z.extend_from_slice(chunk);
+    }
+    let (mut a, mut b) = (1u32, 0u32);
+    for &x in &raw {
+        a = (a + x as u32) % 65521;
+        b = (b + a) % 65521;
+    }
+    z.extend_from_slice(&((b << 16) | a).to_be_bytes());
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    let mut chunk = |tag: &[u8], data: &[u8]| {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let mut c = tag.to_vec();
+        c.extend_from_slice(data);
+        out.extend_from_slice(&c);
+        out.extend_from_slice(&crc(&c).to_be_bytes());
+    };
+    let mut ihdr = (w as u32).to_be_bytes().to_vec();
+    ihdr.extend_from_slice(&(h as u32).to_be_bytes());
+    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+    chunk(b"IHDR", &ihdr);
+    chunk(b"IDAT", &z);
+    chunk(b"IEND", &[]);
+    out
 }

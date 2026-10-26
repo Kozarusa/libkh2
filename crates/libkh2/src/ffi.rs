@@ -3145,6 +3145,10 @@ pub extern "C" fn kh2_hud_tick(handle: i32) -> i32 {
         let Some((h, list)) = l.huds.get_mut(&handle) else { return set_error("no HUD (kh2_hud_load)") };
         h.reaction_cmd = offer;
         h.tick(s);
+        // The panel's sounds (the danger alarm, system sound 9 of se000) as numbered sound cues.
+        for se in std::mem::take(&mut h.sounds) {
+            s.cue(crate::cue::Cue { kind: crate::cue::Kind::SoundNumber, owner: crate::cue::Owner::Sora, model: String::new(), params: [se as i16, 0, 0, 0], pos: s.motor.pos, frame: 0 });
+        }
         let mut accept = false;
         for c in std::mem::take(&mut h.fresh) {
             match c {

@@ -23,6 +23,29 @@ presses attack on Sora's next tick, a spell starts the cast (`kh2_cast`'s path),
 command is accepted (`kh2_reaction_accept`'s path); items and drive forms are reported
 (`kh2_hud_poll_event`) for the host to call `kh2_use_item` / `kh2_drive_enter`.
 
+## Sora's HP / MP panel and drive gauge (1.2)
+
+Bottom right, from the world's field file (`field2d/us/<world>0field.2dd`, pair `gaug`) and Sora's
+face (the last pair of `obj/P_EX100.apdx`), compiled from kh2-rs `hud_gauge` (group numbers,
+`PanelState`, `PanelEvent`, `fill`, `DriveTables` from the executable, `alarm_step`) with the
+panel's frame transcribed: the HP ring fills pi/40 per point up to 60 HP and a bar beyond (3 px a
+point), three layers (maximum, the trail of the last hit, the current HP); a hit flashes the circle
+and shows the hurt face once; HP at or below a quarter turns the panel to its danger look and
+starts the danger alarm (a numbered sound cue 9); the MP bar is a pixel a point (the recharge look
+while the MP charge runs); the drive gauge shows the whole points as a digit, the fraction as the
+fill, MAX when full, the form timer's segment in a form. The values are Sora's own each tick.
+
+Node features this needed (kh2-rs `hud_gfx`): parents with the sequence anchors, offsets, the
+sequence's external scale and rotation, the ring wedge clip (`wedge`) and the fill reveal; a
+clipped quad comes out of the draw list as triangles (`pos[3] == pos[2]`). Screen y includes
+kh2-rs's `Y_BIAS` (16).
+
+The viewer draws the HUD over its view (`cargo run --release -p libkh2-viewer`;
+`KH2_VIEWER_FRAMES=200 KH2_VIEWER_SHOT=local/viewer_battle.png` saves a battle frame: the command
+deck with the Reversal capsule, the HP ring, MP and the drive gauge at MAX 9). The disc test
+`the_hp_panel_follows_sora` saves `local/hud_gauge.png` (15 of 40 HP after a hit, half MP, 2.5
+drive points).
+
 ## The draw list
 
 `kh2_hud_draw_list` gives `kh2_hud_sprite`s in draw order: texture id, blend (0 alpha, 1
@@ -45,7 +68,7 @@ the COMMANDS deck with Attack selected, then the MAGIC page with Fire, Blizzard,
 
 ## Not drawn yet (TODO.md)
 
-Sora's HP / MP panel and drive gauge (kh2-rs `hud_gauge`), the party panels (`hud_party`), the
+The party panels (`hud_party`), the
 target gauge and lock-on reticle (`hud_target`), banners (`hud_banner`), the INFORMATION bar
 (`hud_info`), the message window, the mission panels, the clip / scissor those need, the ring
 wedges. Each is a transcription of its kh2-rs system onto the same node / draw-list core.

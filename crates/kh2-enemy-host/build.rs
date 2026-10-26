@@ -39,7 +39,19 @@ fn span(text: &str, start: &str, last: &str) -> String {
     let a = text.find(start).unwrap_or_else(|| panic!("{start:?} not found"));
     let f = a + text[a..].find(last).unwrap_or_else(|| panic!("{last:?} not found"));
     let brace = text[f..].find('{').map(|x| f + x);
-    let semi = text[f..].find(';').map(|x| f + x);
+    // The first `;` outside brackets and parentheses (`[usize; 4]` holds one).
+    let semi = {
+        let mut depth = 0i32;
+        text[f..].char_indices().find_map(|(i, c)| {
+            match c {
+                '[' | '(' => depth += 1,
+                ']' | ')' => depth -= 1,
+                ';' if depth == 0 => return Some(f + i),
+                _ => {}
+            }
+            None
+        })
+    };
     match (brace, semi) {
         (Some(b), Some(s)) if s < b && !last.contains("fn ") => text[a..s + 1].to_string(),
         (Some(b), _) => text[a..close(text.as_bytes(), b + 1)].to_string(),
@@ -275,6 +287,53 @@ fn struggle() {
         .replace("const KINDS", "pub const KINDS");
     assert!(hud.contains("pub kind:") && hud.contains("pub reaction: [u32; 5]"), "Tables made public");
     std::fs::write(Path::new(&dir).join("hud_menu.rs"), hud).unwrap();
+    // Sora's HP / MP panel and drive gauge: `shared/hud.rs`'s gauge records and `kh2-hud/src/hud_gauge.rs`'s pure
+    // parts (group numbers, the panel state and event rules, the ring / bar fill, the drive tables, the alarm rule).
+    let mut gauge = String::new();
+    for (a, b) in [
+        ("/// recharge look while `total > 0`", "pub struct MpRecharge"),
+        ("/// Which art the drive gauge uses", "pub enum DriveMode"),
+        ("/// Game-state input of the drive gauge.", "pub struct DriveGauge"),
+        ("impl Default for DriveGauge {", "impl Default for DriveGauge"),
+    ] {
+        gauge.push_str(&span(&h, a, b));
+        gauge.push_str("\n\n");
+    }
+    let gs = read("kh2-hud/src/hud_gauge.rs");
+    for (a, b) in [
+        ("/// Sequence pair order in the world's field file", "pub const FACE_NORMAL"),
+        ("/// HP below which the ring (instead of the bar) shows the value", "const BAR_SPRITE"),
+        ("/// Animation groups of the gauge file, by the roles in the panel.", "mod g"),
+        ("/// The panel's state (panel +0x18", "pub enum PanelState"),
+        ("impl PanelState {", "impl PanelState"),
+        ("/// What reaches the panel in a frame.", "pub enum PanelEvent"),
+        ("impl PanelEvent {", "impl PanelEvent"),
+        ("/// MP bar groups (label, back, fill, cap)", "const MP_RECHARGE"),
+        ("/// Digit groups by drive points for the three art sets", "pub struct DriveTables"),
+        ("impl DriveTables {", "impl DriveTables"),
+        ("/// Drive gauge groups (gaug sequence) by mode", "mod dg"),
+        ("/// The danger alarm: system sound 9", "pub const DANGER_ALARM_SE"),
+        ("/// The alarm's rule, run every panel frame", "pub fn alarm_step"),
+        ("/// Where a HP value sits", "enum Fill"),
+        ("fn fill(hp: i32) -> Fill {", "fn fill"),
+    ] {
+        gauge.push_str(&span(&gs, a, b));
+        gauge.push_str("\n\n");
+    }
+    let gauge = gauge
+        .replace("\r\n", "\n")
+        .replace("\nconst RING_HP", "\npub const RING_HP")
+        .replace("\nconst RING_PER_HP", "\npub const RING_PER_HP")
+        .replace("\nconst BAR_PER_HP", "\npub const BAR_PER_HP")
+        .replace("\nconst BAR_SPRITE", "\npub const BAR_SPRITE")
+        .replace("\nmod g {", "\npub mod g {")
+        .replace("\nconst MP_NORMAL", "\npub const MP_NORMAL")
+        .replace("\nconst MP_RECHARGE", "\npub const MP_RECHARGE")
+        .replace("\nmod dg {", "\npub mod dg {")
+        .replace("\nenum Fill {", "\npub enum Fill {")
+        .replace("\nfn fill(", "\npub fn fill(");
+    assert!(gauge.contains("pub mod g {") && gauge.contains("pub fn fill("), "gauge spans public");
+    std::fs::write(Path::new(&dir).join("hud_gauge.rs"), gauge).unwrap();
 }
 
 fn main() {

@@ -300,6 +300,16 @@ pub mod hud_menu {
     include!(concat!(env!("OUT_DIR"), "/hud_menu.rs"));
 }
 
+/// kh2-rs's HP / MP panel and drive gauge rules: `shared/hud.rs`'s gauge records and `kh2-hud/src/hud_gauge.rs`'s pure
+/// parts (spans by `build.rs`, made public).
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod hud_gauge {
+    use std::f32::consts::{FRAC_PI_2, PI};
+
+    use bevy::prelude::*;
+    include!(concat!(env!("OUT_DIR"), "/hud_gauge.rs"));
+}
+
 /// kh2-rs `kh2-event/src/npc.rs`'s talk constants and the talk camera's record (`talk_shot`, span by `build.rs`).
 #[allow(dead_code, clippy::all)]
 pub mod npc {

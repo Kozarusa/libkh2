@@ -2294,3 +2294,40 @@ fn every_spell_at_every_level_casts_with_its_own_row() {
         eprintln!("{l}");
     }
 }
+
+/// Sora's HP / MP panel and drive gauge (round 11, kh2-rs `hud_gauge`): the panel's nodes from the
+/// world's field file, the HP ring filled by the HP (pi/40 per point), the MP bar by MP, the drive
+/// digit by the points; a hit plays the hit circle. Saves `local/hud_gauge.png`.
+#[test]
+fn the_hp_panel_follows_sora() {
+    use kh2::hud::Hud;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let mut s = standing(&game, &w);
+    s.max_hp = 40;
+    s.hp = 40;
+    s.drive.points.whole = 2;
+    s.drive.points.fraction = 50;
+    let mut hud = Hud::load(&mut d, "tt").expect("HUD loads");
+    for _ in 0..30 {
+        hud.tick(&s);
+    }
+    let full = hud.draw_list().len();
+    s.hp = 15;
+    s.mp = s.max_mp / 2;
+    for _ in 0..45 {
+        hud.tick(&s);
+    }
+    let list = hud.draw_list();
+    let (lo, hi) = list.iter().filter(|q| !q.text && q.pos[0][0] > 256.0).flat_map(|q| q.pos).fold(([f32::MAX; 2], [f32::MIN; 2]), |(a, b), p| ([a[0].min(p[0]), a[1].min(p[1])], [b[0].max(p[0]), b[1].max(p[1])]));
+    eprintln!("panel: {full} sprites at full HP, {} after the hit; right-side parts from {lo:?} to {hi:?}", list.len());
+    assert!(list.len() > 20, "the panel draws");
+    assert!(lo[0] > 300.0 && hi[1] > 350.0, "bottom right");
+    let (fw, fh) = (512usize, 448usize);
+    let mut frame = vec![40u8; fw * fh * 4];
+    hud.rasterize(&list, fw, fh, &mut frame);
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local");
+    let _ = std::fs::create_dir_all(&dir);
+    write_png(&dir.join("hud_gauge.png"), fw, fh, &frame);
+}

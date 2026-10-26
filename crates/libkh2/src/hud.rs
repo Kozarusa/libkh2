@@ -15,6 +15,7 @@
 //! the owned forms) or reports the choice; the gauges, party panels, target gauge, lock-on reticle,
 //! banners and the INFORMATION bar are not drawn yet (TODO.md).
 
+use kh2_enemy_host::hud_gauge::{self as hg, dg, g, DriveGauge, DriveMode, DriveTables, PanelEvent, PanelState};
 use kh2_enemy_host::hud_menu::{self as hm, CommandMenu, Label, MenuEntry, MenuPage, Reaction, Tables};
 use kh2_image::font::{Atlas, Font, FontSet};
 use kh2_image::seqd::{Ext, Player, Quad, Seqd};
@@ -59,19 +60,83 @@ struct SeqFile {
     seq: Seqd,
 }
 
+/// One HUD object (kh2-rs `hud_gfx::Node`): a sequence player at a position or under a parent.
 struct Node {
     file: usize,
     player: Player,
+    parent: Option<usize>,
     pos: [f32; 2],
+    off: [f32; 2],
+    ext: Ext,
     visible: bool,
+    /// Clip to the wedge from `sweep_start` clockwise by this many radians (a ring gauge).
+    sweep: Option<f32>,
+    sweep_start: f32,
+    /// Show only this fraction of the width from the left (a gauge fill).
+    reveal: Option<f32>,
+    /// The follow-up group once a limited group has finished (0x138aa8).
+    next: Option<usize>,
     label: Option<Label>,
     label_time: f32,
+    anchor: [f32; 2],
+    base: [f32; 2],
+    origin: [f32; 2],
 }
 
 impl Node {
     fn new(file: usize) -> Node {
-        Node { file, player: Player::default(), pos: [0.0; 2], visible: false, label: None, label_time: 0.0 }
+        Node { file, player: Player::default(), parent: None, pos: [0.0; 2], off: [0.0; 2], ext: Ext::default(), visible: false, sweep: None, sweep_start: 0.0, reveal: None, next: None, label: None, label_time: 0.0, anchor: [0.0; 2], base: [0.0; 2], origin: [0.0; 2] }
     }
+}
+
+/// kh2-rs `hud_gfx::Y_BIAS`: HUD y 0 is 16 lines below the top of the picture.
+pub const Y_BIAS: f32 = 16.0;
+
+#[derive(Clone, Copy)]
+struct Vert {
+    pos: [f32; 2],
+    uv: [f32; 2],
+    col: [f32; 4],
+}
+
+fn lerp_vert(a: Vert, b: Vert, t: f32) -> Vert {
+    let l = |x: f32, y: f32| x + (y - x) * t;
+    Vert { pos: [l(a.pos[0], b.pos[0]), l(a.pos[1], b.pos[1])], uv: [l(a.uv[0], b.uv[0]), l(a.uv[1], b.uv[1])], col: [l(a.col[0], b.col[0]), l(a.col[1], b.col[1]), l(a.col[2], b.col[2]), l(a.col[3], b.col[3])] }
+}
+
+/// kh2-rs `hud_gfx::clip`: the part of a convex polygon where `dot(p - c, n) >= 0`.
+fn clip(poly: &[Vert], c: [f32; 2], n: [f32; 2]) -> Vec<Vert> {
+    let d = |v: &Vert| (v.pos[0] - c[0]) * n[0] + (v.pos[1] - c[1]) * n[1];
+    let mut out = Vec::new();
+    for i in 0..poly.len() {
+        let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+        let (da, db) = (d(&a), d(&b));
+        if da >= 0.0 {
+            out.push(a);
+        }
+        if (da >= 0.0) != (db >= 0.0) {
+            out.push(lerp_vert(a, b, da / (da - db)));
+        }
+    }
+    out
+}
+
+/// kh2-rs `hud_gfx::wedge`: the wedge of a ring gauge from `start` (radians clockwise from west) by `sweep`.
+fn wedge(poly: &[Vert], c: [f32; 2], start: f32, sweep: f32) -> Vec<Vec<Vert>> {
+    use std::f32::consts::PI;
+    if sweep <= 0.0 {
+        return Vec::new();
+    }
+    let edge = |a: f32| [-a.sin(), a.cos()];
+    if sweep >= 2.0 * PI {
+        return vec![poly.to_vec()];
+    }
+    let first = clip(poly, c, edge(start + PI));
+    if sweep <= PI {
+        return vec![clip(&first, c, edge(start + sweep))];
+    }
+    let second = clip(&clip(poly, c, edge(start)), c, edge(start + sweep));
+    vec![first, second]
 }
 
 /// Fonts and messages (kh2-rs `hud_text::TextSys` without the scene files).
@@ -157,6 +222,25 @@ enum Action {
     None,
 }
 
+/// Sora's HP / MP panel and drive gauge (kh2-rs `hud_gauge::SoraPanel`).
+#[derive(Default)]
+struct Panel {
+    circle: usize,
+    face: Option<usize>,
+    ring: [usize; 3],
+    bar: [usize; 3],
+    cap: usize,
+    mp: [usize; 4],
+    drive: [usize; 5],
+    drive_mode: Option<DriveMode>,
+    drive_points: Option<u8>,
+    recharging: bool,
+    state: Option<PanelState>,
+    last_hp: i32,
+    lag_hp: i32,
+    alarm: bool,
+}
+
 /// The HUD of one Sora.
 pub struct Hud {
     pub textures: Vec<Texture>,
@@ -180,6 +264,13 @@ pub struct Hud {
     pub fresh: Vec<Choice>,
     /// The reaction command offered (command id), mirrored into the capsule.
     pub reaction_cmd: Option<u16>,
+    /// The field file's first pair index (`fiel`; `gaug` follows, kh2-rs `hud_gauge::GAUG`) and Sora's face.
+    field: Option<usize>,
+    face_file: Option<usize>,
+    drive_tables: DriveTables,
+    panel: Option<Panel>,
+    /// Sounds the panel asks for (the danger alarm: system sound 9).
+    pub sounds: Vec<u32>,
 }
 
 impl Hud {
@@ -208,11 +299,38 @@ impl Hud {
             choices: Vec::new(),
             fresh: Vec::new(),
             reaction_cmd: None,
+            field: None,
+            face_file: None,
+            drive_tables: DriveTables::from_exe(&exe),
+            panel: None,
+            sounds: Vec::new(),
         };
         let pair = |b: &[u8]| -> Option<(kh2_image::imgd::Image, Seqd)> {
             let e = kh2_bar::parse(b).ok()?;
             e.windows(2).find_map(|w| Some((kh2_image::imgd::decode(w[0].data)?, kh2_image::seqd::parse(w[1].data)?)))
         };
+        // The world's field file (pairs fiel, gaug, mapj, miss) and Sora's face (the last pair of his APDX), as
+        // kh2-rs `hud::load_files`.
+        let pairs = |b: &[u8]| -> Vec<(kh2_image::imgd::Image, Seqd)> {
+            let Ok(e) = kh2_bar::parse(b) else { return Vec::new() };
+            e.windows(2).filter_map(|w| Some((kh2_image::imgd::decode(w[0].data)?, kh2_image::seqd::parse(w[1].data)?))).collect()
+        };
+        let mut field = disc.read(&format!("field2d/us/{world}0field.2dd")).map(|b| pairs(&b)).unwrap_or_default();
+        if field.is_empty() {
+            field = disc.read("field2d/us/zz0field.2dd").map(|b| pairs(&b)).unwrap_or_default();
+        }
+        if !field.is_empty() {
+            hud.field = Some(hud.files.len());
+            for (img, seq) in field {
+                hud.textures.push(Texture { width: img.width, height: img.height, rgba: img.rgba });
+                hud.files.push(SeqFile { texture: (hud.textures.len() - 1) as u32, seq });
+            }
+            if let Some((img, seq)) = disc.read("obj/P_EX100.apdx").map(|b| pairs(&b)).unwrap_or_default().pop() {
+                hud.textures.push(Texture { width: img.width, height: img.height, rgba: img.rgba });
+                hud.files.push(SeqFile { texture: (hud.textures.len() - 1) as u32, seq });
+                hud.face_file = Some(hud.files.len() - 1);
+            }
+        }
         let art = disc.read(&format!("field2d/us/{world}0command.2dd")).ok().and_then(|b| pair(&b)).or_else(|| disc.read("field2d/us/zz0command.2dd").ok().and_then(|b| pair(&b)));
         if let Some((img, seq)) = art {
             hud.textures.push(Texture { width: img.width, height: img.height, rgba: img.rgba });
@@ -388,8 +506,37 @@ impl Hud {
         self.actions.truncate(1);
     }
 
+    fn add(&mut self, file: usize, parent: Option<usize>, group: Option<usize>) -> usize {
+        let mut n = Node::new(file);
+        n.parent = parent;
+        if let (Some(g), Some(f)) = (group, self.files.get(file)) {
+            n.player.set_group(&f.seq, g);
+            n.visible = true;
+        }
+        self.nodes.push(n);
+        self.nodes.len() - 1
+    }
+
+    /// Starts `group` on a node (restarting it), as kh2-rs `HudScene::set_group`.
+    fn group(&mut self, node: usize, group: usize) {
+        let file = self.nodes[node].file;
+        if let Some(f) = self.files.get(file) {
+            self.nodes[node].player.set_group(&f.seq, group);
+        }
+    }
+
+    /// kh2-rs `HudScene::set_group_then`.
+    fn group_then(&mut self, node: usize, group: usize, next: usize) {
+        self.group(node, group);
+        self.nodes[node].next = Some(next);
+    }
+
     fn set(&mut self, node: usize, group: Option<usize>) {
-        let (Some(f), Some(n)) = (self.menu_file, self.nodes.get_mut(node)) else { return };
+        let Some(n) = self.nodes.get_mut(node) else { return };
+        let f = n.file;
+        if f >= self.files.len() {
+            return;
+        }
         match group {
             None => n.visible = false,
             Some(g) => {
@@ -418,12 +565,22 @@ impl Hud {
             self.layout(&tb);
             self.tables = Some(tb);
         }
+        self.gauge_tick(_sora);
+        let files = &self.files;
         for n in &mut self.nodes {
             n.player.tick(1.0);
+            // 0x138aa8: a finished group hands over to its follow-up, stepped once.
+            if n.player.finished()
+                && let (Some(g), Some(f)) = (n.next.take(), files.get(n.file))
+            {
+                n.player.set_group(&f.seq, g);
+                n.player.tick(1.0);
+            }
             if n.label.is_some() && n.visible {
                 n.label_time += 1.0;
             }
         }
+        self.resolve();
     }
 
     fn layout(&mut self, tb: &Tables) {
@@ -509,20 +666,244 @@ impl Hud {
         self.nodes[c].label = label;
     }
 
-    /// The draw list in draw order (kh2-rs `HudScene::quads`): each visible node's sequence quads,
-    /// then its label's glyphs.
+    /// kh2-rs `hud_gauge::build`: the panel's objects in the game's creation order.
+    fn gauge_build(&mut self, hp: i32) {
+        let Some(field) = self.field else { return };
+        let gaug = field + hg::GAUG;
+        let mut p = Panel::default();
+        p.circle = self.add(gaug, None, Some(g::CIRCLE[0]));
+        p.ring = [self.add(gaug, Some(p.circle), Some(g::RING_BACK[0])), self.add(gaug, Some(p.circle), Some(g::RING_DEFAULT)), self.add(gaug, Some(p.circle), Some(g::RING_GREEN))];
+        p.bar = [self.add(gaug, Some(p.circle), Some(g::BAR_BACK[0])), self.add(gaug, Some(p.circle), Some(g::BAR_TRAIL)), self.add(gaug, Some(p.circle), Some(g::BAR_GREEN))];
+        p.cap = self.add(gaug, Some(p.circle), Some(g::CAP));
+        p.face = self.face_file.map(|f| self.add(f, Some(p.circle), Some(g::FACE[0])));
+        let label = self.add(gaug, Some(p.circle), Some(g::MP_LABEL));
+        p.mp = [label, self.add(gaug, Some(label), Some(g::MP_BACK)), self.add(gaug, Some(label), Some(g::MP_FILL)), self.add(gaug, Some(label), Some(g::MP_CAP))];
+        for i in p.bar {
+            self.nodes[i].ext.scale[1] = 0.0;
+        }
+        let bar = self.add(gaug, Some(p.circle), None);
+        p.drive = [bar, self.add(gaug, Some(bar), None), self.add(gaug, Some(bar), None), self.add(gaug, Some(bar), None), self.add(gaug, Some(bar), None)];
+        self.group(p.drive[3], dg::MAX);
+        let at = self.files.get(gaug).and_then(|f| f.seq.groups.get(dg::intro(DriveMode::Normal))).map_or([0.0, 0.0], |gr| [gr.x as f32, gr.y as f32]);
+        self.nodes[p.drive[2]].off = at;
+        p.last_hp = hp;
+        p.lag_hp = hp;
+        self.panel = Some(p);
+    }
+
+    /// kh2-rs `hud_gauge::update` / `panel_frame` / `update_drive` with Sora's values.
+    fn gauge_tick(&mut self, sora: &crate::sora::Sora) {
+        let (hp, max) = (sora.hp.max(0), sora.max_hp.max(1));
+        let (mp, mp_max) = (sora.mp.clamp(0, sora.max_mp.max(0)), sora.max_mp.max(1));
+        if self.field.is_none() {
+            return;
+        }
+        if self.panel.is_none() {
+            self.gauge_build(hp);
+        }
+        let Some(mut p) = self.panel.take() else { return };
+        let ko = matches!(sora.state, crate::sora::State::Down);
+        let state = PanelState::of(hp, max, ko);
+        let s = state as usize;
+        let last = p.state.unwrap_or(PanelState::Normal);
+        match PanelEvent::of(p.last_hp, hp, last, state) {
+            PanelEvent::Hit => {
+                self.group_then(p.circle, g::CIRCLE_HIT, g::CIRCLE[s]);
+                self.group(p.ring[0], g::RING_BACK[s]);
+                self.group(p.bar[0], g::BAR_BACK[s]);
+                if let Some(f) = p.face {
+                    self.group_then(f, g::FACE_HIT, g::FACE[s]);
+                }
+            }
+            PanelEvent::Heal | PanelEvent::Switch => {
+                self.group(p.circle, g::CIRCLE[s]);
+                self.group(p.ring[0], g::RING_BACK[s]);
+                self.group(p.bar[0], g::BAR_BACK[s]);
+                if let Some(f) = p.face {
+                    self.group(f, g::FACE[s]);
+                }
+            }
+            PanelEvent::None => {}
+        }
+        p.state = Some(state);
+        if hp != p.last_hp {
+            p.lag_hp = if p.last_hp < hp { hp } else { p.last_hp };
+            p.last_hp = hp;
+            self.group(p.ring[1], g::RING_TRAIL);
+            self.group(p.bar[1], g::BAR_TRAIL);
+        }
+        if hg::alarm_step(&mut p.alarm, state) == Some(true) {
+            self.sounds.push(hg::DANGER_ALARM_SE);
+        }
+        for (layer, value) in [(0, max), (1, p.lag_hp), (2, hp)] {
+            let (ring, bar) = (p.ring[layer], p.bar[layer]);
+            match hg::fill(value) {
+                hg::Fill::Ring(sweep) => {
+                    self.nodes[ring].sweep = Some(sweep);
+                    self.nodes[bar].visible = false;
+                }
+                hg::Fill::Bar(len) => {
+                    self.nodes[ring].sweep = None;
+                    let n = &mut self.nodes[bar];
+                    n.visible = true;
+                    n.ext.scale[1] = len / hg::BAR_SPRITE;
+                }
+            }
+        }
+        let cap = &mut self.nodes[p.cap];
+        match hg::fill(max) {
+            hg::Fill::Ring(sweep) => {
+                cap.ext.rot = Some([0.0, 0.0, -sweep]);
+                cap.off = [0.0, 0.0];
+            }
+            hg::Fill::Bar(len) => {
+                cap.ext.rot = Some([0.0, 0.0, std::f32::consts::FRAC_PI_2]);
+                cap.off = [-len, 0.0];
+            }
+        }
+        // MP (the recharge look while the MP charge runs, 0x157628).
+        let charging = sora.charge.active();
+        if charging != p.recharging {
+            p.recharging = charging;
+            let set = if charging { hg::MP_RECHARGE } else { hg::MP_NORMAL };
+            for (node, gr) in p.mp.into_iter().zip(set) {
+                self.group(node, gr);
+            }
+        }
+        if charging {
+            let ratio = if sora.charge.total > 0.0 { 1.0 - sora.charge.left / sora.charge.total } else { 0.0 };
+            self.nodes[p.mp[1]].ext.scale[1] = 1.0;
+            self.nodes[p.mp[2]].ext.scale[1] = ratio;
+            self.nodes[p.mp[3]].off = [-hg::BAR_SPRITE, 0.0];
+        } else {
+            self.nodes[p.mp[1]].ext.scale[1] = mp_max as f32 / hg::BAR_SPRITE;
+            self.nodes[p.mp[2]].ext.scale[1] = mp as f32 / hg::BAR_SPRITE;
+            self.nodes[p.mp[3]].off = [-(mp_max as f32), 0.0];
+        }
+        // The drive gauge (kh2-rs `gauge_of` + `update_drive`).
+        let d = &sora.drive;
+        let gauge = if d.in_form {
+            let (digit, fill, seg) = kh2_game_core::drive_rules::segment_display(d.timer.left, d.timer.total, d.points.max.max(1));
+            DriveGauge { enabled: true, mode: DriveMode::FormA, points: digit.min(9) as u8, max: d.points.max, fraction: 0, time_fill: Some(if seg > 0 { fill as f32 / seg as f32 } else { 0.0 }) }
+        } else {
+            DriveGauge { enabled: true, mode: DriveMode::Normal, points: d.points.whole, max: d.points.max, fraction: d.points.fraction, time_fill: None }
+        };
+        self.drive_frame(&mut p, &gauge);
+        self.panel = Some(p);
+    }
+
+    fn drive_frame(&mut self, p: &mut Panel, d: &DriveGauge) {
+        let [bar, fill, digit, max, burst] = p.drive;
+        let Some(table) = self.drive_tables.0 else { return };
+        if p.drive_mode != Some(d.mode) {
+            p.drive_mode = Some(d.mode);
+            self.nodes[bar].visible = true;
+            self.group(bar, dg::idle(d.mode));
+            self.group(fill, dg::fill(d.mode));
+            p.drive_points = None;
+        }
+        let set = match d.mode {
+            DriveMode::FormA => 1,
+            DriveMode::FormB => 2,
+            _ => 0,
+        };
+        let pts = d.points.min(9);
+        if p.drive_points != Some(pts) {
+            if p.drive_points.is_some_and(|old| pts > old) {
+                self.group(burst, dg::BURST);
+                self.nodes[burst].visible = true;
+            }
+            p.drive_points = Some(pts);
+            self.group(digit, table[set][pts as usize] as usize);
+        }
+        if self.nodes[burst].player.finished() {
+            self.nodes[burst].visible = false;
+        }
+        let full = d.points >= d.max;
+        let reveal = match d.time_fill {
+            Some(f) if d.mode != DriveMode::Normal => f.clamp(0.0, 1.0),
+            _ if full => 1.0,
+            _ => d.fraction.min(99) as f32 / 100.0,
+        };
+        self.nodes[fill].reveal = Some(reveal);
+        self.nodes[max].visible = full && d.mode == DriveMode::Normal;
+        self.nodes[bar].visible = true;
+        for n in [fill, digit] {
+            self.nodes[n].visible = d.mode != DriveMode::Locked;
+        }
+    }
+
+    /// kh2-rs `HudScene::resolve`: positions, parents first (a parent always has a lower index).
+    fn resolve(&mut self) {
+        for i in 0..self.nodes.len() {
+            let base = match self.nodes[i].parent {
+                Some(p) => {
+                    let pn = &self.nodes[p];
+                    let anchor = match (pn.player.group, self.files.get(pn.file)) {
+                        (Some(g), Some(f)) => f.seq.anchor(g, pn.player.frame(), &pn.ext).map(|a| [a[0] as f32, a[1] as f32]),
+                        _ => None,
+                    };
+                    let anchor = anchor.unwrap_or(pn.anchor);
+                    let (pb, po) = (pn.base, pn.off);
+                    self.nodes[p].anchor = anchor;
+                    [pb[0] + anchor[0] + po[0], pb[1] + anchor[1] + po[1]]
+                }
+                None => self.nodes[i].pos,
+            };
+            let n = &mut self.nodes[i];
+            n.base = base;
+            n.origin = [base[0] + n.off[0], base[1] + n.off[1]];
+        }
+    }
+
+    /// The draw list in draw order (kh2-rs `HudScene::quads` and `draw`): each visible node's sequence
+    /// quads (clipped to its ring wedge and its reveal), then its label's glyphs; screen y includes
+    /// `Y_BIAS`. A clipped quad comes out as triangles (`pos[3] == pos[2]`).
     pub fn draw_list(&self) -> Vec<Sprite> {
         let mut out = Vec::new();
+        let push = |out: &mut Vec<Sprite>, tex: u32, poly: &[Vert], blend: u32, nearest: bool, text: bool| {
+            if poly.len() < 3 {
+                return;
+            }
+            let col = |v: &Vert| [v.col[0], v.col[1], v.col[2], v.col[3]].map(|c| c.clamp(0.0, 255.0) as u8);
+            let pos = |v: &Vert| [v.pos[0], v.pos[1] + Y_BIAS];
+            if poly.len() == 4 {
+                // TL, TR, BR, BL back to the sprite's TL, TR, BL, BR.
+                let o = [0usize, 1, 3, 2];
+                out.push(Sprite { texture: tex, pos: o.map(|k| pos(&poly[k])), uv: o.map(|k| poly[k].uv), color: o.map(|k| col(&poly[k])), blend, nearest, text });
+                return;
+            }
+            for k in 1..poly.len() - 1 {
+                let tri = [poly[0], poly[k], poly[k + 1], poly[k + 1]];
+                out.push(Sprite { texture: tex, pos: tri.map(|v| pos(&v)), uv: tri.map(|v| v.uv), color: tri.map(|v| col(&v)), blend, nearest, text });
+            }
+        };
         for n in self.nodes.iter().filter(|n| n.visible) {
             if let (Some(g), Some(f)) = (n.player.group, self.files.get(n.file)) {
-                let ext = Ext { time: n.player.uv_time, ..Ext::default() };
-                for q in f.seq.quads(g, n.player.frame(), n.pos, &ext) {
-                    out.push(Sprite { texture: f.texture, pos: q.pos, uv: q.uv, color: q.color, blend: q.blend, nearest: q.nearest, text: false });
+                let ext = Ext { time: n.player.uv_time, ..n.ext };
+                let qs = f.seq.quads(g, n.player.frame(), n.origin, &ext);
+                let max_x = n.reveal.map(|r| {
+                    let (lo, hi) = qs.iter().flat_map(|q| q.pos.iter().map(|p| p[0])).fold((f32::MAX, f32::MIN), |(lo, hi), x| (lo.min(x), hi.max(x)));
+                    lo + (hi - lo) * r.clamp(0.0, 1.0)
+                });
+                for q in qs {
+                    let poly: Vec<Vert> = [0usize, 1, 3, 2].iter().map(|&k| Vert { pos: q.pos[k], uv: q.uv[k], col: q.color[k].map(f32::from) }).collect();
+                    let mut pieces = match n.sweep {
+                        Some(s) => wedge(&poly, n.origin, n.sweep_start, s),
+                        None => vec![poly],
+                    };
+                    if let Some(mx) = max_x {
+                        pieces = pieces.iter().map(|p| clip(p, [mx, 0.0], [-1.0, 0.0])).collect();
+                    }
+                    for p in &pieces {
+                        push(&mut out, f.texture, p, q.blend, q.nearest, false);
+                    }
                 }
             }
             if let (Some(label), Some(t)) = (&n.label, &self.text) {
-                for (tex, q) in t.quads(label, n.pos, n.label_time) {
-                    out.push(Sprite { texture: tex, pos: q.pos, uv: q.uv, color: q.color, blend: q.blend, nearest: q.nearest, text: true });
+                for (tex, q) in t.quads(label, n.origin, n.label_time) {
+                    let poly: Vec<Vert> = [0usize, 1, 3, 2].iter().map(|&k| Vert { pos: q.pos[k], uv: q.uv[k], col: q.color[k].map(f32::from) }).collect();
+                    push(&mut out, tex, &poly, q.blend, q.nearest, true);
                 }
             }
         }
