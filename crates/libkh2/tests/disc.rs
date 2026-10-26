@@ -2761,3 +2761,76 @@ fn magnet_pulls_enemies_toward_its_sphere() {
     assert!(closest < start.iter().copied().fold(f32::MAX, f32::min), "drawn toward the sphere");
     assert!(en.list.iter().all(|e| e.pull.is_none()), "let go once the attack is finished");
 }
+
+/// Reflect (round 14, REFLECT_*.mag's order): the guard follows Sora while the barrier lives (27
+/// ticks, the barrier element's particle-data life on the disc); an enemy attack touching it clashes
+/// (no hit on Sora, `EnemyEvent::Clash`); when the barrier ends a clash count above 0 makes the
+/// counter-burst 574 then 667 (20 larger), which hits the enemies near Sora; no clash, no burst.
+#[test]
+fn reflect_guards_clashes_and_bursts() {
+    use kh2::spell::{Caster, Spells, REFLECT_BARRIER_LIFE, REFLECT_BURST, REFLECT_BURST2};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    // The barrier's life from the disc: element 0 of REFLECT_1.mag.
+    let raw = d.read("magic/REFLECT_1.mag").expect("Reflect's file");
+    let bar = kh2_bar::parse(&raw).unwrap();
+    let pax = bar.iter().find_map(|e| kh2_fx::pax::Pax::parse(e.data).ok()).expect("its PAX");
+    let el = pax.elements_for(0).next().expect("element 0");
+    let fx = pax.dpx_effect(el.effect).expect("dpx");
+    let life = pax.dpds[fx.dpd].particles[fx.particle_data].life as f32 / kh2_fx::pax::TICK as f32;
+    assert_eq!(life, REFLECT_BARRIER_LIFE);
+    let w = floor();
+    let magi = kh2_game_core::magic_rules::magi_row(&game.params.magi, 0).cloned().unwrap_or_default();
+    let c = Caster { pos: Vec3::ZERO, facing: Vec3::Z, target: None, grounded: true };
+    let victim = (7u32, vec![kh2::enemy::Volume { a: Vec3::new(0.0, 0.0, 60.0), b: Vec3::new(0.0, 120.0, 60.0), r: 40.0 }], Vec3::new(0.0, 80.0, 60.0), Vec3::new(0.0, 0.0, 60.0));
+    for clashes in [0u32, 1] {
+        let mut sp = Spells::default();
+        sp.fire(5, 0, magi.clone());
+        let (mut guard_ticks, mut rows) = (0, Vec::new());
+        for t in 0..200 {
+            let (hits, _) = sp.tick(&c, &game.params.atkp, &w, std::slice::from_ref(&victim));
+            if sp.guard_volume().is_some() {
+                guard_ticks += 1;
+                if t == 5 {
+                    sp.clashes += clashes;
+                }
+            }
+            rows.extend(hits.iter().map(|h| game.params.atkp[h.row].id));
+        }
+        eprintln!("reflect, {clashes} clash: guard {guard_ticks} ticks, burst hits {rows:?} (magi 0x50 {} 0x54 {} 0x58 {} 0x64 {} 0x70 {})", magi.f(0x50), magi.f(0x54), magi.f(0x58), magi.f(0x64).to_bits(), magi.f(0x70).to_bits());
+        assert_eq!(guard_ticks as f32, REFLECT_BARRIER_LIFE, "the guard lives as long as the barrier");
+        if clashes == 0 {
+            assert!(rows.is_empty(), "no clash, no burst");
+        } else {
+            assert!(rows.contains(&REFLECT_BURST[0]) && rows.contains(&REFLECT_BURST2[0]), "574 then 667 hit");
+        }
+    }
+}
+
+/// Magnet's form extras (round 14): in Final (kind 30) the second attack 976 joins 16 frames after
+/// 658 and attack 1440 closes the cast for one frame; at level 1 out of a form only 658.
+#[test]
+fn magnet_adds_its_form_attacks() {
+    use kh2::spell::{Caster, Spells, ATKP_MAGNET, ATKP_MAGNET_FINAL, ATKP_MAGNET_FORM};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let c = Caster { pos: Vec3::ZERO, facing: Vec3::Z, target: Some(Vec3::new(0.0, 0.0, 300.0)), grounded: true };
+    let victim = (7u32, vec![kh2::enemy::Volume { a: Vec3::new(0.0, 0.0, 300.0), b: Vec3::new(0.0, 160.0, 300.0), r: 60.0 }], Vec3::new(0.0, 80.0, 300.0), Vec3::new(0.0, 0.0, 300.0));
+    for kind in [0u32, 30] {
+        let magi = kh2_game_core::magic_rules::magi_row(&game.params.magi, kind).cloned().unwrap_or_default();
+        let mut sp = Spells::default();
+        sp.fire(4, kind, magi);
+        let mut made = std::collections::BTreeSet::new();
+        for _ in 0..400 {
+            sp.tick(&c, &game.params.atkp, &w, std::slice::from_ref(&victim));
+            for (_, row, _, _, _) in sp.live() {
+                made.insert(game.params.atkp[row].id);
+            }
+        }
+        eprintln!("magnet kind {kind}: attacks {made:?}");
+        assert!(made.contains(&ATKP_MAGNET));
+        assert_eq!(made.contains(&ATKP_MAGNET_FORM), kind == 30);
+        assert_eq!(made.contains(&ATKP_MAGNET_FINAL), kind == 30);
+    }
+}

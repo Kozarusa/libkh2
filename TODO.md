@@ -21,8 +21,8 @@ Reflect's MP, audio placement, hit sounds and music, the wall recoil and the A /
 
 - HUD: party panels, banners, INFORMATION bar, message / tutorial windows, area-name card, mission
   panels (the original has no damage / EXP popups to port) (docs/HUD.md).
-- [x] Magnet's attack and pull (2.1.0); open: its form extras, Reflect's guard and counter-burst (the
-  barrier's PAX duration, the clash pairing).
+- [x] Magnet's attack and pull (2.1.0), its form attacks and Reflect's guard / clashes / burst (2.2.0);
+  open: the clash table by attack type, the enemy's clash reaction, Final Magnet's global flag.
 - Audio: Sora's voices (the voice table), footsteps (the area's sound info); music is about 15 dB
   under the reference recording, uncorrected; tt04's music pair is not set by its programs.
 - A / B: two scripted runs on tt04 only; enemies, magic and drive were not compared.

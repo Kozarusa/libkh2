@@ -1553,6 +1553,7 @@ pub unsafe extern "C" fn kh2_poll_enemy_event(handle: i32, out: *mut Kh2EnemyEve
             E::Drop { id, row, prizes, .. } => Kh2EnemyEvent { kind: 5, id: id as i32, value: row.into(), prizes, ..Default::default() },
             E::Removed { id } => Kh2EnemyEvent { kind: 6, id: id as i32, ..Default::default() },
             E::Reaction { id, cmd, handled } => Kh2EnemyEvent { kind: 7, id: id as i32, atkp: cmd.into(), value: handled as i32, ..Default::default() },
+            E::Clash { id, atkp } => Kh2EnemyEvent { kind: 8, id: id as i32, atkp: atkp.into(), ..Default::default() },
         };
         unsafe { *out = v };
         1

@@ -152,8 +152,14 @@ Mix only) is not on the USA disc kh2-rs targets: nothing to port.
   a sphere of `magi` +0x4c, alive 16 + `magi` +0x40 + `magi` +0x44 frames. Its victims get reaction class 5,
   the pull (kh2fm-rs `reaction_rules::Pull`, FUN_001bf920 / FUN_001bfc10 / FUN_001bfba8, the numbers from
   the executable): drawn toward the sphere with the swirl, no gravity, let go with motion 0 when it is
-  finished. decided: the body centre is the position + 80; the Wisdom / Master / Final extra attacks
-  (976, 1440), the effect elements and Final's global flag are not done.
-- Reflect is not ported: its guard (atkp 573) lives as long as the barrier, a PAX element whose duration
-  libkh2 does not read, and the clash pairing of the guard with enemy attack volumes (the executable's
-  clash table) is not in libkh2. Its MP is paid (1.2.0).
+  finished. decided: the body centre is the position + 80. 2.2.0: in Wisdom, Master and Final the
+  second attack 976 (radius `magi` +0x3c x 0.5) joins 16 frames in; Final adds 1440 (x 0.6) for one
+  frame at the end. Not done: the effect elements and Final's global flag (every attack on the player).
+- Reflect (2.2.0, `spell.rs` `Step::Reflect` in REFLECT_*.mag's order): after a yield the guard (a
+  sphere of `magi` +0x50 at Sora's chest) lives as long as the barrier: 27 ticks, the manager life of
+  the barrier element's particle data in REFLECT_1..3.mag (elements 0, 2, 12). An enemy attack window
+  that touches it clashes once (`EnemyEvent::Clash`, `KH2_EN_CLASH`) and cannot hit Sora. When the
+  barrier ends, the clash count against `magi` +0x64 / +0x70 (integers, 5 and 10) picks the burst:
+  574 / 576 / 578 for `magi` +0x54 frames, then 667 / 668 / 669 20 larger for `magi` +0x58; no clash,
+  no burst. decided: every enemy attack clashes (the executable's clash table by attack type is not
+  read) and the enemy's clash reaction is not played; the barrier's fade-out (8) is not counted.

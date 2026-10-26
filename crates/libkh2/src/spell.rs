@@ -217,12 +217,29 @@ struct Strike {
 
 /// Magnet's attack (MAGNET_*.mag: `attack_create(ctx, 658, -1, kind)`, reaction class 5: the pull).
 pub const ATKP_MAGNET: u16 = 658;
+/// Magnet's second attack in Wisdom, Master and Final, and Final's last one.
+pub const ATKP_MAGNET_FORM: u16 = 976;
+pub const ATKP_MAGNET_FINAL: u16 = 1440;
+/// Reflect's guard (REFLECT_*.mag: atkp 573, Type 3, Power 0) and its counter-bursts by tier
+/// (574 / 576 / 578, then 667 / 668 / 669).
+pub const ATKP_REFLECT_GUARD: u16 = 573;
+pub const REFLECT_BURST: [u16; 3] = [574, 576, 578];
+pub const REFLECT_BURST2: [u16; 3] = [667, 668, 669];
+/// The barrier's life when the spell file's element cannot be read: REFLECT_1..3.mag's barrier elements
+/// (0, 2, 12) all name particle data with a manager life of 27 ticks on the Final Mix disc.
+pub const REFLECT_BARRIER_LIFE: f32 = 27.0;
 
 enum Step {
     /// Magnet (kh2fm-rs magic-turn.md "Magnet", the script's order): after a yield attack 658 of the
     /// kind at the place (a sphere of `magi` +0x4c), 16 frames to the sphere, `magi` +0x40 frames of
     /// growth and `magi` +0x44 of hold, then the attack is finished.
-    Magnet { yielded: bool, attack: Option<usize>, t: f32 },
+    Magnet { yielded: bool, attack: Option<usize>, t: f32, age: u32, extra: Option<usize> },
+    /// Reflect (REFLECT_*.mag, kh2fm-rs magic-turn.md "Reflect"): after a yield the guard follows the
+    /// barrier while it lives (`life` ticks, the barrier element's particle-data life); when it ends
+    /// the clashes pick the counter-burst: tier 1 / 2 / 3 by the count against `magi` +0x64 / +0x70,
+    /// attack 574 / 576 / 578 (radius and height `magi` +0x5c / +0x60, +0x68 / +0x6c, +0x74 / +0x78) for
+    /// `magi` +0x54 frames, then 667 / 668 / 669 20 larger for `magi` +0x58 frames; no clash, no burst.
+    Reflect { yielded: bool, life: f32, burst: Option<(usize, u8, f32, bool)> },
     Fire { attacks: Option<(usize, Option<usize>)>, t: f32, yielded: bool },
     Blizzard { yielded: bool },
     Thunder { plan: Option<VecDeque<(f32, Vec3, f32)>>, wait: f32 },
@@ -247,7 +264,6 @@ pub struct SpellHit {
 }
 
 /// The running spells of one caster (kh2-rs `MagicRun`'s spell part).
-#[derive(Default)]
 pub struct Spells {
     casts: Vec<Cast>,
     shots: Vec<Shot>,
@@ -257,6 +273,11 @@ pub struct Spells {
     bliz_counter: u32,
     /// Hit memory per victim id.
     memory: HashMap<u32, HitMemory>,
+    /// Reflect's guard while the barrier lives: centre (cm) and radius; the clashes it took.
+    pub guard: Option<(Vec3, f32)>,
+    pub clashes: u32,
+    /// The barrier's life in ticks (`set_barrier_life`, from the spell file's element).
+    pub barrier_life: f32,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -281,6 +302,12 @@ pub struct Caster {
     pub grounded: bool,
 }
 
+impl Default for Spells {
+    fn default() -> Spells {
+        Spells { casts: Vec::new(), shots: Vec::new(), strikes: Vec::new(), attacks: Vec::new(), next_group: 0, bliz_counter: 0, memory: HashMap::new(), guard: None, clashes: 0, barrier_life: REFLECT_BARRIER_LIFE }
+    }
+}
+
 impl Spells {
     /// Event 21 of a cast whose trigger fired (`slot` 0 Fire, 1 Blizzard, 2 Thunder).
     pub fn fire(&mut self, slot: u8, kind: u32, magi: MagiRow) {
@@ -288,10 +315,25 @@ impl Spells {
             0 => Step::Fire { attacks: None, t: magi.f(MAGI_TIME), yielded: false },
             1 => Step::Blizzard { yielded: false },
             2 => Step::Thunder { plan: None, wait: 0.0 },
-            4 => Step::Magnet { yielded: false, attack: None, t: 16.0 + magi.f(0x40).ceil() + magi.f(0x44) },
+            4 => Step::Magnet { yielded: false, attack: None, t: 16.0 + magi.f(0x40).ceil() + magi.f(0x44), age: 0, extra: None },
+            5 => {
+                self.guard = None;
+                self.clashes = 0;
+                Step::Reflect { yielded: false, life: self.barrier_life, burst: None }
+            }
             _ => return,
         };
         self.casts.push(Cast { kind, magi, step });
+    }
+
+    /// Reflect's guard as an attack volume (it hits no object; enemy attacks that touch it clash).
+    pub fn guard_volume(&self) -> Option<Volume> {
+        self.guard.map(|(c, r)| attack_volume(c, r, r))
+    }
+
+    /// The barrier's life (ticks) from the Reflect file's barrier element (see `REFLECT_BARRIER_LIFE`).
+    pub fn set_barrier_life(&mut self, ticks: f32) {
+        self.barrier_life = ticks;
     }
 
     /// The position of the live attack of `group` (None once it is finished).
@@ -400,7 +442,7 @@ impl Spells {
                         None => cast.step = Step::Done,
                     }
                 }
-                Step::Magnet { yielded, attack, t } => {
+                Step::Magnet { yielded, attack, t, age, extra } => {
                     if !*yielded {
                         *yielded = true;
                         continue;
@@ -427,10 +469,87 @@ impl Spells {
                     };
                     let p = attacks[ai].pos.unwrap_or(c.pos);
                     move_attack(&mut attacks[ai], p);
+                    if let Some(x) = *extra {
+                        move_attack(&mut attacks[x], p);
+                    }
+                    *age += 1;
+                    // 16 frames after the first attack, in Wisdom, Master and Final (kind / 10 = 1, 2, 3) a
+                    // second attack 976 of radius `magi` +0x3c * 0.5 at the same place.
+                    if *age == 16
+                        && (1..=3).contains(&(cast.kind / 10))
+                        && let Some(x) = new_attack(attacks, next, atkp, ATKP_MAGNET_FORM, cast.kind, cast.magi.f(0x3c) * 0.5, 0.0, 4)
+                    {
+                        move_attack(&mut attacks[x], p);
+                        *extra = Some(x);
+                    }
                     *t -= 1.0;
                     if *t <= 0.0 {
                         attacks[ai].live = false;
+                        if let Some(x) = *extra {
+                            attacks[x].live = false;
+                        }
+                        // Final adds attack 1440 (radius `magi` +0x3c * 0.6) for one frame at the end.
+                        if cast.kind / 10 == 3
+                            && let Some(x) = new_attack(attacks, next, atkp, ATKP_MAGNET_FINAL, cast.kind, cast.magi.f(0x3c) * 0.6, 0.0, 4)
+                        {
+                            move_attack(&mut attacks[x], p);
+                            *attack = Some(x);
+                            *extra = None;
+                            *t = 1.0;
+                            cast.kind = 0;
+                            continue;
+                        }
                         cast.step = Step::Done;
+                    }
+                }
+                Step::Reflect { yielded, life, burst } => {
+                    if !*yielded {
+                        *yielded = true;
+                        continue;
+                    }
+                    match burst {
+                        None if *life > 0.0 => {
+                            self.guard = Some((chest, cast.magi.f(0x50)));
+                            *life -= 1.0;
+                        }
+                        None => {
+                            self.guard = None;
+                            let n = self.clashes;
+                            if n == 0 {
+                                cast.step = Step::Done;
+                                continue;
+                            }
+                            // +0x64 / +0x70 are integers (5 and 10 on the disc), not floats like the row's other fields.
+                            let tier = if n >= cast.magi.f(0x70).to_bits() { 2 } else if n >= cast.magi.f(0x64).to_bits() { 1 } else { 0 };
+                            let (r, h) = [(0x5c, 0x60), (0x68, 0x6c), (0x74, 0x78)][tier];
+                            let Some(a) = new_attack(attacks, next, atkp, REFLECT_BURST[tier], cast.kind, cast.magi.f(r), cast.magi.f(h), 5) else {
+                                cast.step = Step::Done;
+                                continue;
+                            };
+                            move_attack(&mut attacks[a], chest);
+                            *burst = Some((a, tier as u8, cast.magi.f(0x54), false));
+                        }
+                        Some((a, tier, t, second)) => {
+                            move_attack(&mut attacks[*a], chest);
+                            *t -= 1.0;
+                            if *t > 0.0 {
+                                continue;
+                            }
+                            attacks[*a].live = false;
+                            if *second {
+                                cast.step = Step::Done;
+                                continue;
+                            }
+                            let k = *tier as usize;
+                            let (r, h) = [(0x5c, 0x60), (0x68, 0x6c), (0x74, 0x78)][k];
+                            match new_attack(attacks, next, atkp, REFLECT_BURST2[k], cast.kind, cast.magi.f(r) + 20.0, cast.magi.f(h) + 20.0, 5) {
+                                Some(b) => {
+                                    move_attack(&mut attacks[b], chest);
+                                    *burst = Some((b, *tier, cast.magi.f(0x58), true));
+                                }
+                                None => cast.step = Step::Done,
+                            }
+                        }
                     }
                 }
                 Step::Done => {}

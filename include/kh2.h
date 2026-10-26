@@ -689,6 +689,7 @@ KH2_API int32_t kh2_enemy_bones(int32_t handle, int32_t index, int32_t space, fl
 #define KH2_EN_DROP 5       /* value = przt row, prizes per kind */
 #define KH2_EN_REMOVED 6
 #define KH2_EN_REACTION 7   /* an accepted reaction command reached its script: atkp = command, value = handled */
+#define KH2_EN_CLASH 8      /* its attack window clashed with Reflect's guard (no hit on Sora): atkp */
 typedef struct kh2_enemy_event {
     int32_t kind, id, atkp, damage, value, enmp, lvpm_experience, enmp_experience;
     uint32_t prizes[9];

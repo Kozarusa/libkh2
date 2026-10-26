@@ -349,6 +349,8 @@ pub enum EnemyEvent {
     Hit { id: u32, atkp: i16, damage: i32, hp: i32 },
     /// An enemy's attack hit Sora (atkp row, damage, `Sora::hit`'s result code).
     HitSora { id: u32, atkp: i16, damage: i32, result: i32 },
+    /// An enemy attack window clashed with Reflect's guard (no hit on Sora).
+    Clash { id: u32, atkp: i16 },
     /// HP reached 0: the enmp row, the lvpm and enmp Experience values (already paid to Sora).
     Defeated { id: u32, enmp: u16, lvpm_experience: u16, enmp_experience: u16, paid: i32 },
     /// The script started element `effect` of the enemy's effect file.
@@ -933,11 +935,26 @@ impl Enemies {
         let to = Stats { level: sora.level, max_hp: sora.max_hp, strength: sora.strength, magic: sora.magic, defense: sora.defense, max_taken: i32::MAX, min_taken: 1, max_dealt: i32::MAX, min_dealt: 0, weakness: sora.resist, ..Default::default() };
         // Bit 3 of the player's flags (host 1.70 / 1.71): no hit reaches him (FUN_0019a4f0).
         let unhittable = sora.reaction.unhittable;
+        let guard = self.spells.guard_volume();
         for e in self.list.iter_mut().filter(|e| e.alive() && !e.removed && !unhittable) {
             let slot = e.anim.slot;
             e.landed.retain(|k| k.0 == slot);
             for (atkp, start, v) in live_attacks(&e.anim, e.matrix()) {
-                if e.landed.contains(&(slot, start)) || !sora_hurt.iter().any(|h| overlap(&v, h)) {
+                if e.landed.contains(&(slot, start)) {
+                    continue;
+                }
+                // Reflect's guard (FUN_0018d808 pairs attack with attack, FUN_0018d430 counts the clash):
+                // the enemy window clashes once and cannot hit Sora. decided: the enemy's clash reaction
+                // and the executable's clash table are not applied; every enemy attack clashes.
+                if let Some(g) = guard
+                    && overlap(&v, &g)
+                {
+                    e.landed.insert((slot, start));
+                    self.spells.clashes += 1;
+                    self.events.push(EnemyEvent::Clash { id: e.id, atkp });
+                    continue;
+                }
+                if !sora_hurt.iter().any(|h| overlap(&v, h)) {
                     continue;
                 }
                 e.landed.insert((slot, start));
