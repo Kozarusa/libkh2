@@ -1,0 +1,30 @@
+# The tests that need no disc. libkh2 builds only next to its sibling source tree (CONTRIBUTING.md):
+# the `usa` branch clones the public kh2-rs tree and runs them; `main` needs the Final Mix tree, which
+# is not public, so it only explains why it skips.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  no-disc-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: libkh2
+      - name: Main needs the Final Mix tree
+        if: github.ref_name != 'usa'
+        run: |
+          echo "skipped: this branch builds against ../kh2fm-rs (the Final Mix copy of the game project),"
+          echo "which is not public. Build and test locally next to that tree (see CONTRIBUTING.md)."
+      - name: Clone the public sibling tree
+        if: github.ref_name == 'usa'
+        run: git clone --depth 1 https://github.com/Kozarusa/kh2-rust-rewrite.git kh2-rs
+      - uses: dtolnay/rust-toolchain@stable
+        if: github.ref_name == 'usa'
+      - name: Tests without a disc
+        if: github.ref_name == 'usa'
+        working-directory: libkh2
+        run: cargo test --release

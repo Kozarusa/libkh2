@@ -20,7 +20,10 @@ thread_local! {
 }
 
 fn disc() -> Option<Disc> {
-    let iso = std::env::var_os("KH2_ISO_FM").or_else(|| std::env::var_os("KH2_ISO"))?;
+    let Some(iso) = std::env::var_os("KH2_ISO_FM").or_else(|| std::env::var_os("KH2_ISO")) else {
+        eprintln!("skipped: no disc (set KH2_ISO_FM or KH2_ISO to your Final Mix disc image)");
+        return None;
+    };
     HELD.with(|h| {
         if h.borrow().is_none() {
             *h.borrow_mut() = Some(SERIAL.lock().unwrap_or_else(|e| e.into_inner()));
