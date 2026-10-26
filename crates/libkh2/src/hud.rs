@@ -182,6 +182,45 @@ pub mod party {
     }
 }
 
+/// The INFORMATION bar (kh2fm-rs `hud_info`, USA 0x14f1e8 / 0x150428 / 0x150688 / 0x1507d8): the
+/// gauge file's groups 0 -> 1 (the text object) and 0 -> 2 (the sweep), the message in font 0, colour
+/// 0x80e5e5e5, the group record's size (15 when 0); after the follow-up starts a wait of 180 ticks, then
+/// the text scrolls left 0.5 a tick until it is past its own width, then group 3 closes the bar.
+pub mod info {
+    pub const OPEN: usize = 0;
+    pub const IDLE: usize = 1;
+    pub const SWEEP: usize = 2;
+    pub const CLOSE: usize = 3;
+    pub const WAIT: f32 = 180.0;
+    pub const SCROLL_PER_TICK: f32 = 0.5;
+    pub const COLOR: [u8; 4] = [0xe5, 0xe5, 0xe5, 0x80];
+    pub const DEFAULT_SIZE: f32 = 15.0;
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub enum Phase {
+        Opening,
+        Shown { left: f32, x: f32 },
+        Closing,
+        Gone,
+    }
+
+    /// kh2fm-rs `hud_info::step` (FUN_00150688) for `ticks` ticks.
+    pub fn step(phase: Phase, opened: bool, start_x: f32, width: f32, ticks: f32) -> Phase {
+        match phase {
+            Phase::Opening if opened => step(Phase::Shown { left: WAIT, x: start_x }, true, start_x, width, ticks),
+            Phase::Shown { left, x } => {
+                let left_after = left - ticks;
+                if left_after > 0.0 {
+                    return Phase::Shown { left: left_after, x };
+                }
+                let x = x - SCROLL_PER_TICK * (-left_after).min(ticks);
+                if x < start_x - width { Phase::Closing } else { Phase::Shown { left: 0.0, x } }
+            }
+            p => p,
+        }
+    }
+}
+
 /// One member shown in a party panel.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PartyHud {
@@ -329,6 +368,10 @@ pub struct Hud {
     pub textures: Vec<Texture>,
     /// The area-name card's node and frames left.
     card_node: Option<usize>,
+    /// The INFORMATION bar: its two nodes, phase and message.
+    info_nodes: Option<[usize; 2]>,
+    info_phase: Option<info::Phase>,
+    info_tokens: Vec<text::Token>,
     /// The party panels (built on first use) and the face files by model.
     party_slots: Vec<PartySlot>,
     party_faces: std::collections::HashMap<String, Option<usize>>,
@@ -414,6 +457,9 @@ impl Hud {
         let mut hud = Hud {
             textures: Vec::new(),
             card_node: None,
+            info_nodes: None,
+            info_phase: None,
+            info_tokens: Vec::new(),
             party_slots: Vec::new(),
             party_faces: std::collections::HashMap::new(),
             card_timer: 0.0,
@@ -768,6 +814,67 @@ impl Hud {
         }
     }
 
+    /// Shows message `id` on the INFORMATION bar (FUN_0014f1e8: a mission's objective, its header +6);
+    /// a bar already up gets the new text and restarts its groups. False when the message or the
+    /// gauge file is missing.
+    pub fn info_bar(&mut self, id: u32) -> bool {
+        let (Some(field), Some(tokens)) = (self.field, self.text.as_ref().and_then(|t| t.lookup(id))) else { return false };
+        let gaug = field + hg::GAUG;
+        let [a, b] = match self.info_nodes {
+            Some(n) => n,
+            None => {
+                let n = [self.add(gaug, None, None), self.add(gaug, None, None)];
+                self.info_nodes = Some(n);
+                n
+            }
+        };
+        self.group_then(a, info::OPEN, info::IDLE);
+        self.group_then(b, info::OPEN, info::SWEEP);
+        for n in [a, b] {
+            self.nodes[n].visible = true;
+        }
+        self.nodes[a].label = None;
+        self.info_tokens = tokens;
+        self.info_phase = Some(info::Phase::Opening);
+        true
+    }
+
+    /// One tick of the INFORMATION bar (FUN_00150688).
+    fn info_tick(&mut self) {
+        let (Some([a, b]), Some(phase), Some(field)) = (self.info_nodes, self.info_phase, self.field) else { return };
+        let gaug = field + hg::GAUG;
+        let rec = |h: &Hud, g: usize| h.files.get(gaug).and_then(|f| f.seq.groups.get(g)).map_or((0.0, 0.0, 0.0), |r| (r.x as f32, r.y as f32, r.size as f32));
+        let (start_x, _, size) = rec(self, info::OPEN);
+        let size = if size > 0.0 { size } else { info::DEFAULT_SIZE };
+        let style = Style { font: 0, size: Some(size), color: info::COLOR, ..Style::default() };
+        let width = self.text.as_ref().map_or(0.0, |t| text::layout(&t.set, t.colors.as_ref(), &self.info_tokens, &style, [0.0, 0.0]).size[0]);
+        let opened = self.nodes[a].player.group == Some(info::IDLE);
+        let next = info::step(phase, opened, start_x, width, 1.0);
+        if next == info::Phase::Closing && phase != info::Phase::Closing {
+            self.group(a, info::CLOSE);
+            self.nodes[a].next = None;
+            self.nodes[b].visible = false;
+        }
+        self.info_phase = Some(next);
+        if next == info::Phase::Closing && self.nodes[a].player.finished() {
+            self.nodes[a].visible = false;
+            self.nodes[a].label = None;
+            self.info_phase = Some(info::Phase::Gone);
+            return;
+        }
+        self.nodes[a].label = match next {
+            info::Phase::Shown { x, .. } => {
+                let n = &self.nodes[a];
+                let cur = n.player.group.unwrap_or(info::IDLE);
+                let anchor = self.files.get(gaug).and_then(|f| f.seq.anchor(cur, n.player.frame(), &n.ext)).unwrap_or([0, 0]);
+                let (gx, gy, _) = rec(self, cur);
+                // decided: no text scissor; glyphs left of the screen are drawn and clipped by the host.
+                Some(Label { tokens: self.info_tokens.clone(), style, offset: [anchor[0] as f32 + gx + x, anchor[1] as f32 + gy] })
+            }
+            _ => None,
+        };
+    }
+
     /// Raises the area-name card for area `area` of world `world` (kh2fm-rs `hud_card::update`: the
     /// game raises it when the world / area pair changes). False when the place has no name.
     pub fn area_card(&mut self, world: &str, area: usize) -> bool {
@@ -791,6 +898,7 @@ impl Hud {
     }
 
     pub fn tick(&mut self, _sora: &crate::sora::Sora) {
+        self.info_tick();
         // The card counts down one per frame and hides at zero (0x15a640).
         if let Some(node) = self.card_node {
             if self.card_timer > 0.0 {

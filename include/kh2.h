@@ -622,6 +622,9 @@ KH2_API int32_t kh2_hud_set_items(int32_t handle, const uint16_t *ids, const uin
 KH2_API int32_t kh2_hud_tick(int32_t handle);
 /* The area-name card of "tt04"-style area names (the place table's name for 120 frames): 1 shown, 0 no name. */
 KH2_API int32_t kh2_hud_area_card(int32_t handle, const char *area);
+/* Shows system message `message` on the INFORMATION bar (a mission's objective, its header +6): 1 shown,
+ * 0 no such message, -1 no HUD. The bar waits 180 ticks, scrolls the text out and closes. */
+KH2_API int32_t kh2_hud_info(int32_t handle, uint32_t message);
 KH2_API int32_t kh2_hud_draw_list(int32_t handle, kh2_hud_sprite *out, uint32_t max);
 KH2_API int32_t kh2_hud_poll_event(int32_t handle, kh2_hud_event *out);
 /* Returns the HUD texture count; fills width / height of texture id when id >= 0. */

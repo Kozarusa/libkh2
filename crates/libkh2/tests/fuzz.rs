@@ -386,6 +386,7 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 }
                 kh2_hud_input(h, r.next() as u32);
                 kh2_hud_tick(h);
+                kh2_hud_info(h, r.next() as u32);
                 kh2_hud_area_card(h, if r.chance(2) { c"tt04".as_ptr() } else { c"x".as_ptr() });
                 let mut hs = [Kh2HudSprite::default(); 8];
                 kh2_hud_draw_list(h, if r.chance(4) { std::ptr::null_mut() } else { hs.as_mut_ptr() }, max(r, 8));

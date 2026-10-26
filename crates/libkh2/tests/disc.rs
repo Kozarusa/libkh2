@@ -2834,3 +2834,45 @@ fn magnet_adds_its_form_attacks() {
         assert_eq!(made.contains(&ATKP_MAGNET_FINAL), kind == 30);
     }
 }
+
+/// The INFORMATION bar (round 14, kh2fm-rs `hud_info`): a message opens the bar (gauge groups 0 -> 1),
+/// waits 180 ticks, scrolls the text left and closes with group 3; written to `local/hud_info.png`.
+#[test]
+fn the_information_bar_opens_scrolls_and_closes() {
+    use kh2::hud::Hud;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let s = standing(&game, &w);
+    let mut hud = Hud::load(&mut d, "tt").expect("HUD loads");
+    for _ in 0..5 {
+        hud.tick(&s);
+    }
+    let base = hud.draw_list().iter().filter(|q| q.text).count();
+    assert!(hud.info_bar(0x8adc), "a message shows");
+    let (mut texts, mut first_x, mut last_x) = (Vec::new(), None, None);
+    for t in 0..1200 {
+        hud.tick(&s);
+        let list = hud.draw_list();
+        let n = list.iter().filter(|q| q.text).count() - base.min(list.iter().filter(|q| q.text).count());
+        texts.push(n);
+        if n > 0 {
+            let x = list.iter().filter(|q| q.text && q.pos[0][1] < 120.0).map(|q| q.pos[0][0]).fold(f32::MAX, f32::min);
+            first_x.get_or_insert(x);
+            last_x = Some(x);
+        }
+        if t == 100 {
+            let (fw, fh) = (512usize, 448usize);
+            let mut frame = vec![40u8; fw * fh * 4];
+            hud.rasterize(&list, fw, fh, &mut frame);
+            let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local");
+            let _ = std::fs::create_dir_all(&dir);
+            write_png(&dir.join("hud_info.png"), fw, fh, &frame);
+        }
+    }
+    let shown = texts.iter().filter(|&&n| n > 0).count();
+    eprintln!("INFORMATION bar: text shown {shown} ticks, x {first_x:?} -> {last_x:?}, at the end {:?}", texts.last());
+    assert!(shown > 180, "the text stays up for the wait and the scroll");
+    assert!(last_x < first_x, "it scrolls left");
+    assert_eq!(texts.last(), Some(&0), "and goes");
+}

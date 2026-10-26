@@ -1295,6 +1295,14 @@ int32_t kh2_hud_area_card(int32_t handle, const char *area);
 
 The area-name card of "tt04"-style area names (the place table's name for 120 frames): 1 shown, 0 no name.
 
+### `kh2_hud_info`
+
+```c
+int32_t kh2_hud_info(int32_t handle, uint32_t message);
+```
+
+Shows system message `message` on the INFORMATION bar (a mission's objective, its header +6): 1 shown, 0 no such message, -1 no HUD. The bar waits 180 ticks, scrolls the text out and closes.
+
 ### `kh2_hud_draw_list`
 
 ```c
@@ -1466,6 +1474,7 @@ int32_t kh2_enemy_bones(int32_t handle, int32_t index, int32_t space, float *out
 - `KH2_EN_DROP` = `5` — value = przt row, prizes per kind
 - `KH2_EN_REMOVED` = `6`
 - `KH2_EN_REACTION` = `7` — an accepted reaction command reached its script: atkp = command, value = handled
+- `KH2_EN_CLASH` = `8` — its attack window clashed with Reflect's guard (no hit on Sora): atkp
 
 ### `kh2_enemy_event`
 

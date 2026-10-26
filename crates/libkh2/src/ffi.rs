@@ -3555,3 +3555,14 @@ pub extern "C" fn kh2_set_difficulty(difficulty: i32) -> i32 {
     crate::enemy::DIFFICULTY.store(difficulty as u8, std::sync::atomic::Ordering::Relaxed);
     0
 }
+
+/// Shows system message `message` on the HUD's INFORMATION bar (a mission's objective: its file
+/// header's +6 id; kh2fm-rs `hud_info`): open, 180 ticks, then the text scrolls out and the bar
+/// closes. 1 shown, 0 no such message or no gauge file, -1 no HUD.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_hud_info(handle: i32, message: u32) -> i32 {
+    with(-1, |l| match l.huds.get_mut(&handle) {
+        Some((h, _)) => i32::from(h.info_bar(message)),
+        None => set_error("no HUD (kh2_hud_load)"),
+    })
+}

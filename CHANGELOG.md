@@ -8,6 +8,7 @@ The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry name
   whole points), the difficulty step.
 - Reflect: the guard for the barrier's life (read from the spell file's particle data), clashes with
   enemy attacks (`KH2_EN_CLASH`), the counter-bursts; Magnet's Wisdom / Master / Final attacks.
+- HUD: the INFORMATION bar (`kh2_hud_info`); the party panels' place checked against kh2fm-rs.
 - Difficulty: `kh2_set_difficulty` (Beginner / Standard / Proud / Critical) in every hit path; the
   low-HP step in the members' and the summon's hit paths too.
 

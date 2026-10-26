@@ -86,11 +86,17 @@ onto the same node / draw-list core.
   `AtlasKey::of`). The menu reads たたかう / まほう / アイテム / ドライブ as on the disc.
 - Party panels (`Hud::party`, filled by `kh2_hud_tick` from the followers): kh2fm-rs `hud_party`'s
   circle 71, rings 64 / 65 / 66 with the HP and MP wedge rules and each member's own `face` pair.
-  Their place is the circle group's own anchor (no screen-edge offset: kh2fm-rs's right-edge anchor
-  is its widescreen option); in the 512 x 448 frame they sit at the right edge, partly outside it;
-  not compared with the game.
+  Their place is the circle group's own anchor. Checked against kh2fm-rs's HUD (2.2.0): its party
+  circle is the same node (gauge group 71, a later slot `unk20` below) whose only extra offset is the
+  `Edge::Right` margin, which kh2fm-rs's own notes call the user's widescreen anchoring, "not a rule of
+  the original", and which is 0 at 4:3 (`KH2_HUD_43`). So the 4:3 place is the anchor, as here; in the
+  512 x 448 frame the circles reach past the right edge as the anchor puts them (a host drawing wider
+  than 4:3 may shift right-edge trees by its margin, as kh2fm-rs does).
 - Area-name card (`kh2_hud_area_card`): kh2fm-rs `hud_card` (USA 0x15ade8 / 0x15a640 / 0x15a840),
   the place table's name in font 2 at (256, 192), 120 frames.
-- Not done: banners and experience popups (`hud_banner`), the INFORMATION bar (`hud_info`), message
-  and tutorial windows (`hud_msgwin`, `hud_tutorial`), mission panels (`hud_mission`).
+- INFORMATION bar (2.2.0, `kh2_hud_info`): kh2fm-rs `hud_info` (gauge groups 0 -> 1 and 0 -> 2,
+  font 0 colour 0x80e5e5e5, a 180-tick wait, 0.5 units a tick of scroll, group 3 to close); frame in
+  `local/hud_info.png`. decided: no text scissor (the host clips at the screen edge).
+- Not done: banners and experience popups (`hud_banner`), message and tutorial windows
+  (`hud_msgwin`, `hud_tutorial`), mission panels (`hud_mission`).
 
