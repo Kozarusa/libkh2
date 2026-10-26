@@ -29,6 +29,25 @@ landed attack (kh2-rs `PlaySe::hit` by the victim's reaction class: derive from 
 `KH2_EN_HIT_SORA`), menu and HUD sounds, music, area ambience, cutscene audio, the limits' and the
 spells' own effect objects beyond their start.
 
+## The audio engine
+
+`kh2_audio_init()` then `kh2_audio_tick(h, out, frames)` every audio callback: the library plays
+the sound cues it made since the last call through kh2-rs's software sound driver
+(`kh2_audio::ssl::Driver`, the game's SE sequencer on a software SPU2 with the tables of the disc's
+`LIBSSL.IRX`) and renders 16-bit stereo at 48 kHz. Played: trigger-8 motion sounds of every actor
+(Sora's body and keyblades, the members, the enemies, the summon) and the mission's numbered
+sounds, all centred at full level (decided: the host has the camera; kh2-rs `audio::placement`
+is the original's distance and pan rule). Not played: voices (the voice table), footsteps (the
+area's sound info), music, hit sounds.
+
+Measured (`sounds_of_a_jump_an_attack_and_fire_render_to_pcm`): a run, a jump, a 40-swing combo
+and a Fire cast start 8 sounds; peak 4,864, RMS 463 of 32,767. Driver survey
+(`KH2_SE_SURVEY=1 ... survey_of_silent_sound_effects`): of the 10,499 entries of the 147 global
+banks (`se/seNNN.seb`), 34 render silent within one second and 9 do not start (no wave bank); the
+objects' own banks (`obj/*.apdx`) were not surveyed. The 1,131 silent effects kh2-rs's notes count
+were not reproduced with this driver on the global banks; their fixes live on an unmerged kh2-rs
+branch and are not used here.
+
 ## From a cue to a file
 
 The sound number of a trigger-8 cue is `bank * 1000 + index` (kh2-rs `motion_sound_request`):

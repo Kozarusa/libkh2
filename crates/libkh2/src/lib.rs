@@ -27,6 +27,7 @@ pub mod cue;
 pub mod mesh;
 pub mod hud;
 pub mod surface_object;
+pub mod audio;
 
 /// kh2-rs `kh2-player/src/controller_rules.rs` (stick through the camera view, walk/run split,
 /// wanted yaw; oracle-tested against the original in kh2-rs), compiled from kh2-rs's source.

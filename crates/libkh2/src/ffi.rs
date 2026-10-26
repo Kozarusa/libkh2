@@ -105,6 +105,8 @@ struct Lib {
     huds: std::collections::HashMap<i32, (crate::hud::Hud, Vec<crate::hud::Sprite>)>,
     /// Moving collision objects (`kh2_surface_object_*`) and the static surfaces they join.
     objects: Vec<crate::surface_object::Object>,
+    /// The audio engine (`kh2_audio_init`).
+    audio: Option<crate::audio::Audio>,
     base_surfaces: Option<Vec<Surface>>,
     next_object: u32,
     summons: std::collections::HashMap<i32, crate::summon::Summons>,
@@ -194,7 +196,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, area_runs: Default::default(), area_objects: Vec::new(), textures: Vec::new(), mesh: Default::default(), huds: Default::default(), objects: Vec::new(), base_surfaces: None, next_object: 1, summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, area_runs: Default::default(), area_objects: Vec::new(), audio: None, textures: Vec::new(), mesh: Default::default(), huds: Default::default(), objects: Vec::new(), base_surfaces: None, next_object: 1, summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
     0
 }
 
@@ -1209,7 +1211,7 @@ pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
             lim.tick(s);
             for ev in &lim.events[had.min(lim.events.len())..] {
                 if let crate::limit::LimitEvent::Effect { who, id } = ev {
-                    s.cues.push(crate::cue::Cue { kind: crate::cue::Kind::ScriptEffect, owner: crate::cue::Owner::Sora, model: "limit".to_string(), params: [*id as i16, *who as u16 as i16, 0, 0], pos: s.motor.pos, frame: 0 });
+                    s.cue(crate::cue::Cue { kind: crate::cue::Kind::ScriptEffect, owner: crate::cue::Owner::Sora, model: "limit".to_string(), params: [*id as i16, *who as u16 as i16, 0, 0], pos: s.motor.pos, frame: 0 });
                 }
             }
             if let (Some(list), Some(p)) = (l.followers.get_mut(&handle), l.party.as_ref()) {
@@ -1220,11 +1222,11 @@ pub extern "C" fn kh2_party_tick(handle: i32) -> i32 {
         if let (Some(list), Some(p)) = (l.followers.get(&handle), l.party.as_ref()) {
             for (k, f) in list.iter().enumerate() {
                 let model = p.members.get(f.member).map_or("", |m| m.model.as_str());
-                s.cues.extend(crate::cue::of_anim(&f.body, crate::cue::Owner::Member(k as u32), model, f.motor.pos));
+                s.cues_extend(crate::cue::of_anim(&f.body, crate::cue::Owner::Member(k as u32), model, f.motor.pos));
             }
         }
         if let Some(o) = l.summons.get(&handle).and_then(|m| m.object.as_ref()) {
-            s.cues.extend(crate::cue::of_anim(&o.body, crate::cue::Owner::Summon(0), &o.model, o.pos));
+            s.cues_extend(crate::cue::of_anim(&o.body, crate::cue::Owner::Summon(0), &o.model, o.pos));
         }
         cap(&mut s.cues);
         0
@@ -1352,17 +1354,17 @@ pub extern "C" fn kh2_enemies_tick(handle: i32) -> i32 {
             let edits = std::mem::take(&mut *kh2_enemy_host::shared::enemy::GROUP_EDITS.lock().unwrap_or_else(|e| e.into_inner()));
             for (g, on) in edits {
                 l.world.set_group(g as u32, on);
-                s.cues.push(crate::cue::Cue { kind: crate::cue::Kind::CollisionGroup, owner: crate::cue::Owner::Sora, model: String::new(), params: [g as i16, on as i16, 0, 0], pos: s.motor.pos, frame: 0 });
+                s.cue(crate::cue::Cue { kind: crate::cue::Kind::CollisionGroup, owner: crate::cue::Owner::Sora, model: String::new(), params: [g as i16, on as i16, 0, 0], pos: s.motor.pos, frame: 0 });
             }
             // The enemies' sound and effect cues (`crate::cue`), their scripts' effect starts.
             for e in en.list.iter().filter(|e| !e.removed) {
-                s.cues.extend(crate::cue::of_anim(&e.anim, crate::cue::Owner::Enemy(e.id), e.data.kind.model, e.pos()));
+                s.cues_extend(crate::cue::of_anim(&e.anim, crate::cue::Owner::Enemy(e.id), e.data.kind.model, e.pos()));
             }
             for ev in &en.events[before.min(en.events.len())..] {
                 if let crate::enemy::EnemyEvent::Effect { id, effect } = ev
                     && let Some(e) = en.list.iter().find(|e| e.id == *id)
                 {
-                    s.cues.push(crate::cue::Cue { kind: crate::cue::Kind::ScriptEffect, owner: crate::cue::Owner::Enemy(*id), model: e.data.kind.model.to_string(), params: [*effect as i16, 0, 0, 0], pos: e.pos(), frame: 0 });
+                    s.cue(crate::cue::Cue { kind: crate::cue::Kind::ScriptEffect, owner: crate::cue::Owner::Enemy(*id), model: e.data.kind.model.to_string(), params: [*effect as i16, 0, 0, 0], pos: e.pos(), frame: 0 });
                 }
             }
             cap(&mut s.cues);
@@ -1373,7 +1375,7 @@ pub extern "C" fn kh2_enemies_tick(handle: i32) -> i32 {
                 run.tick_mission(s, en, &l.world);
                 if let Some(m) = run.mission.as_ref() {
                     for (se, at) in m.sounds.iter().skip(had.min(m.sounds.len())) {
-                        s.cues.push(crate::cue::Cue { kind: crate::cue::Kind::SoundNumber, owner: crate::cue::Owner::Sora, model: String::new(), params: [*se as u16 as i16, (*se >> 16) as u16 as i16, 0, 0], pos: at.unwrap_or(s.motor.pos), frame: 0 });
+                        s.cue(crate::cue::Cue { kind: crate::cue::Kind::SoundNumber, owner: crate::cue::Owner::Sora, model: String::new(), params: [*se as u16 as i16, (*se >> 16) as u16 as i16, 0, 0], pos: at.unwrap_or(s.motor.pos), frame: 0 });
                     }
                 }
                 let r = std::mem::take(raised);
@@ -3377,5 +3379,46 @@ pub extern "C" fn kh2_surface_object_delete(id: i32) -> i32 {
         }
         rebuild_objects(l);
         0
+    })
+}
+
+/// Starts the audio engine (docs/SOUND-AND-EFFECTS.md "The audio engine"): kh2-rs's software sound
+/// driver with the disc's tables; from now on Sora's sound cues are also played by
+/// `kh2_audio_tick`. Returns the output rate (48000) or -1.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_audio_init() -> i32 {
+    with(-1, |l| match crate::audio::Audio::new(&mut l.disc) {
+        Ok(a) => {
+            l.audio = Some(a);
+            for s in l.soras.iter_mut().flatten() {
+                s.audio_cues.get_or_insert_with(Vec::new);
+            }
+            crate::audio::RATE as i32
+        }
+        Err(e) => set_error(e),
+    })
+}
+
+/// Plays Sora `handle`'s new sound cues and renders `frames` stereo frames of 16-bit PCM at 48 kHz
+/// into `out` (interleaved left, right: `2 * frames` samples), like libsm64's `sm64_audio_tick`.
+/// Returns the frames written.
+///
+/// # Safety
+/// `out` points to `2 * frames` writable samples.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_audio_tick(handle: i32, out: *mut i16, frames: u32) -> i32 {
+    if out.is_null() {
+        return set_error("no buffer");
+    }
+    let frames = frames.min(48000) as usize;
+    let buf = unsafe { std::slice::from_raw_parts_mut(out, 2 * frames) };
+    with(-1, |l| {
+        let Some(a) = l.audio.as_mut() else { return set_error("no audio engine (kh2_audio_init)") };
+        if let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) {
+            let cues = s.audio_cues.get_or_insert_with(Vec::new);
+            a.pending.append(cues);
+        }
+        a.tick(&mut l.disc, buf, frames);
+        frames as i32
     })
 }

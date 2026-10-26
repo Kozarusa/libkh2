@@ -399,6 +399,11 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                         kh2_surface_object_delete(if r.chance(2) { oid } else { r.int() });
                     }
                 }
+                if r.chance(60) {
+                    kh2_audio_init();
+                }
+                let mut pcm = [0i16; 64];
+                kh2_audio_tick(h, if r.chance(4) { std::ptr::null_mut() } else { pcm.as_mut_ptr() }, max(r, 32));
                 let ids = [1u16, 2];
                 let cn = [1u8, 0];
                 kh2_hud_set_items(h, if r.chance(4) { std::ptr::null() } else { ids.as_ptr() }, cn.as_ptr(), max(r, 2));

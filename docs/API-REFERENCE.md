@@ -1327,6 +1327,20 @@ int32_t kh2_surface_object_move(int32_t id, const kh2_object_transform *transfor
 int32_t kh2_surface_object_delete(int32_t id);
 ```
 
+### `kh2_audio_init`
+
+```c
+int32_t kh2_audio_init(void);
+```
+
+The audio engine (like libsm64's sm64_audio_tick): Sora's sound cues (and his party's, enemies', summon's, the mission's) played through kh2-rs's software sound driver (the game's SE sequencer on a software SPU2, tables from the disc's LIBSSL.IRX), rendered as 16-bit stereo PCM at 48 kHz. Init once (returns 48000), then feed the audio device: kh2_audio_tick(h, out, frames) writes 2 * frames interleaved samples. Voices, footsteps and music are not played.
+
+### `kh2_audio_tick`
+
+```c
+int32_t kh2_audio_tick(int32_t handle, int16_t *out, uint32_t frames);
+```
+
 ### `kh2_enemies_prune`
 
 ```c

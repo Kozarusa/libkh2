@@ -378,6 +378,8 @@ pub struct Sora {
     pub menu_attack: bool,
     /// Sound and effect cues of every actor of this Sora (`crate::cue`), for `kh2_poll_cue`.
     pub cues: Vec<crate::cue::Cue>,
+    /// A copy of the cues for the audio engine (`kh2_audio_tick`) while it is on.
+    pub audio_cues: Option<Vec<crate::cue::Cue>>,
     /// An item use: (item id, the wait after frame trigger 6 when started).
     pub item_use: Option<(u16, Option<f32>)>,
     /// The keyblade item a form's second hand takes (Kingdom Key by default).
@@ -476,6 +478,7 @@ impl Sora {
             control_locked: false,
             menu_attack: false,
             cues: Vec::new(),
+            audio_cues: None,
             item_use: None,
             pose: true,
             spawn: at,
@@ -699,8 +702,34 @@ impl Sora {
     /// Appends the cues of the body's last tick (`crate::cue::of_anim`).
     pub fn collect_cues(&mut self) {
         let model = self.model_name();
-        let c = crate::cue::of_anim(&self.body, crate::cue::Owner::Sora, &model, self.motor.pos);
-        self.cues.extend(c);
+        let mut c = crate::cue::of_anim(&self.body, crate::cue::Owner::Sora, &model, self.motor.pos);
+        // The keyblades' own motions carry the swing sounds (their effect file is the weapon's).
+        for (k, w) in [self.weapon.as_ref(), self.weapon2.as_ref()].into_iter().enumerate() {
+            let Some(w) = w else { continue };
+            let name = match (&self.drive.files, self.drive.in_form) {
+                (Some(f), true) => f.hands[k].as_ref().map(|h| h.1.clone()),
+                _ => None,
+            }
+            .unwrap_or_else(|| crate::data::KEYBLADE_MODEL.to_string());
+            c.extend(crate::cue::of_anim(w, crate::cue::Owner::Sora, &name, self.motor.pos));
+        }
+        self.cues_extend(c);
+    }
+
+    /// One cue for the host (and the audio engine when it is on).
+    pub fn cue(&mut self, c: crate::cue::Cue) {
+        if let Some(a) = self.audio_cues.as_mut()
+            && a.len() < 256
+        {
+            a.push(c.clone());
+        }
+        self.cues.push(c);
+    }
+
+    pub fn cues_extend(&mut self, cs: Vec<crate::cue::Cue>) {
+        for c in cs {
+            self.cue(c);
+        }
     }
 
     pub fn tick(&mut self, world: &World, input: &Input) {

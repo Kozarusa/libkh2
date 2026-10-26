@@ -630,6 +630,14 @@ typedef struct kh2_object_transform {
 KH2_API int32_t kh2_surface_object_create(const kh2_surface *tris, uint32_t count, const kh2_object_transform *transform);
 KH2_API int32_t kh2_surface_object_move(int32_t id, const kh2_object_transform *transform);
 KH2_API int32_t kh2_surface_object_delete(int32_t id);
+
+/* The audio engine (like libsm64's sm64_audio_tick): Sora's sound cues (and his party's, enemies',
+ * summon's, the mission's) played through kh2-rs's software sound driver (the game's SE sequencer
+ * on a software SPU2, tables from the disc's LIBSSL.IRX), rendered as 16-bit stereo PCM at 48 kHz.
+ * Init once (returns 48000), then feed the audio device: kh2_audio_tick(h, out, frames) writes
+ * 2 * frames interleaved samples. Voices, footsteps and music are not played. */
+KH2_API int32_t kh2_audio_init(void);
+KH2_API int32_t kh2_audio_tick(int32_t handle, int16_t *out, uint32_t frames);
 /* kh2_cam_view.mode: 0 follow, 1 look-around, 2 lock-on (a kh2_set_target point), 4 talk,
  * 5 overhead, 8 always-behind. */
 /* Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load

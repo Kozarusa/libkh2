@@ -2153,3 +2153,79 @@ fn the_command_menu_draws_and_casts_fire() {
     hud.input(MenuInput { confirm: true, ..Default::default() }, &s);
     assert_eq!(hud.choices, vec![Choice::Magic { slot: 0 }], "Fire chosen");
 }
+
+/// The audio engine (round 10): Sora's run, jump, combo and a Fire cast, their sound cues played
+/// through kh2-rs's software sound driver and rendered to 16-bit PCM: not silent, and the level
+/// in a sane range (peak under full scale, RMS above the noise floor).
+#[test]
+fn sounds_of_a_jump_an_attack_and_fire_render_to_pcm() {
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let mut s = standing(&game, &w);
+    let mut audio = kh2::audio::Audio::new(&mut d).expect("audio engine");
+    s.magic_levels = [1; 6];
+    s.mp = s.max_mp;
+    let mut pcm = Vec::new();
+    for t in 0..600 {
+        let jump = (60..80).contains(&t);
+        let attack = t > 120 && t < 360 && t % 6 == 0;
+        if t == 400 {
+            s.cast_request = Some((0, 30));
+        }
+        s.tick(&w, &Input { stick: if t < 60 { [0.0, 1.0] } else { [0.0, 0.0] }, cam_look: [0.0, 1.0], jump, attack, ..Default::default() });
+        s.collect_cues();
+        audio.pending.append(&mut s.cues);
+        let mut buf = [0i16; 1600];
+        audio.tick(&mut d, &mut buf, 800);
+        pcm.extend_from_slice(&buf);
+    }
+    let peak = pcm.iter().map(|v| v.unsigned_abs()).max().unwrap_or(0);
+    let rms = (pcm.iter().map(|&v| (v as f64).powi(2)).sum::<f64>() / pcm.len() as f64).sqrt();
+    eprintln!("audio: {} sounds started, missing {:?}, {} samples, peak {peak}, RMS {rms:.0}", audio.played, audio.missing, pcm.len());
+    assert!(audio.played > 0, "some cue found its sound");
+    assert!(peak > 500 && peak < 32767, "audible and not clipped: peak {peak}");
+    assert!(rms > 20.0, "not silent: RMS {rms:.0}");
+}
+
+/// `KH2_SE_SURVEY=1`: renders every entry of every global sound bank (`se/se000.seb` ..
+/// `se999`) for up to one second through the driver and counts the silent ones (the driver's known
+/// silent effects; docs/SOUND-AND-EFFECTS.md). Off by default (minutes).
+#[test]
+fn survey_of_silent_sound_effects() {
+    if std::env::var("KH2_SE_SURVEY").is_err() {
+        return;
+    }
+    let Some(mut d) = disc() else { return };
+    let (mut banks, mut entries, mut silent, mut missing) = (0, 0, 0, 0);
+    let mut a = kh2::audio::Audio::new(&mut d).expect("audio");
+    for bank in 0u16..1000 {
+        let Some(block) = d.read(&format!("se/se{bank:03}.seb")).ok().and_then(|b| kh2_audio::ssl::SeBlock::parse(&b)) else { continue };
+        banks += 1;
+        for (index, e) in block.entries.iter().enumerate() {
+            if e.tracks.is_empty() {
+                continue;
+            }
+            if !a.play(&mut d, "", bank, index as u16) {
+                missing += 1;
+                continue;
+            }
+            entries += 1;
+            let mut peak = 0u16;
+            for _ in 0..60 {
+                let mut buf = [0i16; 1600];
+                a.tick(&mut d, &mut buf, 800);
+                peak = peak.max(buf.iter().map(|v| v.unsigned_abs()).max().unwrap_or(0));
+            }
+            if peak < 4 {
+                silent += 1;
+            }
+            // Let the effect ring out before the next one.
+            for _ in 0..120 {
+                let mut buf = [0i16; 1600];
+                a.tick(&mut d, &mut buf, 800);
+            }
+        }
+    }
+    eprintln!("sound effect survey: {banks} banks, {entries} entries played, {silent} silent within 1 s, {missing} that did not start (no wave bank)");
+}
