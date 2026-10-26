@@ -97,6 +97,10 @@ struct Lib {
     summon_data: Option<Arc<crate::summon::SummonData>>,
     area_runs: std::collections::HashMap<i32, (crate::area::AreaRun, Vec<(i32, i32)>)>,
     area_objects: Vec<crate::area::AreaObject>,
+    /// The texture table of `kh2_get_mesh`: (rig, texture index of its model), by global id.
+    textures: Vec<(Arc<crate::anim::Rig>, usize)>,
+    /// The last mesh `kh2_mesh_prepare` skinned.
+    mesh: crate::mesh::Skinned,
     summons: std::collections::HashMap<i32, crate::summon::Summons>,
     limits: std::collections::HashMap<i32, crate::limit::Limits>,
     enemy_data: Option<Arc<crate::enemy::EnemyData>>,
@@ -184,7 +188,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, area_runs: Default::default(), area_objects: Vec::new(), summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, area_runs: Default::default(), area_objects: Vec::new(), textures: Vec::new(), mesh: Default::default(), summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
     0
 }
 
@@ -2870,5 +2874,174 @@ pub unsafe extern "C" fn kh2_area_get_object(index: i32, out: *mut Kh2AreaObject
         };
         unsafe { *out = r };
         0
+    })
+}
+
+/// The body of an actor: its rig, pose (model space) and root matrix. `owner` 0 Sora (`part` 0
+/// body, 1 keyblade, 2 second keyblade), 1 a member (`part` = follower slot), 2 an enemy (`part`
+/// = index in the list), 3 the summon.
+fn actor_body(l: &Lib, handle: i32, owner: i32, part: i32) -> Option<(Arc<crate::anim::Rig>, Vec<Mat4>, Mat4)> {
+    match owner {
+        0 => {
+            let s = usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref)?;
+            let (pose, root) = pose_of(s, part)?;
+            Some((rig_of(s, part)?, pose.to_vec(), root))
+        }
+        1 => {
+            let f = l.followers.get(&handle)?.get(usize::try_from(part).ok()?)?;
+            Some((f.body.rig.clone(), f.body.pose.clone(), Mat4::from_rotation_translation(glam::Quat::from_rotation_y(f.motor.yaw), f.motor.pos)))
+        }
+        2 => {
+            let e = l.enemies.get(&handle)?.list.get(usize::try_from(part).ok()?)?;
+            Some((e.anim.rig.clone(), e.anim.pose.clone(), e.matrix()))
+        }
+        3 => {
+            let o = l.summons.get(&handle)?.object.as_ref()?;
+            Some((o.body.rig.clone(), o.body.pose.clone(), o.matrix()))
+        }
+        _ => None,
+    }
+}
+
+/// What `kh2_mesh_prepare` skinned.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2MeshInfo {
+    pub vertex_count: u32,
+    pub index_count: u32,
+    pub submesh_count: u32,
+    pub _pad: u32,
+}
+
+/// One draw call of a skinned mesh.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2Submesh {
+    pub first_index: u32,
+    pub index_count: u32,
+    /// Global texture id (`kh2_texture_info` / `kh2_texture_get`), -1 none.
+    pub texture: i32,
+    /// 1: alpha-blended (draw after the opaque ones).
+    pub transparent: i32,
+}
+
+/// Skins the current pose of an actor's body (`owner` 0 Sora with `part` 0 body / 1 keyblade /
+/// 2 second keyblade, 1 a member slot, 2 an enemy index, 3 the summon) on the CPU, in world space
+/// (`space` 1) or model space (0), and keeps it for `kh2_mesh_get`. Fills `out`; returns 0.
+///
+/// # Safety
+/// `out` is NULL or points to a `kh2_mesh_info`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_mesh_prepare(handle: i32, owner: i32, part: i32, space: i32, out: *mut Kh2MeshInfo) -> i32 {
+    with(-1, |l| {
+        let Some((rig, pose, root)) = actor_body(l, handle, owner, part) else { return set_error("no such body") };
+        let mut m = crate::mesh::skin(&rig, &pose, if space == 1 { root } else { Mat4::IDENTITY });
+        // Global texture ids: each (rig, texture) once.
+        for s in &mut m.subs {
+            let local = s.texture as usize;
+            if local >= rig.model.textures.len() {
+                s.texture = u32::MAX;
+                continue;
+            }
+            let id = match l.textures.iter().position(|(r, k)| Arc::ptr_eq(r, &rig) && *k == local) {
+                Some(i) => i,
+                None => {
+                    l.textures.push((rig.clone(), local));
+                    l.textures.len() - 1
+                }
+            };
+            s.texture = id as u32;
+        }
+        let info = Kh2MeshInfo { vertex_count: m.positions.len() as u32, index_count: m.indices.len() as u32, submesh_count: m.subs.len() as u32, _pad: 0 };
+        l.mesh = m;
+        if !out.is_null() {
+            unsafe { *out = info };
+        }
+        0
+    })
+}
+
+/// Copies the mesh `kh2_mesh_prepare` skinned: positions (3 floats a vertex, cm), normals (3),
+/// uvs (2), colors (4, 1.0 = neutral), indices (triangle list), submeshes; any pointer may be
+/// NULL; each buffer is written only when its capacity (in vertices / indices / submeshes) holds
+/// the whole mesh. Returns 0, or -1 when a capacity is too small.
+///
+/// # Safety
+/// Each non-NULL pointer holds its capacity's worth of elements.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn kh2_mesh_get(positions: *mut f32, normals: *mut f32, uvs: *mut f32, colors: *mut f32, max_vertices: u32, indices: *mut u32, max_indices: u32, subs: *mut Kh2Submesh, max_subs: u32) -> i32 {
+    with(-1, |l| {
+        let m = &l.mesh;
+        let (nv, ni, ns) = (m.positions.len(), m.indices.len(), m.subs.len());
+        let any_v = !positions.is_null() || !normals.is_null() || !uvs.is_null() || !colors.is_null();
+        if (any_v && (max_vertices as usize) < nv) || (!indices.is_null() && (max_indices as usize) < ni) || (!subs.is_null() && (max_subs as usize) < ns) {
+            return set_error("a buffer is smaller than the mesh (see kh2_mesh_info)");
+        }
+        unsafe {
+            if !positions.is_null() {
+                std::ptr::copy_nonoverlapping(m.positions.as_ptr() as *const f32, positions, 3 * nv);
+            }
+            if !normals.is_null() {
+                std::ptr::copy_nonoverlapping(m.normals.as_ptr() as *const f32, normals, 3 * nv);
+            }
+            if !uvs.is_null() {
+                std::ptr::copy_nonoverlapping(m.uvs.as_ptr() as *const f32, uvs, 2 * nv);
+            }
+            if !colors.is_null() {
+                std::ptr::copy_nonoverlapping(m.colors.as_ptr() as *const f32, colors, 4 * nv);
+            }
+            if !indices.is_null() {
+                std::ptr::copy_nonoverlapping(m.indices.as_ptr(), indices, ni);
+            }
+            if !subs.is_null() {
+                for (k, s) in m.subs.iter().enumerate() {
+                    *subs.add(k) = Kh2Submesh { first_index: s.first, index_count: s.count, texture: if s.texture == u32::MAX { -1 } else { s.texture as i32 }, transparent: s.transparent.into() };
+                }
+            }
+        }
+        0
+    })
+}
+
+/// Size of texture `id` (from `kh2_submesh.texture`): writes width and height; returns 0 or -1.
+///
+/// # Safety
+/// `w` and `h` are NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_texture_info(id: i32, w: *mut u32, h: *mut u32) -> i32 {
+    with(-1, |l| {
+        let Some((rig, k)) = usize::try_from(id).ok().and_then(|i| l.textures.get(i)) else { return set_error("no such texture") };
+        let t = &rig.model.textures[*k];
+        unsafe {
+            if !w.is_null() {
+                *w = t.width;
+            }
+            if !h.is_null() {
+                *h = t.height;
+            }
+        }
+        0
+    })
+}
+
+/// Texture `id` as RGBA8 (row-major, straight alpha; the PS2's alpha 0..0x80 mapped to 0..255)
+/// into `out` of `cap` bytes; returns the byte count (width * height * 4) or -1.
+///
+/// # Safety
+/// `out` points to `cap` writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_texture_get(id: i32, out: *mut u8, cap: u32) -> i32 {
+    if out.is_null() {
+        return set_error("no buffer");
+    }
+    with(-1, |l| {
+        let Some((rig, k)) = usize::try_from(id).ok().and_then(|i| l.textures.get(i)) else { return set_error("no such texture") };
+        let t = &rig.model.textures[*k];
+        if (cap as usize) < t.rgba.len() {
+            return set_error("buffer smaller than the texture");
+        }
+        unsafe { std::ptr::copy_nonoverlapping(t.rgba.as_ptr(), out, t.rgba.len()) };
+        t.rgba.len() as i32
     })
 }

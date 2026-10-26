@@ -556,6 +556,31 @@ typedef struct kh2_area_object {
 KH2_API int32_t kh2_area_setup(const char *area, int32_t map, int32_t btl, int32_t evt, int32_t entrance, kh2_area_info *out);
 /* Object index of the last kh2_area_setup; -1 out of range. */
 KH2_API int32_t kh2_area_get_object(int32_t index, kh2_area_object *out);
+
+/* Runtime meshes (docs/MESHES.md): an actor's body from its own model file, skinned on the CPU by
+ * its current bones, with its decoded textures, so a host draws without an exporter. owner 0 Sora
+ * (part 0 body, 1 keyblade, 2 second keyblade), 1 a member (part = follower slot), 2 an enemy
+ * (part = index), 3 the summon. space 1 world (cm), 0 model. Prepare, then copy. */
+typedef struct kh2_mesh_info {
+    uint32_t vertex_count;
+    uint32_t index_count;     /* triangle list */
+    uint32_t submesh_count;
+    uint32_t _pad;
+} kh2_mesh_info;
+typedef struct kh2_submesh {
+    uint32_t first_index;
+    uint32_t index_count;
+    int32_t texture;          /* global texture id, -1 none */
+    int32_t transparent;      /* 1: alpha-blended, draw after the opaque ones */
+} kh2_submesh;
+KH2_API int32_t kh2_mesh_prepare(int32_t handle, int32_t owner, int32_t part, int32_t space, kh2_mesh_info *out);
+/* positions 3, normals 3, uvs 2, colors 4 (1.0 = neutral 0x80) floats a vertex; any pointer NULL;
+ * -1 when a capacity is smaller than the mesh. */
+KH2_API int32_t kh2_mesh_get(float *positions, float *normals, float *uvs, float *colors, uint32_t max_vertices, uint32_t *indices, uint32_t max_indices, kh2_submesh *subs, uint32_t max_subs);
+/* Texture ids stay valid for the library's life (the texture keeps its model loaded). */
+KH2_API int32_t kh2_texture_info(int32_t id, uint32_t *width, uint32_t *height);
+/* RGBA8 row-major, straight alpha (PS2 0..0x80 mapped to 0..255); returns the byte count. */
+KH2_API int32_t kh2_texture_get(int32_t id, uint8_t *out, uint32_t cap);
 /* kh2_cam_view.mode: 0 follow, 1 look-around, 2 lock-on (a kh2_set_target point), 4 talk,
  * 5 overhead, 8 always-behind. */
 /* Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load

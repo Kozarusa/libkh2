@@ -33,7 +33,7 @@ try {
     Copy-Item README.md, DESIGN.md (Join-Path $dist "docs")
     Copy-Item docs\*.md (Join-Path $dist "docs")
     Copy-Item README.md, CHANGELOG.md $dist
-    Copy-Item unity\Kh2.cs (Join-Path $dist "unity")
+    Copy-Item unity\Kh2.cs, unity\Kh2Mesh.cs (Join-Path $dist "unity")
     Copy-Item -Recurse unity\sample (Join-Path $dist "unity\sample")
     Copy-Item examples\min.c, examples\build_min.bat, examples\build_min.sh (Join-Path $dist "examples")
     Copy-Item -Recurse examples\python (Join-Path $dist "examples\python")

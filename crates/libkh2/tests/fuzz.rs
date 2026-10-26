@@ -372,6 +372,14 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                     kh2_area_setup(if r.chance(4) { std::ptr::null() } else { a.as_ptr() }, r.int(), r.int(), r.int(), r.int(), if r.chance(3) { std::ptr::null_mut() } else { &mut info });
                 }
                 let mut ao = Kh2AreaObject::default();
+                let mut mi = Kh2MeshInfo::default();
+                kh2_mesh_prepare(h, r.int(), r.int(), r.int(), if r.chance(4) { std::ptr::null_mut() } else { &mut mi });
+                let mut sb = [Kh2Submesh::default(); 4];
+                kh2_mesh_get(if r.chance(2) { std::ptr::null_mut() } else { fl.as_mut_ptr() }, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), max(r, 10), std::ptr::null_mut(), 0, if r.chance(2) { std::ptr::null_mut() } else { sb.as_mut_ptr() }, max(r, 4));
+                let (mut tw, mut th) = (0u32, 0u32);
+                kh2_texture_info(r.int(), &mut tw, &mut th);
+                let mut px = [0u8; 64];
+                kh2_texture_get(r.int(), if r.chance(4) { std::ptr::null_mut() } else { px.as_mut_ptr() }, max(r, 64));
                 kh2_area_get_object(r.int(), if r.chance(4) { std::ptr::null_mut() } else { &mut ao });
                 kh2_poll_cue(h, if r.chance(4) { std::ptr::null_mut() } else { &mut cue });
             }

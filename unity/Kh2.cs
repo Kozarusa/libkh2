@@ -244,6 +244,14 @@ public static class Kh2
     }
     [DllImport(Lib)] public static extern int kh2_area_setup(string area, int map, int btl, int evt, int entrance, out AreaInfo info);
     [DllImport(Lib)] public static extern int kh2_area_get_object(int index, out AreaObject obj);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MeshInfo { public uint vertexCount, indexCount, submeshCount, pad; }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Submesh { public uint firstIndex, indexCount; public int texture, transparent; }
+    [DllImport(Lib)] public static extern int kh2_mesh_prepare(int handle, int owner, int part, int space, out MeshInfo info);
+    [DllImport(Lib)] public static extern int kh2_mesh_get([Out] float[] positions, [Out] float[] normals, [Out] float[] uvs, [Out] float[] colors, uint maxVertices, [Out] uint[] indices, uint maxIndices, [Out] Submesh[] subs, uint maxSubs);
+    [DllImport(Lib)] public static extern int kh2_texture_info(int id, out uint width, out uint height);
+    [DllImport(Lib)] public static extern int kh2_texture_get(int id, [Out] byte[] rgba, uint cap);
     public const int CamModeFollow = 0, CamModeLook = 1, CamModeLockOn = 2, CamModeTalk = 4, CamModeOverhead = 5, CamModeBehind = 8;
     [DllImport(Lib)] public static extern int kh2_area_spawn(int handle, string area, int program, int withDisabled);
     [DllImport(Lib)] public static extern int kh2_enemy_count(int handle);
