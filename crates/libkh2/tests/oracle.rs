@@ -365,3 +365,78 @@ fn orig_fm_1a2108_difficulty_matches_the_game() {
         assert_eq!(game, kh2::enemy::difficulty_scale(dmg, diff, vp, ap), "case {n}: difficulty {diff} victim party {vp} attacker party {ap} damage {dmg}");
     }
 }
+
+/// The player's jump mover (round 15; FM addresses of the unchanged USA bodies: FM 0x17d130 = USA
+/// `FUN_0017bee0`, FM 0x17c430 = `FUN_0017b1e0`, FM 0x17c930 = `FUN_0017b6e0`). The mover keeps
+/// clock +0xd0, rise time +0xd4, base +0xd8 and rise +0xdc (game Y points down: rise = -height),
+/// actor flags +0x160 (0: gravity on). Against kh2fm-rs's `motor::Jump` (`Jump::up` / `fall` /
+/// `target_y`), which libkh2's Sora uses. Float results compare within 1e-3 units: the game's
+/// `sinf` (FM 0x2f8960) is its own routine.
+const MOVER: u32 = 0x0189_0000;
+const ZERO_VEC: u32 = 0x018a_0000;
+
+#[test]
+fn orig_fm_17d130_jump_rise_time_matches_the_game() {
+    use kh2_game_core::motor::Jump;
+    let Some(mut ee) = machine("oracle test of FM 0x17d130 (rise time)") else { return };
+    let mut r = Rng::new(0x17d130);
+    for n in 0..CASES {
+        let h = r.below(60000) as f32 / 100.0;
+        ee.call(0x17d130, &[], &[h], STACK).unwrap_or_else(|f| panic!("case {n}: {f:?}"));
+        let port = Jump::up(h, 0.0).rise;
+        assert!((ee.fpr[0] - port).abs() <= 1e-4 * port.max(1.0), "case {n}: h {h}: game {} lib {port}", ee.fpr[0]);
+    }
+}
+
+#[test]
+fn orig_fm_17c430_jump_launch_matches_the_game() {
+    use kh2_game_core::motor::Jump;
+    let Some(mut ee) = machine("oracle test of FM 0x17c430 (jump launch)") else { return };
+    ee.hooks.insert(0x17c400, |_e: &mut Ee| {});
+    let mut r = Rng::new(0x17c430);
+    for n in 0..CASES {
+        let h = (r.below(80000) as f32 - 20000.0) / 100.0;
+        zero(&mut ee, MOVER, 0x200);
+        ee.call(0x17c430, &[MOVER as u64], &[h], STACK).unwrap_or_else(|f| panic!("case {n}: {f:?}"));
+        let g = |o: u32, ee: &mut Ee| f32::from_bits(ee.r32(MOVER + o));
+        let (clock, rise, base, up) = (g(0xd0, &mut ee), g(0xd4, &mut ee), g(0xd8, &mut ee), g(0xdc, &mut ee));
+        // The port: a jump of h (base 0 here, height h) or a fall already under way from -h above.
+        let j = if h >= 0.0 { Jump::up(h, 0.0) } else { Jump::fall(-h, 0.0) };
+        let close = |a: f32, b: f32| (a - b).abs() <= 1e-3 * b.abs().max(1.0);
+        assert!(close(clock, j.t) && close(rise, j.rise), "case {n}: h {h}: game clock {clock} rise {rise}, lib {} {}", j.t, j.rise);
+        if h >= 0.0 {
+            assert!(close(base, 0.0) && close(up, -h), "case {n}: base {base} rise height {up}");
+        } else {
+            // A fall: base -h below in game Y (h above in the app's), no rise height.
+            assert!(close(base, h) && close(up, 0.0), "case {n}: base {base} up {up}");
+        }
+    }
+}
+
+#[test]
+fn orig_fm_17c930_jump_curve_matches_the_game() {
+    use kh2_game_core::motor::Jump;
+    let Some(mut ee) = machine("oracle test of FM 0x17c930 (jump curve)") else { return };
+    // FM 0x16c028 (the ground point the curve is measured from) answers a zero vector.
+    ee.hooks.insert(0x16c028, |e: &mut Ee| e.gpr[2] = ZERO_VEC as u128);
+    let mut r = Rng::new(0x17c930);
+    for n in 0..CASES {
+        let h = 1.0 + r.below(40000) as f32 / 100.0;
+        let mut j = Jump::up(h, 0.0);
+        j.t = r.below((j.rise * 300.0) as u64 + 1) as f32 / 100.0;
+        zero(&mut ee, MOVER, 0x200);
+        zero(&mut ee, ZERO_VEC, 0x10);
+        let w = |o: u32, v: f32, ee: &mut Ee| ee.w32(MOVER + o, v.to_bits());
+        w(0xd0, j.t, &mut ee);
+        w(0xd4, j.rise, &mut ee);
+        w(0xd8, 0.0, &mut ee);
+        w(0xdc, -h, &mut ee);
+        // The result is min(curve - ground, +0x120 x DAT_00349e10) (the branch's delay slot loads the limit): far
+        // above so it never applies.
+        w(0x120, 1.0e9, &mut ee);
+        ee.call(0x17c930, &[0, MOVER as u64], &[], STACK).unwrap_or_else(|f| panic!("case {n}: {f:?}"));
+        let game = -ee.fpr[0];
+        let port = j.target_y();
+        assert!((game - port).abs() <= 1e-3 * port.abs().max(1.0), "case {n}: h {h} t {} rise {}: game {game} lib {port}", j.t, j.rise);
+    }
+}
