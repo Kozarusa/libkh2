@@ -226,6 +226,55 @@ fn struggle() {
         talk.push_str("\n\n");
     }
     std::fs::write(Path::new(&dir).join("talk.rs"), talk).unwrap();
+    // The command menu's pure parts: `shared/hud.rs` (the menu records, `Label`) and `kh2-hud/src/hud_menu.rs`
+    // (the executable's group tables, the layout constants, the bar / icon choice, the base entries).
+    let h = read("kh2-game-core/src/shared/hud.rs");
+    let mut hud = String::new();
+    for (a, b) in [("/// A command shown in a list.", "pub struct CommandMenu"), ("/// A text drawn by a node", "pub struct Label")] {
+        hud.push_str(&span(&h, a, b));
+        hud.push_str("\n\n");
+    }
+    let m = read("kh2-hud/src/hud_menu.rs");
+    for (a, b) in [
+        ("/// Menu pages that can be open at once", "const KINDS"),
+        ("/// Tables the menu code reads from the executable", "pub struct MenuTables"),
+        ("pub struct Tables {", "pub struct Tables"),
+        ("fn word(exe: &[u8], va: usize)", "fn word"),
+        ("impl Tables {", "impl Tables"),
+        ("/// Icon group of the selected bar", "fn icon_group"),
+        ("/// Left edge of page", "pub fn page_x"),
+        ("/// Centre line of bar", "pub fn row_y"),
+        ("/// Origin of a list's header banner", "pub fn header_y"),
+        ("/// Origin of the reaction capsule", "pub fn capsule_y"),
+        ("/// The bar group for row", "fn bar_group"),
+        // One span: `ARROW`'s type holds a `;` before its own end.
+        ("/// The arrow beside the selected bar", "const TEXT_SIZE"),
+        ("/// Only the first page draws the selected bar's medallion", "fn shows_icons"),
+        ("fn entry(c: &kh2_tables::tables::Cmd)", "fn entry"),
+        ("/// The four basic commands", "fn base_entries"),
+    ] {
+        hud.push_str(&span(&m, a, b));
+        hud.push_str("\n\n");
+    }
+    let hud = hud
+        .replace("\r\n", "\n")
+        .replace("pub struct Tables {\n    /// Per kind: 3 header groups, 3 selected-bar groups, 3 bar groups, 3 last-bar groups (by page).\n    kind:", "pub struct Tables {\n    /// Per kind: 3 header groups, 3 selected-bar groups, 3 bar groups, 3 last-bar groups (by page).\n    pub kind:")
+        .replace("    open: [u32; 3],\n    idle: [u32; 3],", "    pub open: [u32; 3],\n    pub idle: [u32; 3],")
+        .replace("    plate: [u32; 3],", "    pub plate: [u32; 3],")
+        .replace("    normal: [[u8; 4]; 9],\n    selected: [[u8; 4]; 9],", "    pub normal: [[u8; 4]; 9],\n    pub selected: [[u8; 4]; 9],")
+        .replace("    reaction: [u32; 5],\n}", "    pub reaction: [u32; 5],\n}")
+        .replace("fn icon_group(", "pub fn icon_group(")
+        .replace("fn bar_group(", "pub fn bar_group(")
+        .replace("const ARROW", "pub const ARROW")
+        .replace("const TEXT_OFFSET", "pub const TEXT_OFFSET")
+        .replace("const TEXT_FONT", "pub const TEXT_FONT")
+        .replace("const TEXT_SIZE", "pub const TEXT_SIZE")
+        .replace("fn shows_icons(", "pub fn shows_icons(")
+        .replace("fn entry(", "pub fn entry(")
+        .replace("fn base_entries(", "pub fn base_entries(")
+        .replace("const KINDS", "pub const KINDS");
+    assert!(hud.contains("pub kind:") && hud.contains("pub reaction: [u32; 5]"), "Tables made public");
+    std::fs::write(Path::new(&dir).join("hud_menu.rs"), hud).unwrap();
 }
 
 fn main() {

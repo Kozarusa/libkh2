@@ -377,8 +377,23 @@ unsafe fn call(r: &mut Rng, live: &mut Vec<i32>, b: &mut Bufs) {
                 let mut sb = [Kh2Submesh::default(); 4];
                 kh2_mesh_get(if r.chance(2) { std::ptr::null_mut() } else { fl.as_mut_ptr() }, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), max(r, 10), std::ptr::null_mut(), 0, if r.chance(2) { std::ptr::null_mut() } else { sb.as_mut_ptr() }, max(r, 4));
                 let (mut tw, mut th) = (0u32, 0u32);
-                kh2_texture_info(r.int(), &mut tw, &mut th);
                 let mut px = [0u8; 64];
+                if r.chance(40) {
+                    let wd = CString::new(["tt", "zz", "", "q"][r.below(4) as usize]).unwrap();
+                    kh2_hud_load(h, if r.chance(4) { std::ptr::null() } else { wd.as_ptr() });
+                }
+                kh2_hud_input(h, r.next() as u32);
+                kh2_hud_tick(h);
+                let mut hs = [Kh2HudSprite::default(); 8];
+                kh2_hud_draw_list(h, if r.chance(4) { std::ptr::null_mut() } else { hs.as_mut_ptr() }, max(r, 8));
+                let mut he = Kh2HudEvent::default();
+                kh2_hud_poll_event(h, if r.chance(4) { std::ptr::null_mut() } else { &mut he });
+                kh2_hud_texture_info(h, r.int(), &mut tw, &mut th);
+                kh2_hud_texture_get(h, r.int(), if r.chance(4) { std::ptr::null_mut() } else { px.as_mut_ptr() }, max(r, 64));
+                let ids = [1u16, 2];
+                let cn = [1u8, 0];
+                kh2_hud_set_items(h, if r.chance(4) { std::ptr::null() } else { ids.as_ptr() }, cn.as_ptr(), max(r, 2));
+                kh2_texture_info(r.int(), &mut tw, &mut th);
                 kh2_texture_get(r.int(), if r.chance(4) { std::ptr::null_mut() } else { px.as_mut_ptr() }, max(r, 64));
                 kh2_area_get_object(r.int(), if r.chance(4) { std::ptr::null_mut() } else { &mut ao });
                 kh2_poll_cue(h, if r.chance(4) { std::ptr::null_mut() } else { &mut cue });

@@ -581,6 +581,42 @@ KH2_API int32_t kh2_mesh_get(float *positions, float *normals, float *uvs, float
 KH2_API int32_t kh2_texture_info(int32_t id, uint32_t *width, uint32_t *height);
 /* RGBA8 row-major, straight alpha (PS2 0..0x80 mapped to 0..255); returns the byte count. */
 KH2_API int32_t kh2_texture_get(int32_t id, uint8_t *out, uint32_t cap);
+
+/* The field HUD as a 2D draw list (docs/HUD.md): the command menu (Attack, Magic with the spells,
+ * Items from the host's list, Drive with the owned forms) and the reaction capsule, from the
+ * game's art and font, on the game's 512 x 448 screen (y down). Load once, then each tick after
+ * kh2_enemies_tick: kh2_hud_input (menu buttons), kh2_hud_tick, kh2_hud_draw_list. A chosen spell
+ * is cast, Attack presses attack, the reaction command is accepted; items and forms come out of
+ * kh2_hud_poll_event for the host to use. Not drawn yet: gauges, party panels, target gauge,
+ * lock-on reticle, banners, INFORMATION bar. */
+#define KH2_HUD_UP 1u
+#define KH2_HUD_DOWN 2u
+#define KH2_HUD_CONFIRM 4u
+#define KH2_HUD_BACK 8u
+#define KH2_HUD_REACTION 16u
+typedef struct kh2_hud_sprite {
+    int32_t texture;     /* kh2_hud_texture_info / kh2_hud_texture_get */
+    int32_t blend;       /* 0 alpha, 1 additive, 2 subtractive */
+    int32_t nearest;     /* 1: nearest filtering */
+    int32_t text;        /* 1: a glyph or icon of the font atlas */
+    float pos[8];        /* corners TL, TR, BL, BR: x, y */
+    float uv[8];         /* texel coordinates of the corners */
+    uint8_t color[16];   /* RGBA per corner, 0x80 = 1.0: texel * colour / 128 */
+} kh2_hud_sprite;
+typedef struct kh2_hud_event {
+    int32_t kind;        /* 1 attack, 2 magic (value slot), 3 item (value id), 4 drive (value form), 5 reaction (value command) */
+    int32_t value;
+} kh2_hud_event;
+KH2_API int32_t kh2_hud_load(int32_t handle, const char *world);
+KH2_API int32_t kh2_hud_input(int32_t handle, uint32_t buttons);
+KH2_API int32_t kh2_hud_set_items(int32_t handle, const uint16_t *ids, const uint8_t *counts, uint32_t count);
+/* Returns the draw list's sprite count. */
+KH2_API int32_t kh2_hud_tick(int32_t handle);
+KH2_API int32_t kh2_hud_draw_list(int32_t handle, kh2_hud_sprite *out, uint32_t max);
+KH2_API int32_t kh2_hud_poll_event(int32_t handle, kh2_hud_event *out);
+/* Returns the HUD texture count; fills width / height of texture id when id >= 0. */
+KH2_API int32_t kh2_hud_texture_info(int32_t handle, int32_t id, uint32_t *width, uint32_t *height);
+KH2_API int32_t kh2_hud_texture_get(int32_t handle, int32_t id, uint8_t *out, uint32_t cap);
 /* kh2_cam_view.mode: 0 follow, 1 look-around, 2 lock-on (a kh2_set_target point), 4 talk,
  * 5 overhead, 8 always-behind. */
 /* Drops the enemies that are gone (indices shift) and frees the enemy kinds no enemy uses (kinds load

@@ -230,6 +230,17 @@ fn asserts() -> String {
     c += &format!("static_assert(offsetof(kh2_submesh, index_count) == {}, \"kh2_submesh.index_count\");\n", offset_of!(Kh2Submesh, index_count));
     c += &format!("static_assert(offsetof(kh2_submesh, texture) == {}, \"kh2_submesh.texture\");\n", offset_of!(Kh2Submesh, texture));
     c += &format!("static_assert(offsetof(kh2_submesh, transparent) == {}, \"kh2_submesh.transparent\");\n", offset_of!(Kh2Submesh, transparent));
+    c += &format!("static_assert(sizeof(kh2_hud_sprite) == {}, \"kh2_hud_sprite size\");\n", size_of::<Kh2HudSprite>());
+    c += &format!("static_assert(offsetof(kh2_hud_sprite, texture) == {}, \"kh2_hud_sprite.texture\");\n", offset_of!(Kh2HudSprite, texture));
+    c += &format!("static_assert(offsetof(kh2_hud_sprite, blend) == {}, \"kh2_hud_sprite.blend\");\n", offset_of!(Kh2HudSprite, blend));
+    c += &format!("static_assert(offsetof(kh2_hud_sprite, nearest) == {}, \"kh2_hud_sprite.nearest\");\n", offset_of!(Kh2HudSprite, nearest));
+    c += &format!("static_assert(offsetof(kh2_hud_sprite, text) == {}, \"kh2_hud_sprite.text\");\n", offset_of!(Kh2HudSprite, text));
+    c += &format!("static_assert(offsetof(kh2_hud_sprite, pos) == {}, \"kh2_hud_sprite.pos\");\n", offset_of!(Kh2HudSprite, pos));
+    c += &format!("static_assert(offsetof(kh2_hud_sprite, uv) == {}, \"kh2_hud_sprite.uv\");\n", offset_of!(Kh2HudSprite, uv));
+    c += &format!("static_assert(offsetof(kh2_hud_sprite, color) == {}, \"kh2_hud_sprite.color\");\n", offset_of!(Kh2HudSprite, color));
+    c += &format!("static_assert(sizeof(kh2_hud_event) == {}, \"kh2_hud_event size\");\n", size_of::<Kh2HudEvent>());
+    c += &format!("static_assert(offsetof(kh2_hud_event, kind) == {}, \"kh2_hud_event.kind\");\n", offset_of!(Kh2HudEvent, kind));
+    c += &format!("static_assert(offsetof(kh2_hud_event, value) == {}, \"kh2_hud_event.value\");\n", offset_of!(Kh2HudEvent, value));
     c += &format!("static_assert(sizeof(kh2_enemy_state_t) == {}, \"kh2_enemy_state_t size\");\n", size_of::<Kh2EnemyState>());
     c += &format!("static_assert(offsetof(kh2_enemy_state_t, id) == {}, \"kh2_enemy_state_t.id\");\n", offset_of!(Kh2EnemyState, id));
     c += &format!("static_assert(offsetof(kh2_enemy_state_t, pos) == {}, \"kh2_enemy_state_t.pos\");\n", offset_of!(Kh2EnemyState, pos));

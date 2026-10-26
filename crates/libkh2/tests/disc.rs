@@ -2060,3 +2060,96 @@ fn sora_mesh_skins_with_his_bones() {
     let c = |m: &kh2::mesh::Skinned| m.positions.iter().fold(Vec3::ZERO, |a, p| a + Vec3::from(*p)) / m.positions.len() as f32;
     assert!(c(&m2).z - c(&m).z > 50.0, "the mesh runs with him");
 }
+
+/// A minimal PNG writer (stored deflate blocks) for the HUD test's frame.
+fn write_png(path: &std::path::Path, w: usize, h: usize, rgba: &[u8]) {
+    fn crc(data: &[u8]) -> u32 {
+        let mut c = 0xffff_ffffu32;
+        for &b in data {
+            c ^= b as u32;
+            for _ in 0..8 {
+                c = if c & 1 != 0 { 0xedb8_8320 ^ (c >> 1) } else { c >> 1 };
+            }
+        }
+        !c
+    }
+    let mut raw = Vec::new();
+    for y in 0..h {
+        raw.push(0u8);
+        raw.extend_from_slice(&rgba[y * w * 4..(y + 1) * w * 4]);
+    }
+    let mut z = vec![0x78, 0x01];
+    for (k, chunk) in raw.chunks(65535).enumerate() {
+        let last = (k + 1) * 65535 >= raw.len();
+        z.push(last as u8);
+        z.extend_from_slice(&(chunk.len() as u16).to_le_bytes());
+        z.extend_from_slice(&(!(chunk.len() as u16)).to_le_bytes());
+        z.extend_from_slice(chunk);
+    }
+    let (mut a, mut b) = (1u32, 0u32);
+    for &x in &raw {
+        a = (a + x as u32) % 65521;
+        b = (b + a) % 65521;
+    }
+    z.extend_from_slice(&((b << 16) | a).to_be_bytes());
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    let mut chunk = |tag: &[u8], data: &[u8]| {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let mut c = tag.to_vec();
+        c.extend_from_slice(data);
+        out.extend_from_slice(&c);
+        out.extend_from_slice(&crc(&c).to_be_bytes());
+    };
+    let mut ihdr = (w as u32).to_be_bytes().to_vec();
+    ihdr.extend_from_slice(&(h as u32).to_be_bytes());
+    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+    chunk(b"IHDR", &ihdr);
+    chunk(b"IDAT", &z);
+    chunk(b"IEND", &[]);
+    std::fs::write(path, out).unwrap();
+}
+
+/// The field HUD (round 10): the command menu of Twilight Town drawn from the game's art and font,
+/// at kh2-rs's layout (`page_x`, `row_y`); Magic opens the spells page, confirming Fire starts the
+/// cast. The frame is rasterised in software and saved as `local/hud_frame.png` (git-ignored).
+#[test]
+fn the_command_menu_draws_and_casts_fire() {
+    use kh2::hud::{Choice, Hud, MenuInput};
+    use kh2_enemy_host::hud_menu as hm;
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let s = standing(&game, &w);
+    let mut hud = Hud::load(&mut d, "tt").expect("HUD loads");
+    eprintln!("HUD textures: {:?}", hud.textures.iter().map(|t| (t.width, t.height)).collect::<Vec<_>>());
+    for _ in 0..60 {
+        hud.tick(&s);
+    }
+    let list = hud.draw_list();
+    let text = list.iter().filter(|q| q.text).count();
+    eprintln!("draw list: {} sprites ({text} glyphs)", list.len());
+    assert!(list.len() > 10 && text > 10, "bars and their names");
+    // The bars sit in the menu's column: x from page_x(0), the list ending near row_y(4, 3).
+    let (lo, hi) = list.iter().filter(|q| !q.text).flat_map(|q| q.pos).fold(([f32::MAX; 2], [f32::MIN; 2]), |(a, b), p| ([a[0].min(p[0]), a[1].min(p[1])], [b[0].max(p[0]), b[1].max(p[1])]));
+    eprintln!("bars from {lo:?} to {hi:?}; page_x(0) {} header_y(4) {} row_y(4, 3) {}", hm::page_x(0), hm::header_y(4), hm::row_y(4, 3));
+    assert!(lo[0] >= hm::page_x(0) - 40.0 && lo[0] <= hm::page_x(0) + 10.0, "left edge near page_x(0)");
+    assert!(hi[1] >= hm::row_y(4, 3) && hi[1] <= hm::row_y(4, 3) + 30.0, "the list ends at row_y(4, 3)");
+    let (fw, fh) = (512usize, 448usize);
+    let mut frame = vec![40u8; fw * fh * 4];
+    hud.rasterize(&list, fw, fh, &mut frame);
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local");
+    let _ = std::fs::create_dir_all(&dir);
+    write_png(&dir.join("hud_frame.png"), fw, fh, &frame);
+    // Magic (row 1), then Fire.
+    hud.input(MenuInput { down: true, ..Default::default() }, &s);
+    hud.input(MenuInput { confirm: true, ..Default::default() }, &s);
+    for _ in 0..30 {
+        hud.tick(&s);
+    }
+    assert_eq!(hud.menu.pages.len(), 2, "the Magic page opened");
+    let mut frame2 = vec![40u8; fw * fh * 4];
+    hud.rasterize(&hud.draw_list(), fw, fh, &mut frame2);
+    write_png(&dir.join("hud_frame_magic.png"), fw, fh, &frame2);
+    hud.input(MenuInput { confirm: true, ..Default::default() }, &s);
+    assert_eq!(hud.choices, vec![Choice::Magic { slot: 0 }], "Fire chosen");
+}

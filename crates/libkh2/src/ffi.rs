@@ -101,6 +101,8 @@ struct Lib {
     textures: Vec<(Arc<crate::anim::Rig>, usize)>,
     /// The last mesh `kh2_mesh_prepare` skinned.
     mesh: crate::mesh::Skinned,
+    /// The field HUD of each Sora (`kh2_hud_load`) and its last draw list.
+    huds: std::collections::HashMap<i32, (crate::hud::Hud, Vec<crate::hud::Sprite>)>,
     summons: std::collections::HashMap<i32, crate::summon::Summons>,
     limits: std::collections::HashMap<i32, crate::limit::Limits>,
     enemy_data: Option<Arc<crate::enemy::EnemyData>>,
@@ -188,7 +190,7 @@ unsafe fn init(iso_path: *const c_char) -> i32 {
         Ok(g) => Arc::new(g),
         Err(e) => return set_error(e),
     };
-    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, area_runs: Default::default(), area_objects: Vec::new(), textures: Vec::new(), mesh: Default::default(), summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
+    *lib() = Some(Lib { game, disc, world: world_from_surfaces(&[]), soras: Vec::new(), cameras: Vec::new(), forms: Default::default(), party: None, followers: Default::default(), party_rng: Default::default(), limit_data: None, auto_shown: Default::default(), summon_data: None, area_runs: Default::default(), area_objects: Vec::new(), textures: Vec::new(), mesh: Default::default(), huds: Default::default(), summons: Default::default(), limits: Default::default(), enemy_data: None, enemies: Default::default() });
     0
 }
 
@@ -1548,7 +1550,12 @@ pub unsafe extern "C" fn kh2_reaction_offer(handle: i32, out: *mut Kh2ReactionOf
 /// nothing available is offered. The target's script receives it on the next `kh2_enemies_tick`.
 #[unsafe(no_mangle)]
 pub extern "C" fn kh2_reaction_accept(handle: i32) -> i32 {
-    with(-1, |l| {
+    with(-1, |l| reaction_accept(l, handle))
+}
+
+/// The body of `kh2_reaction_accept` (also the HUD's reaction choice).
+fn reaction_accept(l: &mut Lib, handle: i32) -> i32 {
+    {
         let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return -1 };
         let Some(en) = l.enemies.get_mut(&handle) else { return -1 };
         // An Auto Limit offer: the limit starts (FUN_001cf030 case 0x51).
@@ -1569,7 +1576,7 @@ pub extern "C" fn kh2_reaction_accept(handle: i32) -> i32 {
             };
         }
         en.accept(s).map_or(-1, i32::from)
-    })
+    }
 }
 
 /// Test harness (kh2-rs `FakeOffer`): every living enemy of Sora `handle` offers `cmd` (0 stops).
@@ -3038,6 +3045,223 @@ pub unsafe extern "C" fn kh2_texture_get(id: i32, out: *mut u8, cap: u32) -> i32
     with(-1, |l| {
         let Some((rig, k)) = usize::try_from(id).ok().and_then(|i| l.textures.get(i)) else { return set_error("no such texture") };
         let t = &rig.model.textures[*k];
+        if (cap as usize) < t.rgba.len() {
+            return set_error("buffer smaller than the texture");
+        }
+        unsafe { std::ptr::copy_nonoverlapping(t.rgba.as_ptr(), out, t.rgba.len()) };
+        t.rgba.len() as i32
+    })
+}
+
+/// Loads the field HUD for Sora `handle` (art of world `world`, two letters, e.g. "tt"; NULL "zz"):
+/// the command menu with its pages and the reaction capsule (docs/HUD.md). Returns 0.
+///
+/// # Safety
+/// `world` is NULL or NUL-terminated.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_hud_load(handle: i32, world: *const c_char) -> i32 {
+    let world = if world.is_null() { "zz".to_string() } else { unsafe { CStr::from_ptr(world) }.to_str().unwrap_or("zz").chars().take(2).collect() };
+    with(-1, |l| {
+        if usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref).is_none() {
+            return set_error(format!("no Sora with handle {handle}"));
+        }
+        match crate::hud::Hud::load(&mut l.disc, &world) {
+            Ok(h) => {
+                l.huds.insert(handle, (h, Vec::new()));
+                0
+            }
+            Err(e) => set_error(e),
+        }
+    })
+}
+
+/// HUD buttons for `kh2_hud_input`.
+pub const KH2_HUD_UP: u32 = 1;
+pub const KH2_HUD_DOWN: u32 = 2;
+pub const KH2_HUD_CONFIRM: u32 = 4;
+pub const KH2_HUD_BACK: u32 = 8;
+pub const KH2_HUD_REACTION: u32 = 16;
+
+/// The menu's input of one tick (KH2_HUD_* pressed this tick).
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_hud_input(handle: i32, buttons: u32) -> i32 {
+    with(-1, |l| {
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get(k)).and_then(Option::as_ref) else { return -1 };
+        let Some((h, _)) = l.huds.get_mut(&handle) else { return set_error("no HUD (kh2_hud_load)") };
+        h.input(crate::hud::MenuInput { up: buttons & KH2_HUD_UP != 0, down: buttons & KH2_HUD_DOWN != 0, confirm: buttons & KH2_HUD_CONFIRM != 0, back: buttons & KH2_HUD_BACK != 0, reaction: buttons & KH2_HUD_REACTION != 0 }, s);
+        0
+    })
+}
+
+/// The host's items for the Items page: `count` (item id, count) pairs.
+///
+/// # Safety
+/// `ids` and `counts` point to `count` elements (or are NULL with `count` 0).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_hud_set_items(handle: i32, ids: *const u16, counts: *const u8, count: u32) -> i32 {
+    let n = count.min(64) as usize;
+    let list: Vec<(u16, u8)> = if ids.is_null() || counts.is_null() { Vec::new() } else { (0..n).map(|k| unsafe { (*ids.add(k), *counts.add(k)) }).collect() };
+    with(-1, |l| match l.huds.get_mut(&handle) {
+        Some((h, _)) => {
+            h.items = list;
+            0
+        }
+        None => set_error("no HUD (kh2_hud_load)"),
+    })
+}
+
+/// One HUD tick (call after `kh2_enemies_tick`): the offered reaction command into the capsule, the
+/// menu's layout and players, then the choices made: Attack presses attack on Sora's next tick,
+/// a spell starts the cast, the reaction command is accepted; items and drive forms are reported
+/// (`kh2_hud_poll_event`) for the host to use (`kh2_use_item`, `kh2_drive_enter`). Builds the
+/// draw list; returns its sprite count.
+#[unsafe(no_mangle)]
+pub extern "C" fn kh2_hud_tick(handle: i32) -> i32 {
+    with(-1, |l| {
+        let offer = l.enemies.get(&handle).and_then(|e| e.offer).filter(|o| o.status == crate::enemy::Status::Available).map(|o| o.cmd);
+        let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return -1 };
+        let Some((h, list)) = l.huds.get_mut(&handle) else { return set_error("no HUD (kh2_hud_load)") };
+        h.reaction_cmd = offer;
+        h.tick(s);
+        let mut accept = false;
+        for c in std::mem::take(&mut h.fresh) {
+            match c {
+                crate::hud::Choice::Attack => s.menu_attack = true,
+                crate::hud::Choice::Magic { slot } => {
+                    if s.spell(slot).is_some() {
+                        s.cast_request = Some((slot, 30));
+                    }
+                }
+                crate::hud::Choice::Reaction { .. } => accept = true,
+                _ => {}
+            }
+        }
+        *list = h.draw_list();
+        let n = list.len() as i32;
+        if accept {
+            reaction_accept(l, handle);
+        }
+        n
+    })
+}
+
+/// A command the player chose in the HUD menu.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2HudEvent {
+    /// 1 Attack, 2 magic (`value` = magic slot), 3 item (`value` = item id), 4 drive (`value` =
+    /// form), 5 reaction command (`value` = command id).
+    pub kind: i32,
+    pub value: i32,
+}
+
+/// Takes the oldest choice: 1 when one was taken, 0 when none waits.
+///
+/// # Safety
+/// `out` points to a `kh2_hud_event`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_hud_poll_event(handle: i32, out: *mut Kh2HudEvent) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let Some((h, _)) = l.huds.get_mut(&handle) else { return 0 };
+        if h.choices.is_empty() {
+            return 0;
+        }
+        use crate::hud::Choice as C;
+        let e = match h.choices.remove(0) {
+            C::Attack => Kh2HudEvent { kind: 1, value: 0 },
+            C::Magic { slot } => Kh2HudEvent { kind: 2, value: slot.into() },
+            C::Item { id } => Kh2HudEvent { kind: 3, value: id.into() },
+            C::Drive { form } => Kh2HudEvent { kind: 4, value: form.into() },
+            C::Reaction { cmd } => Kh2HudEvent { kind: 5, value: cmd.into() },
+        };
+        unsafe { *out = e };
+        1
+    })
+}
+
+/// One sprite of the HUD draw list.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Kh2HudSprite {
+    /// HUD texture id (`kh2_hud_texture_info` / `kh2_hud_texture_get`).
+    pub texture: i32,
+    /// 0 alpha, 1 additive, 2 subtractive.
+    pub blend: i32,
+    /// 1: nearest filtering; 1 in `text`: a glyph or icon of the font atlas.
+    pub nearest: i32,
+    pub text: i32,
+    /// Corners top-left, top-right, bottom-left, bottom-right: x, y in the 512 x 448 screen (y down).
+    pub pos: [f32; 8],
+    /// Texel coordinates of the corners.
+    pub uv: [f32; 8],
+    /// RGBA per corner, 0x80 = 1.0 (multiply the texel by colour / 128).
+    pub color: [u8; 16],
+}
+
+/// Copies up to `max` sprites of the last `kh2_hud_tick`'s draw list, in draw order; returns the
+/// count written.
+///
+/// # Safety
+/// `out` points to `max` `kh2_hud_sprite`s.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_hud_draw_list(handle: i32, out: *mut Kh2HudSprite, max: u32) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with(-1, |l| {
+        let Some((_, list)) = l.huds.get(&handle) else { return set_error("no HUD (kh2_hud_load)") };
+        let n = list.len().min(max as usize);
+        for (k, s) in list.iter().take(n).enumerate() {
+            let mut color = [0u8; 16];
+            for (i, c) in s.color.iter().enumerate() {
+                color[4 * i..4 * i + 4].copy_from_slice(c);
+            }
+            let flat = |v: [[f32; 2]; 4]| [v[0][0], v[0][1], v[1][0], v[1][1], v[2][0], v[2][1], v[3][0], v[3][1]];
+            unsafe { *out.add(k) = Kh2HudSprite { texture: s.texture as i32, blend: s.blend as i32, nearest: s.nearest.into(), text: s.text.into(), pos: flat(s.pos), uv: flat(s.uv), color } };
+        }
+        n as i32
+    })
+}
+
+/// Number of HUD textures (the menu art, the font pages, the icons) and the size of texture `id`
+/// into `w` / `h` (when `id` >= 0). Returns the texture count.
+///
+/// # Safety
+/// `w` and `h` are NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_hud_texture_info(handle: i32, id: i32, w: *mut u32, h: *mut u32) -> i32 {
+    with(-1, |l| {
+        let Some((hud, _)) = l.huds.get(&handle) else { return set_error("no HUD (kh2_hud_load)") };
+        if let Some(t) = usize::try_from(id).ok().and_then(|i| hud.textures.get(i)) {
+            unsafe {
+                if !w.is_null() {
+                    *w = t.width;
+                }
+                if !h.is_null() {
+                    *h = t.height;
+                }
+            }
+        }
+        hud.textures.len() as i32
+    })
+}
+
+/// HUD texture `id` as RGBA8 (row-major from the top, straight alpha, the PS2 texel values) into
+/// `out` of `cap` bytes; returns the byte count or -1.
+///
+/// # Safety
+/// `out` points to `cap` writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kh2_hud_texture_get(handle: i32, id: i32, out: *mut u8, cap: u32) -> i32 {
+    if out.is_null() {
+        return set_error("no buffer");
+    }
+    with(-1, |l| {
+        let Some((hud, _)) = l.huds.get(&handle) else { return set_error("no HUD (kh2_hud_load)") };
+        let Some(t) = usize::try_from(id).ok().and_then(|i| hud.textures.get(i)) else { return set_error("no such texture") };
         if (cap as usize) < t.rgba.len() {
             return set_error("buffer smaller than the texture");
         }

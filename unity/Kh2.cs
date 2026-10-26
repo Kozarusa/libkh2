@@ -252,6 +252,25 @@ public static class Kh2
     [DllImport(Lib)] public static extern int kh2_mesh_get([Out] float[] positions, [Out] float[] normals, [Out] float[] uvs, [Out] float[] colors, uint maxVertices, [Out] uint[] indices, uint maxIndices, [Out] Submesh[] subs, uint maxSubs);
     [DllImport(Lib)] public static extern int kh2_texture_info(int id, out uint width, out uint height);
     [DllImport(Lib)] public static extern int kh2_texture_get(int id, [Out] byte[] rgba, uint cap);
+    public const uint HudUp = 1, HudDown = 2, HudConfirm = 4, HudBack = 8, HudReaction = 16;
+    [StructLayout(LayoutKind.Sequential)]
+    public struct HudSprite
+    {
+        public int texture, blend, nearest, text;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)] public float[] pos;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)] public float[] uv;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)] public byte[] color;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct HudEvent { public int kind, value; }
+    [DllImport(Lib)] public static extern int kh2_hud_load(int handle, string world);
+    [DllImport(Lib)] public static extern int kh2_hud_input(int handle, uint buttons);
+    [DllImport(Lib)] public static extern int kh2_hud_set_items(int handle, ushort[] ids, byte[] counts, uint count);
+    [DllImport(Lib)] public static extern int kh2_hud_tick(int handle);
+    [DllImport(Lib)] public static extern int kh2_hud_draw_list(int handle, [Out] HudSprite[] sprites, uint max);
+    [DllImport(Lib)] public static extern int kh2_hud_poll_event(int handle, out HudEvent ev);
+    [DllImport(Lib)] public static extern int kh2_hud_texture_info(int handle, int id, out uint width, out uint height);
+    [DllImport(Lib)] public static extern int kh2_hud_texture_get(int handle, int id, [Out] byte[] rgba, uint cap);
     public const int CamModeFollow = 0, CamModeLook = 1, CamModeLockOn = 2, CamModeTalk = 4, CamModeOverhead = 5, CamModeBehind = 8;
     [DllImport(Lib)] public static extern int kh2_area_spawn(int handle, string area, int program, int withDisabled);
     [DllImport(Lib)] public static extern int kh2_enemy_count(int handle);

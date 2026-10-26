@@ -291,6 +291,15 @@ pub mod struggle {
     include!(concat!(env!("OUT_DIR"), "/struggle.rs"));
 }
 
+/// kh2-rs's command menu: `shared/hud.rs`'s menu records and `kh2-hud/src/hud_menu.rs`'s pure parts (spans by
+/// `build.rs`; the fields of `Tables` made public).
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod hud_menu {
+    use bevy::prelude::*;
+    use kh2_image::text::{Style, Token};
+    include!(concat!(env!("OUT_DIR"), "/hud_menu.rs"));
+}
+
 /// kh2-rs `kh2-event/src/npc.rs`'s talk constants and the talk camera's record (`talk_shot`, span by `build.rs`).
 #[allow(dead_code, clippy::all)]
 pub mod npc {

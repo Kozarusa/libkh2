@@ -374,6 +374,8 @@ pub struct Sora {
     pub reactions_taken: Vec<u8>,
     /// A talk holds the player's control (kh2-rs `talk_lock_pad`); `crate::talk` sets and clears it.
     pub control_locked: bool,
+    /// The HUD's Attack command: one press on the next tick (`crate::hud::Choice::Attack`).
+    pub menu_attack: bool,
     /// Sound and effect cues of every actor of this Sora (`crate::cue`), for `kh2_poll_cue`.
     pub cues: Vec<crate::cue::Cue>,
     /// An item use: (item id, the wait after frame trigger 6 when started).
@@ -472,6 +474,7 @@ impl Sora {
             leaf_bracer: 0.0,
             reactions_taken: Vec::new(),
             control_locked: false,
+            menu_attack: false,
             cues: Vec::new(),
             item_use: None,
             pose: true,
@@ -703,7 +706,14 @@ impl Sora {
     pub fn tick(&mut self, world: &World, input: &Input) {
         // A talk locks the player's control (bit 0 of 0x1d5d7b8, FUN_001b7d50): the pad reads as untouched.
         let idle = Input { cam_look: input.cam_look, ..Default::default() };
-        let input = if self.control_locked { &idle } else { input };
+        let pressed = Input { attack: true, ..*input };
+        let input = if self.control_locked {
+            &idle
+        } else if std::mem::take(&mut self.menu_attack) {
+            &pressed
+        } else {
+            input
+        };
         self.reactions_taken.clear();
         self.consume_reaction();
         let attack = input.attack && !self.prev.attack;
