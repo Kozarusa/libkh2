@@ -1003,7 +1003,7 @@ impl Enemies {
                     && r.consts.types_clash(GUARD_TYPE, row.r#type)
                     // The cone test FUN_0018d308 both ways (guard row 573 with Sora's facing, the enemy row with
                     // its own): `from_other` is the flat direction from the other owner to this one.
-                    && params.atkp(crate::spell::ATKP_REFLECT_GUARD as i16).map_or(true, |gr| rules::reflect_cone(gr.reflect_range, gr.reflect_angle, sora.motor.forward(), (sora.motor.pos - e.obj.motor.pos).with_y(0.0).normalize_or_zero()))
+                    && params.atkp(crate::spell::ATKP_REFLECT_GUARD as i16).is_none_or(|gr| rules::reflect_cone(gr.reflect_range, gr.reflect_angle, sora.motor.forward(), (sora.motor.pos - e.obj.motor.pos).with_y(0.0).normalize_or_zero()))
                     && rules::reflect_cone(row.reflect_range, row.reflect_angle, e.obj.motor.forward(), (e.obj.motor.pos - sora.motor.pos).with_y(0.0).normalize_or_zero())
                     && overlap(&v, &g)
                 {
