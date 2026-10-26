@@ -9,3 +9,7 @@
 /local
 /build
 /dist
+
+BRIEF.md
+obj/
+bin/
