@@ -1,3 +1,18 @@
+# Remaining (v2.3.0, Final Mix)
+
+Still valuable, in order:
+
+1. HUD: banners and experience popups, tutorial windows, mission panels; the message window's pages,
+   speech tail, pointer and selection slots.
+2. Oracle coverage of the actor-bound rules: wall slide, attack-table choice, hit reaction choice,
+   cast flow, drive entry, level / EXP (they need the player actor laid out in kh2-ee).
+3. The 49 changed Final Mix functions marked "not identified" in docs/FM-CHANGED.md (the motion
+   request FM 0x17f620, the player method FM 0x1d0878 and the ability helpers first).
+4. Reflect's cone test and script action; Final Magnet's global flag; the spells' effect elements.
+5. The two Critical rules found (FM 0x1b73e8, FM 0x1c068c) once their records are identified; the
+   writer of status +0x240.
+6. M_EX210 / M_EX690's unserved host calls; 92 unused abilities (mostly members' and forms').
+7. Human checks (README "Status"): Unity, Linux / macOS, by ear, by eye.
 # Remaining (v2.2.0, Final Mix)
 
 Valuable items still open (in rough order of value to a host):

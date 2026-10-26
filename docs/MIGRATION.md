@@ -32,6 +32,12 @@ Added, nothing removed: `kh2_set_difficulty`, `kh2_hud_info`, enemy event `KH2_E
 window met Reflect's guard). Damage now passes the difficulty step (Standard by default: no change)
 and the Final Mix low-HP step in every hit path.
 
+## 2.3.0
+
+Added, nothing removed: `kh2_hud_message`, `kh2_hud_message_confirm`; Reflect clashes only with
+enemy attacks the clash table pairs with its guard; the optional `KH2_NAMES` name list. New dust and
+footstep cues (kind 8, dust 8 to 11) appear in `kh2_poll_cue`.
+
 ## Version policy
 
 `KH2_VERSION` / `kh2_version()` is (major << 16) | (minor << 8) | patch:
