@@ -16,6 +16,7 @@
 //! banners and the INFORMATION bar are not drawn yet (TODO.md).
 
 use kh2_enemy_host::hud_gauge::{self as hg, dg, g, DriveGauge, DriveMode, DriveTables, PanelEvent, PanelState};
+use kh2_enemy_host::hud_target as ht;
 use kh2_enemy_host::hud_menu::{self as hm, CommandMenu, Label, MenuEntry, MenuPage, Reaction, Tables};
 use kh2_image::font::{Atlas, Font, FontSet};
 use kh2_image::seqd::{Ext, Player, Quad, Seqd};
@@ -241,6 +242,17 @@ struct Panel {
     alarm: bool,
 }
 
+/// The target gauge and the lock-on reticle (kh2-rs `hud_target::TargetHud`).
+#[derive(Default)]
+struct TargetHud {
+    gauge: [usize; 6],
+    pips: Vec<[usize; 2]>,
+    reticle: usize,
+    bound: Option<u32>,
+    last_hp: i32,
+    prev_hp: i32,
+}
+
 /// The HUD of one Sora.
 pub struct Hud {
     pub textures: Vec<Texture>,
@@ -271,6 +283,47 @@ pub struct Hud {
     panel: Option<Panel>,
     /// Sounds the panel asks for (the danger alarm: system sound 9).
     pub sounds: Vec<u32>,
+    /// The target the gauge shows (enemy id, HP, maximum HP): the locked enemy, else the one hit last
+    /// (kept for kh2-rs's `HOLD`); and the lock-on point projected on the HUD screen (HUD units), if any.
+    pub target: Option<(u32, i32, i32)>,
+    pub reticle: Option<[f32; 2]>,
+    target_hud: Option<TargetHud>,
+    /// Each enemy's HP last tick and the one hit last with its ticks left (kh2-rs `Seen`, `HOLD`).
+    seen: std::collections::HashMap<u32, i32>,
+    shown: Option<(u32, u32)>,
+}
+
+/// kh2-rs `hud_target::HOLD`: seconds an enemy's gauge stays up after a hit while not locked, in ticks.
+pub const HOLD_TICKS: u32 = 300;
+
+/// One enemy as the target gauge sees it.
+#[derive(Clone, Copy, Debug)]
+pub struct Foe {
+    pub id: u32,
+    pub hp: i32,
+    pub max_hp: i32,
+    /// The lock-on point (cm).
+    pub point: glam::Vec3,
+}
+
+/// A camera's view for the projection (`kh2_cam_view`): eye, look-at point, horizontal field of view.
+#[derive(Clone, Copy, Debug)]
+pub struct View {
+    pub eye: glam::Vec3,
+    pub look: glam::Vec3,
+    pub fov: f32,
+}
+
+/// The HUD point of a world point under `view` (the game's 4:3 picture on the 512 x 448 screen; HUD y
+/// is the picture's y minus `Y_BIAS`, kh2-rs `viewport_to_hud`). `None` behind the camera.
+pub fn project(view: &View, p: glam::Vec3) -> Option<[f32; 2]> {
+    let fov_v = 2.0 * ((view.fov * 0.5).tan() / (4.0 / 3.0)).atan();
+    let vp = glam::Mat4::perspective_rh(fov_v, 4.0 / 3.0, 10.0, 1.0e6) * glam::Mat4::look_at_rh(view.eye, view.look, glam::Vec3::Y);
+    let c = vp * p.extend(1.0);
+    if c.w <= 1.0 {
+        return None;
+    }
+    Some([(c.x / c.w * 0.5 + 0.5) * SCREEN[0], (0.5 - c.y / c.w * 0.5) * SCREEN[1] - Y_BIAS])
 }
 
 impl Hud {
@@ -304,6 +357,11 @@ impl Hud {
             drive_tables: DriveTables::from_exe(&exe),
             panel: None,
             sounds: Vec::new(),
+            target: None,
+            reticle: None,
+            target_hud: None,
+            seen: std::collections::HashMap::new(),
+            shown: None,
         };
         let pair = |b: &[u8]| -> Option<(kh2_image::imgd::Image, Seqd)> {
             let e = kh2_bar::parse(b).ok()?;
@@ -566,6 +624,7 @@ impl Hud {
             self.tables = Some(tb);
         }
         self.gauge_tick(_sora);
+        self.target_tick();
         let files = &self.files;
         for n in &mut self.nodes {
             n.player.tick(1.0);
@@ -689,6 +748,131 @@ impl Hud {
         p.last_hp = hp;
         p.lag_hp = hp;
         self.panel = Some(p);
+    }
+
+    /// kh2-rs `hud_target::update`'s choice of the target: the locked enemy (the one nearest `lock`, the
+    /// point Sora locks on), else the enemy that lost HP last for `HOLD_TICKS`; the reticle at the locked
+    /// enemy's point projected with `view`.
+    pub fn observe(&mut self, foes: &[Foe], lock: Option<glam::Vec3>, view: Option<&View>) {
+        for f in foes {
+            let last = self.seen.insert(f.id, f.hp).unwrap_or(f.hp);
+            if f.hp < last {
+                self.shown = Some((f.id, HOLD_TICKS));
+            }
+        }
+        self.seen.retain(|id, _| foes.iter().any(|f| f.id == *id));
+        if let Some((_, left)) = self.shown.as_mut() {
+            *left = left.saturating_sub(1);
+        }
+        let locked = lock.and_then(|l| foes.iter().min_by(|a, b| a.point.distance(l).total_cmp(&b.point.distance(l))));
+        let held = self.shown.filter(|s| s.1 > 0).and_then(|s| foes.iter().find(|f| f.id == s.0));
+        self.target = locked.or(held).map(|f| (f.id, f.hp, f.max_hp));
+        self.reticle = match (locked, view) {
+            (Some(f), Some(v)) => project(v, f.point),
+            _ => None,
+        };
+    }
+
+    /// kh2-rs `hud_target::build`.
+    fn target_build(&mut self) {
+        let Some(field) = self.field else { return };
+        let (fiel, gaug) = (field + ht::FIEL, field + hg::GAUG);
+        let hidden = |h: &mut Hud, file, parent, group| {
+            let i = h.add(file, parent, Some(group));
+            h.nodes[i].visible = false;
+            i
+        };
+        let tag = hidden(self, gaug, None, ht::g::TAG);
+        let gauge = [tag, hidden(self, gaug, Some(tag), ht::g::FRAME), hidden(self, gaug, Some(tag), ht::g::BAR), hidden(self, gaug, Some(tag), ht::g::CAP), hidden(self, gaug, Some(tag), ht::g::TRAIL), hidden(self, gaug, Some(tag), ht::g::CUR)];
+        let step = self.files.get(gaug).and_then(|f| f.seq.groups.get(ht::g::PIP_BACK)).map_or(0.0, |gr| gr.unk20 as f32);
+        let mut pips = Vec::new();
+        for k in 0..ht::PIPS {
+            let back = hidden(self, gaug, Some(tag), ht::g::PIP_BACK);
+            let fill = hidden(self, gaug, Some(tag), ht::g::PIP_FULL);
+            for n in [back, fill] {
+                self.nodes[n].off = [-step * k as f32, 0.0];
+            }
+            pips.push([back, fill]);
+        }
+        let reticle = hidden(self, fiel, None, ht::g::FREE);
+        self.target_hud = Some(TargetHud { gauge, pips, reticle, ..Default::default() });
+    }
+
+    /// kh2-rs `hud_target::update` with the target and reticle the host (or `kh2_hud_tick`) set.
+    fn target_tick(&mut self) {
+        if self.field.is_none() {
+            return;
+        }
+        if self.target_hud.is_none() {
+            self.target_build();
+        }
+        let Some(mut h) = self.target_hud.take() else { return };
+        // The reticle on the locked target (group `lock_group`, 0x1b) at its projected point.
+        match self.reticle {
+            Some(p) => {
+                let want = ht::lock_group();
+                if self.nodes[h.reticle].player.group != Some(want) {
+                    self.group(h.reticle, want);
+                }
+                self.nodes[h.reticle].pos = p;
+                self.nodes[h.reticle].visible = true;
+            }
+            None => self.nodes[h.reticle].visible = false,
+        }
+        let Some((id, hp, max)) = self.target else {
+            for &i in h.gauge.iter().chain(h.pips.iter().flatten()) {
+                self.nodes[i].visible = false;
+            }
+            h.bound = None;
+            self.target_hud = Some(h);
+            return;
+        };
+        let (hp, max) = (hp.max(0), max.max(1));
+        if h.bound != Some(id) {
+            h.bound = Some(id);
+            h.prev_hp = hp;
+            h.last_hp = hp;
+        } else if hp != h.last_hp {
+            h.prev_hp = h.last_hp;
+            h.last_hp = hp;
+            self.group(h.gauge[4], ht::g::TRAIL);
+        }
+        let seg = ht::SEGMENT;
+        let segs = (max - 1) / seg;
+        let cur_idx = (hp - 1) / seg;
+        let prev_idx = (h.prev_hp - 1) / seg;
+        let mut v_max = max - segs * seg;
+        let v_cur = hp - cur_idx * seg;
+        let mut v_prev = h.prev_hp - prev_idx * seg;
+        if v_max < v_cur || segs != cur_idx {
+            v_max = seg;
+        }
+        if prev_idx != cur_idx {
+            v_prev = seg;
+        }
+        for i in h.gauge {
+            self.nodes[i].visible = true;
+        }
+        self.nodes[h.gauge[1]].visible = ht::frame_shown(hp, max);
+        for (node, v) in [(2, v_max), (4, v_prev), (5, v_cur)] {
+            let n = &mut self.nodes[h.gauge[node]];
+            n.ext.scale[1] = v as f32 / 100.0;
+            n.off = [-(v as f32), 0.0];
+        }
+        self.nodes[h.gauge[3]].off = [-(v_max as f32), 0.0];
+        let n_seg = (((max - 1) / seg).max(0) as usize).min(ht::PIPS);
+        let (cur_seg, prev_seg) = (((hp - 1) / seg).max(0) as usize, ((h.prev_hp - 1) / seg).max(0) as usize);
+        for k in 0..ht::PIPS {
+            let [back, fill] = h.pips[k];
+            self.nodes[back].visible = k < n_seg;
+            let show = n_seg > 0 && k < prev_seg.max(cur_seg).min(ht::PIPS);
+            self.nodes[fill].visible = show;
+            let want = if k < cur_seg { ht::g::PIP_FULL } else { ht::g::PIP_LOST };
+            if show && self.nodes[fill].player.group != Some(want) {
+                self.group(fill, want);
+            }
+        }
+        self.target_hud = Some(h);
     }
 
     /// kh2-rs `hud_gauge::update` / `panel_frame` / `update_drive` with Sora's values.

@@ -2331,3 +2331,36 @@ fn the_hp_panel_follows_sora() {
     let _ = std::fs::create_dir_all(&dir);
     write_png(&dir.join("hud_gauge.png"), fw, fh, &frame);
 }
+
+/// The target gauge and the lock-on reticle (round 11, kh2-rs `hud_target`): a locked enemy gets its
+/// gauge (200 HP a segment, pips for the segments below) and the reticle at its projected point; an
+/// enemy hit without a lock keeps its gauge for `HOLD_TICKS`.
+#[test]
+fn the_target_gauge_and_reticle_follow_the_lock() {
+    use kh2::hud::{project, Foe, Hud, View, HOLD_TICKS};
+    let Some(mut d) = disc() else { return };
+    let game = Arc::new(d.game().expect("Sora loads"));
+    let w = floor();
+    let s = standing(&game, &w);
+    let mut hud = Hud::load(&mut d, "tt").expect("HUD loads");
+    let view = View { eye: Vec3::new(0.0, 250.0, -450.0), look: Vec3::new(0.0, 120.0, 0.0), fov: 1.2 };
+    let foe = Foe { id: 7, hp: 450, max_hp: 600, point: Vec3::new(0.0, 100.0, 300.0) };
+    hud.observe(&[foe], Some(foe.point), Some(&view));
+    for _ in 0..10 {
+        hud.tick(&s);
+    }
+    assert_eq!(hud.target, Some((7, 450, 600)));
+    let at = hud.reticle.expect("reticle");
+    assert_eq!(Some(at), project(&view, foe.point));
+    assert!((at[0] - 256.0).abs() < 1.0 && at[1] > 0.0 && at[1] < 448.0, "centre column: {at:?}");
+    let n_locked = hud.draw_list().len();
+    // No lock: an enemy that loses HP keeps its gauge up for a while, then it goes.
+    hud.observe(&[Foe { hp: 400, ..foe }], None, Some(&view));
+    assert_eq!(hud.target, Some((7, 400, 600)));
+    assert!(hud.reticle.is_none());
+    for _ in 0..HOLD_TICKS {
+        hud.observe(&[Foe { hp: 400, ..foe }], None, Some(&view));
+    }
+    assert_eq!(hud.target, None);
+    eprintln!("target: reticle at {at:?}, {n_locked} sprites with the lock");
+}

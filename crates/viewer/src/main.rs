@@ -276,6 +276,8 @@ fn main() {
         // and centred.
         if let Some(h) = hud.as_mut() {
             h.reaction_cmd = enemies.as_ref().and_then(|e| e.offer).map(|o| o.cmd);
+            let foes: Vec<kh2::hud::Foe> = enemies.as_ref().map(|en| en.list.iter().filter(|e| e.alive() && !e.removed).map(|e| kh2::hud::Foe { id: e.id, hp: e.hp, max_hp: e.stats.max_hp, point: e.pos() + Vec3::Y * 100.0 }).collect()).unwrap_or_default();
+            h.observe(&foes, sora.target.map(|t| t.pos), Some(&kh2::hud::View { eye, look: at, fov }));
             h.tick(&sora);
             let list = h.draw_list();
             let hh = H;

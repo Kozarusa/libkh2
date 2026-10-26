@@ -334,6 +334,31 @@ fn struggle() {
         .replace("\nfn fill(", "\npub fn fill(");
     assert!(gauge.contains("pub mod g {") && gauge.contains("pub fn fill("), "gauge spans public");
     std::fs::write(Path::new(&dir).join("hud_gauge.rs"), gauge).unwrap();
+    // The target gauge and the lock-on reticle: `kh2-hud/src/hud_target.rs`'s constants, groups, `lock_group`,
+    // `frame_shown`, and `shared/hud.rs`'s `marker_group`.
+    let ts = read("kh2-hud/src/hud_target.rs");
+    let mut target = span(&h, "/// Magic lock-on marker groups", "pub fn marker_group");
+    target.push_str("\n\n");
+    for (a, b) in [
+        ("/// The field file is the first pair", "const FIEL"),
+        ("/// HP per bar segment and pixels per HP.", "const SEGMENT"),
+        ("/// Pips the row holds", "const PIPS"),
+        ("mod g {", "mod g"),
+        ("/// The group of the lock-on icon on a locked target", "pub fn lock_group"),
+        ("/// Whether the gauge's frame (group 42", "fn frame_shown"),
+    ] {
+        target.push_str(&span(&ts, a, b));
+        target.push_str("\n\n");
+    }
+    let target = target
+        .replace("\r\n", "\n")
+        .replace("\nconst FIEL", "\npub const FIEL")
+        .replace("\nconst SEGMENT", "\npub const SEGMENT")
+        .replace("\nconst PIPS", "\npub const PIPS")
+        .replace("\nmod g {", "\npub mod g {")
+        .replace("\nfn frame_shown(", "\npub fn frame_shown(");
+    assert!(target.contains("pub mod g {") && target.contains("pub fn frame_shown("), "target spans public");
+    std::fs::write(Path::new(&dir).join("hud_target.rs"), target).unwrap();
 }
 
 fn main() {

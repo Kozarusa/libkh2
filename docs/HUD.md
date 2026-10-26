@@ -46,6 +46,10 @@ deck with the Reversal capsule, the HP ring, MP and the drive gauge at MAX 9). T
 `the_hp_panel_follows_sora` saves `local/hud_gauge.png` (15 of 40 HP after a hit, half MP, 2.5
 drive points).
 
+## The target gauge and the lock-on reticle (1.2)
+
+Top right and on the target, compiled from kh2-rs `hud_target` (groups, `lock_group`, `frame_shown`, `SEGMENT`, `PIPS`) with its frame transcribed: the locked enemy (the one nearest Sora's lock-on point), else the enemy that lost HP last for `HOLD_TICKS` (300), gets the gauge (200 HP a segment, the trail of the last hit, a pip per segment below); the reticle (group 0x1b) sits at the locked enemy's point (feet + 100 cm, decided: kh2-rs takes the first target shape's centre) projected with the library's camera (`kh2_camera_tick`'s view; `Hud::observe` / `project` for Rust hosts with their own camera). `the_target_gauge_and_reticle_follow_the_lock`; the viewer's battle frame shows both.
+
 ## The draw list
 
 `kh2_hud_draw_list` gives `kh2_hud_sprite`s in draw order: texture id, blend (0 alpha, 1

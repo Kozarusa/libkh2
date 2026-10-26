@@ -3142,7 +3142,10 @@ pub extern "C" fn kh2_hud_tick(handle: i32) -> i32 {
     with(-1, |l| {
         let offer = l.enemies.get(&handle).and_then(|e| e.offer).filter(|o| o.status == crate::enemy::Status::Available).map(|o| o.cmd);
         let Some(s) = usize::try_from(handle).ok().and_then(|k| l.soras.get_mut(k)).and_then(Option::as_mut) else { return -1 };
+        let foes: Vec<crate::hud::Foe> = l.enemies.get(&handle).map(|en| en.list.iter().filter(|e| e.alive() && !e.removed).map(|e| crate::hud::Foe { id: e.id, hp: e.hp, max_hp: e.stats.max_hp, point: e.pos() + glam::Vec3::Y * 100.0 }).collect()).unwrap_or_default();
+        let view = l.cameras.get(handle as usize).and_then(Option::as_ref).and_then(|c| c.rig.as_ref()).map(|r| crate::hud::View { eye: r.pos, look: r.look, fov: r.fov });
         let Some((h, list)) = l.huds.get_mut(&handle) else { return set_error("no HUD (kh2_hud_load)") };
+        h.observe(&foes, s.target.map(|t| t.pos), view.as_ref());
         h.reaction_cmd = offer;
         h.tick(s);
         // The panel's sounds (the danger alarm, system sound 9 of se000) as numbered sound cues.

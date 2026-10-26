@@ -310,6 +310,13 @@ pub mod hud_gauge {
     include!(concat!(env!("OUT_DIR"), "/hud_gauge.rs"));
 }
 
+/// kh2-rs's target gauge and lock-on reticle rules (`kh2-hud/src/hud_target.rs`, `shared/hud.rs`'s
+/// `marker_group`; spans by `build.rs`, made public).
+#[allow(dead_code, unused_imports, clippy::all)]
+pub mod hud_target {
+    include!(concat!(env!("OUT_DIR"), "/hud_target.rs"));
+}
+
 /// kh2-rs `kh2-event/src/npc.rs`'s talk constants and the talk camera's record (`talk_shot`, span by `build.rs`).
 #[allow(dead_code, clippy::all)]
 pub mod npc {
