@@ -33,10 +33,15 @@ out or simplifies some parts of its own. Both lists are here. kh2-rs keeps its o
 - Ground mover: kh2fm-rs's `Motor::ground_velocity` (speed along the stick); the USA build used the
   oracle-tested `ground_step` that kh2fm-rs does not have. The A / B against kh2fm-rs's Sora matches
   (0.5 cm over 1080 ticks, 0.7 cm over 960 with the wall recoil).
-- Damage: libkh2 keeps kh2fm-rs's damage rule (the USA formula); the Final Mix executable's damage
-  (FM 0x1a1e1c, 1172 bytes against 648) and attacker bonuses (FM 0x1a2340) differ from it in 368 and
-  1954 of 3000 oracle cases (`tests/oracle.rs`, report only; `KH2_ORACLE_STRICT=1` fails). Not yet
-  known whether the differences are rules or the test's input layout (FM may move status fields).
+- Damage (2.1.0, disassembled): FM 0x1a1e20..0x1a2104 is the USA routine with the Final Mix status
+  layout (Defender's byte +0x1fc, the object +0x25c, the element boosts +0x210..+0x214, the ability
+  block's combo lengths and boosts 4 bytes later), Anti as form 6, the difficulty helper's extra
+  Critical case (200 % taken / 125 % dealt; difficulty is not modelled), and one new last step for
+  every type (`enemy::low_hp_scale`: HP at or below max HP x status +0x240 scales the damage by
+  `sstm` +0x178). Round 12's 368 / 1954 differing cases were the test's USA layout; the oracle tests
+  are strict again and match 3000 / 3000. Open: the writer of status +0x240 (libkh2 passes 0.0, so
+  the step is applied in Sora's hit paths but only changes a hit on a victim at 0 HP); the party and
+  summon hit paths skip it.
 - Text: the Final Mix disc's messages are Japanese; the HUD's Japanese glyphs (`kh2_image` text kind
   `Japanese`, the font set's Japanese companion) are not drawn yet. kh2fm-rs's English text import
   (a USA disc copy in the user's config folder) is not used: libkh2 reads one disc.

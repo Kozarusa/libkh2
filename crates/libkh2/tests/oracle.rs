@@ -18,6 +18,12 @@ const CASES: u32 = 3000;
 /// The functions in the Final Mix executable (SLPM_666.75; kh2fm-rs's function map pairs them with
 /// the USA 0x1a0610, 0x1a0a18, 0x1a0aa8 and 0x1a0be0 the comments name).
 const FM_DAMAGE: u32 = 0x1a1e1c;
+/// FM 0x19ba60 (USA 0x19a3f8), the object-exists test the damage routine's helpers ask.
+const FM_OBJECT_EXISTS: u32 = 0x19ba60;
+/// FM 0x352130 (USA 0x360130): the pointer to the `sstm` record the routine reads (+0x94 Anti's
+/// factor, Final Mix +0x178 the low-HP percent).
+const FM_SSTM_PTR: u32 = 0x352130;
+const SSTM: u32 = 0x0185_0000;
 const FM_BONUS_A: u32 = 0x1a22b0;
 const FM_BONUS_B: u32 = 0x1a2340;
 const FM_HP_LOW: u32 = 0x1a2478;
@@ -40,14 +46,19 @@ fn w16(ee: &mut Ee, at: u32, v: u16) {
 /// `FUN_001a0610`, the game's per-hit damage (attacker status, victim status, attack row), against
 /// `kh2::enemy::damage` (kh2-rs `GameData::damage`), which every hit in libkh2 uses.
 ///
-/// Layout (decompilation of 0x1a0610): a0 the victim's status block (+0 HP, +4 max HP, +0x18c
+/// Layout (USA 0x1a0610; Final Mix FM 0x1a1e1c, disassembled: the same code with the victim's
+/// Defender byte at +0x1fc, its object at +0x25c, Anti as form 6, then a new last step,
+/// `kh2::enemy::low_hp_scale`): a0 the victim's status block (+0 HP, +4 max HP, +0x18c
 /// defense u16, +0x1a0 max taken, +0x1a4 min taken, +0x1a8.. the element percents, +0x1ae the
-/// general percent, +0x1f8 Defender's byte, +0x24c the victim object); a1 the hit record (+0xc the
+/// general percent, +0x1fc Defender's byte, +0x240 the low-HP ratio (f32), +0x25c the victim
+/// object); a1 the hit record (+0xc the
 /// attacker object, whose +0x48c is its status block: +0x188 strength, +0x18a magic, +0x198 max
 /// dealt, +0x19c min dealt; object +0x588 flags); a2 the attack row (`atkp`, 48 bytes); a3 0 (the
 /// type-5 row reads the victim's +4).
 ///
-/// Stand-ins: `FUN_0019a3f8` (the object-exists test) answers 0, so the boosts of `FUN_001a0898`
+/// Round 12 ran this with the USA layout and no stand-in for FM 0x19ba60 and saw 368 of 3000
+/// cases differ: those were the test's state, not the rules (with the Final Mix layout every case
+/// matches). Stand-ins: FM 0x19ba60 (the object-exists test) answers 0, so the boosts of `FUN_001a0898`
 /// (difficulty and party bonus) and Anti's factor do not apply; the attacker's boosts
 /// (`FUN_001a0a18`, `FUN_001a0aa8`) read a zeroed block and pass the value through; Defender's
 /// byte is 0, the attacker object's flags 0 (no Berserk), the global `DAT_0035d268` is 0
@@ -56,7 +67,7 @@ fn w16(ee: &mut Ee, at: u32, v: u16) {
 #[test]
 fn orig_1a0610_damage_matches_the_game() {
     let Some(mut ee) = machine("oracle test of 0x1a0610 (damage)") else { return };
-    ee.hooks.insert(0x19a3f8, |e: &mut Ee| e.gpr[2] = 0);
+    ee.hooks.insert(FM_OBJECT_EXISTS, |e: &mut Ee| e.gpr[2] = 0);
     let mut r = Rng::new(0x1a0610);
     let mut checked = 0;
     let mut diffs = Vec::new();
@@ -76,6 +87,9 @@ fn orig_1a0610_damage_matches_the_game() {
         let defense = r.below(100) as i32;
         let max_taken = [i32::MAX, 9999, r.below(500) as i32][r.below(3) as usize];
         let min_taken = [0, 1, r.below(5) as i32][r.below(3) as usize];
+        let ratio = [0.0f32, 0.25, 0.5, 1.0, r.below(1000) as f32 / 1000.0][r.below(5) as usize];
+        let percent = [100i32, 50, 200, 150, r.below(300) as i32][r.below(5) as usize];
+        let hp = [hp, 0, max_hp / 4, max_hp / 2][r.below(4) as usize];
         let mut weak = [100i32; 7];
         for x in &mut weak {
             *x = [100, 0, 50, 150, 200, r.below(256) as i32][r.below(6) as usize];
@@ -86,6 +100,10 @@ fn orig_1a0610_damage_matches_the_game() {
         zero(&mut ee, ATTACKER, 0x300);
         zero(&mut ee, HIT, 0x20);
         zero(&mut ee, ROW, 0x30);
+        zero(&mut ee, SSTM, 0x200);
+        ee.w32(FM_SSTM_PTR, SSTM);
+        ee.w32(SSTM + 0x178, percent as u32);
+        ee.write(VICTIM + 0x240, &ratio.to_le_bytes());
         ee.w32(VICTIM, hp as u32);
         ee.w32(VICTIM + 4, max_hp as u32);
         w16(&mut ee, VICTIM + 0x18c, defense as u16);
@@ -99,7 +117,8 @@ fn orig_1a0610_damage_matches_the_game() {
         w16(&mut ee, ATTACKER + 0x188, strength as u16);
         w16(&mut ee, ATTACKER + 0x18a, magic as u16);
         // The attacker's element boosts (Fire / Blizzard / Thunder Boost, percent; 100 none).
-        for o in [0x20c, 0x20e, 0x210] {
+        // Final Mix: the boosts sit 4 bytes later than on USA (+0x210 / +0x212 / +0x214).
+        for o in [0x210, 0x212, 0x214] {
             w16(&mut ee, ATTACKER + o, 100);
         }
         ee.w32(ATTACKER + 0x198, max_dealt as u32);
@@ -111,9 +130,9 @@ fn orig_1a0610_damage_matches_the_game() {
         // The library's.
         let from = kh2_enemy_host::data::Stats { strength, magic, max_dealt, min_dealt, ..Default::default() };
         let to = kh2_enemy_host::data::Stats { max_hp, defense, max_taken, min_taken, weakness: weak, ..Default::default() };
-        let port = kh2::enemy::damage(&atk, &from, &to);
+        let port = kh2::enemy::low_hp_scale(kh2::enemy::damage(&atk, &from, &to), hp, max_hp, ratio, percent);
         if game.max(0) != port {
-            diffs.push(format!("case {n}: type {ty} crit {crit} power {power} element {element} str {strength} mag {magic} dealt {min_dealt}..{max_dealt} def {defense} taken {min_taken}..{max_taken} weak {weak:?} maxhp {max_hp}: game {game} lib {port}"));
+            diffs.push(format!("case {n}: type {ty} crit {crit} power {power} element {element} str {strength} mag {magic} dealt {min_dealt}..{max_dealt} def {defense} taken {min_taken}..{max_taken} weak {weak:?} hp {hp} maxhp {max_hp} ratio {ratio} percent {percent}: game {game} lib {port}"));
         }
         checked += 1;
     }
@@ -121,9 +140,7 @@ fn orig_1a0610_damage_matches_the_game() {
     for d in diffs.iter().take(8) {
         eprintln!("  {d}");
     }
-    // Final Mix: FM 0x1a1e1c is a changed function (1172 bytes against the USA 648; kh2fm-rs has not ported it).
-    // Known divergence (docs/DEVIATIONS.md); KH2_ORACLE_STRICT=1 makes it fail.
-    assert!(diffs.is_empty() || std::env::var_os("KH2_ORACLE_STRICT").is_none(), "{} of {checked} cases differ", diffs.len());
+    assert!(diffs.is_empty(), "{} of {checked} cases differ", diffs.len());
 }
 
 /// `FUN_001a0a18` (element boosts) then `FUN_001a0aa8` (Combo / Air Combo / Reaction Boost, with
@@ -131,10 +148,12 @@ fn orig_1a0610_damage_matches_the_game() {
 /// lengths) against `kh2_game_core::abilities::attacker_bonuses`, which libkh2 applies to every hit
 /// Sora, his members' and his summon's attacks land.
 ///
-/// Layout: the attacker's status block, its ability block at +0x1cc (kh2-rs `Block`: bits +0, combo
-/// lengths +0x28 / +0x29, element percents +0x40..+0x44, boosts +0x46..+0x4a), its object at +0x24c
+/// Layout (Final Mix, FM 0x1a22b0 / 0x1a2340 / 0x177ba0 / 0x177bf8 disassembled: the USA code
+/// with the block fields after the bits 4 bytes later and the object at +0x25c; the rules are the
+/// same): the attacker's status block, its ability block at +0x1cc (bits +0, combo lengths
+/// +0x2c / +0x2d, element percents +0x44..+0x48, boosts +0x4a..+0x4e), its object at +0x25c
 /// (whose +0x48c is the status and +0xb04 the hit counter); the row's +9 element and +0x2e kind.
-/// No stand-ins.
+/// Round 12's 1954 differing cases were the USA layout. No stand-ins.
 #[test]
 fn orig_1a0a18_1a0aa8_attacker_bonuses_match_the_game() {
     use kh2_game_core::abilities::{attacker_bonuses, Block, BIT_AIR_COMBO_BOOST, BIT_COMBO_BOOST, BIT_REACTION_BOOST};
@@ -168,11 +187,11 @@ fn orig_1a0a18_1a0aa8_attacker_bonuses_match_the_game() {
         for (k, w) in b.bits.iter().enumerate() {
             ee.w32(blk + 4 * k as u32, *w);
         }
-        ee.write(blk + 0x28, &[b.ground_combo as u8, b.air_combo as u8]);
-        for (o, v) in [(0x40, b.fire), (0x42, b.blizzard), (0x44, b.thunder), (0x46, b.combo_boost), (0x48, b.air_combo_boost), (0x4a, b.reaction_boost)] {
+        ee.write(blk + 0x2c, &[b.ground_combo as u8, b.air_combo as u8]);
+        for (o, v) in [(0x44, b.fire), (0x46, b.blizzard), (0x48, b.thunder), (0x4a, b.combo_boost), (0x4c, b.air_combo_boost), (0x4e, b.reaction_boost)] {
             w16(&mut ee, blk + o, v);
         }
-        ee.w32(ATTACKER + 0x24c, ATTACKER_OBJ);
+        ee.w32(ATTACKER + 0x25c, ATTACKER_OBJ);
         ee.w32(ATTACKER_OBJ + 0x48c, ATTACKER);
         ee.write(ATTACKER_OBJ + 0xb04, &[hits]);
         ee.write(ROW + 9, &[element]);
@@ -191,8 +210,7 @@ fn orig_1a0a18_1a0aa8_attacker_bonuses_match_the_game() {
     for d in diffs.iter().take(5) {
         eprintln!("  {d}");
     }
-    // Final Mix: FM 0x1a2340 is a changed function (308 bytes against 248); known divergence (docs/DEVIATIONS.md).
-    assert!(diffs.is_empty() || std::env::var_os("KH2_ORACLE_STRICT").is_none());
+    assert!(diffs.is_empty(), "{} of {CASES} cases differ", diffs.len());
 }
 
 fn row() -> kh2_tables::tables::Atkp {

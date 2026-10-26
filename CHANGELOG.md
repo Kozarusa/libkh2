@@ -2,6 +2,12 @@
 
 The C API version is `kh2_version()` (`KH2_VERSION` in `kh2.h`). Each entry names what a host sees.
 
+## 2.1.0 (round 13)
+
+- Damage on Final Mix: the Final Mix damage routine disassembled (FM 0x1a1e20); `enemy::low_hp_scale`
+  (its new last step, `sstm` +0x178) in Sora's hit paths; the damage and attacker-bonus oracle
+  tests run the Final Mix code with its status layout and match 3000 / 3000 (strict again).
+
 ## 2.0.0 (round 12): Final Mix
 
 - The library reads the Kingdom Hearts II Final Mix disc (`SLPM_666.75`) and only it: `kh2_init`

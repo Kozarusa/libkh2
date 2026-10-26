@@ -79,6 +79,9 @@ pub struct Params {
     pub item_stats: Vec<t::ItemStat>,
     pub charge_feed: f32,
     pub low_hp_fraction: f32,
+    /// Final Mix `sstm` +0x178 (an i32 percent): the damage scale of the last step of the Final Mix
+    /// damage routine (FM 0x1a1fd8, `enemy::low_hp_scale`); 100 without the word.
+    pub low_hp_damage_percent: i32,
 }
 
 /// kh2-rs `combat::ReactionData`: the executable's constants, the `sstm` defaults, the `patn` table.
@@ -263,8 +266,9 @@ impl Disc {
         let raw = kh2_tables::player::load_sstm(&mut self.0).ok();
         let at = |off: usize| raw.as_ref().filter(|s| s.words.len() > off / 4).map_or(0.0, |s| s.f32(off));
         let (charge_feed, low_hp_fraction) = (at(0x7c), at(0x144));
+        let low_hp_damage_percent = raw.as_ref().filter(|s| s.words.len() > 0x178 / 4).map_or(100, |s| s.i32(0x178));
         let bons = kh2_tables::load::<t::Bons>(&mut self.0, &t::BONS).map(|d| d.rows).unwrap_or_default();
-        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera, magc, cmd, magi, levels, bons, weapon_attack, weapon_magic, item_stats: stats.clone(), items, charge_feed, low_hp_fraction })
+        Ok(Params { prty, plyr, sstm, fmab, swing, reaction, atkp, max_hp, max_mp, camera, magc, cmd, magi, levels, bons, weapon_attack, weapon_magic, item_stats: stats.clone(), items, charge_feed, low_hp_fraction, low_hp_damage_percent })
     }
 
     /// Everything Sora needs.

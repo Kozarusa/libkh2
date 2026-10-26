@@ -1,7 +1,7 @@
 # Remaining (v2.0.0, Final Mix)
 
-- Damage and attacker bonuses differ from the Final Mix executable (368 / 1954 of 3000 oracle
-  cases): read FM 0x1a1e1c / 0x1a2340, or confirm the status layout of the test.
+- [x] Damage on Final Mix (2.1.0): layout, not rules, plus the new low-HP step; open: who writes
+  status +0x240.
 - Limit Form's own limits (kh2fm-rs `Kh1LimitStarted`, the KH1 scripts) through `kh2_limit_*`.
 - Japanese glyphs in the HUD (the font set's Japanese companion).
 - Final Mix's other additions not surveyed here: new abilities and attack rows beyond what the

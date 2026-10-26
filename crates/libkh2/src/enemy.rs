@@ -187,6 +187,22 @@ pub fn damage(atk: &Atkp, from: &Stats, to: &Stats) -> i32 {
     dmg.max(0)
 }
 
+/// The last step of the Final Mix damage routine (FM 0x1a1fd8..0x1a2034, after the attacker's
+/// bonuses; the USA routine has none): when the victim's HP is at or below its maximum HP times
+/// the float at status +0x240 (truncated, `cvt.w.s`), the damage is scaled by the `sstm` +0x178
+/// percent, rounded up. Every damage type passes through it (the type 5 / 6 branches too).
+/// decided: the writer of status +0x240 was not found (no store of that offset in the status
+/// code; FM 0x1802d8 writes +0x240 of another record), so libkh2's victims pass 0.0: the step
+/// then only touches a victim at 0 HP or below.
+pub fn low_hp_scale(dmg: i32, hp: i32, max_hp: i32, ratio: f32, percent: i32) -> i32 {
+    let limit = (max_hp as f32 * ratio) as i32;
+    if limit < hp {
+        dmg
+    } else {
+        ((dmg as i64 * percent as i64 + 99) / 100) as i32
+    }
+}
+
 impl Disc {
     /// The enemy tables; the kinds load on demand (`EnemyData::kind`) through a second reader of
     /// the same disc image.
@@ -861,6 +877,7 @@ impl Enemies {
                 if let Some(l) = &sora.loadout {
                     dmg = kh2_game_core::abilities::attacker_bonuses(l.block(), sora.hits, &atk, dmg);
                 }
+                dmg = low_hp_scale(dmg, e.hp, e.stats.max_hp, 0.0, params.low_hp_damage_percent);
                 let dir = (e.obj.motor.pos - sora.motor.pos).with_y(0.0).normalize_or_zero();
                 Self::receive(e, &atk, dmg, dir, &reaction);
                 self.events.push(EnemyEvent::Hit { id: e.id, atkp, damage: dmg, hp: e.hp });
@@ -987,6 +1004,7 @@ impl Enemies {
             if let Some(l) = &sora.loadout {
                 dmg = kh2_game_core::abilities::attacker_bonuses(l.block(), sora.hits, &atk, dmg);
             }
+            dmg = low_hp_scale(dmg, e.hp, e.stats.max_hp, 0.0, params.low_hp_damage_percent);
             Self::receive(e, &atk, dmg, h.dir, &reaction);
             self.events.push(EnemyEvent::Hit { id, atkp: atk.id as i16, damage: dmg, hp: e.hp });
             if e.hp <= 0 && !e.defeated {
